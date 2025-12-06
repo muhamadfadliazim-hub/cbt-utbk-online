@@ -1,0 +1,94 @@
+from sqlalchemy import Column, Integer, String, Boolean, Text, ForeignKey, Float
+from sqlalchemy.orm import relationship
+from database import Base
+
+# --- CONFIG ---
+class SystemConfig(Base):
+    __tablename__ = "system_config"
+    key = Column(String, primary_key=True, index=True)
+    value = Column(String)
+
+# --- JURUSAN ---
+class Major(Base):
+    __tablename__ = "majors"
+    id = Column(Integer, primary_key=True, index=True) 
+    university = Column(String) 
+    name = Column(String) 
+    passing_grade = Column(Float) 
+
+# --- USER ---
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True) 
+    full_name = Column(String)
+    password = Column(String)
+    role = Column(String, default="student")
+    
+    choice1_id = Column(Integer, ForeignKey("majors.id", ondelete="SET NULL"), nullable=True)
+    choice2_id = Column(Integer, ForeignKey("majors.id", ondelete="SET NULL"), nullable=True)
+
+    results = relationship("ExamResult", back_populates="user", cascade="all, delete")
+    choice1 = relationship("Major", foreign_keys=[choice1_id])
+    choice2 = relationship("Major", foreign_keys=[choice2_id])
+
+# --- PERIODE UJIAN ---
+class ExamPeriod(Base):
+    __tablename__ = "exam_periods"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String) 
+    is_active = Column(Boolean, default=False)
+    exams = relationship("Exam", back_populates="period", cascade="all, delete")
+
+# --- SUBTES UJIAN ---
+class Exam(Base):
+    __tablename__ = "exams"
+    id = Column(String, primary_key=True, index=True) 
+    period_id = Column(Integer, ForeignKey("exam_periods.id", ondelete="CASCADE"))
+    code = Column(String) 
+    title = Column(String)
+    description = Column(String)
+    duration = Column(Float) 
+    
+    period = relationship("ExamPeriod", back_populates="exams")
+    questions = relationship("Question", back_populates="exam", cascade="all, delete")
+
+# --- SOAL (UPDATE IRT) ---
+class Question(Base):
+    __tablename__ = "questions"
+    id = Column(Integer, primary_key=True, index=True)
+    exam_id = Column(String, ForeignKey("exams.id", ondelete="CASCADE")) 
+    text = Column(Text)
+    type = Column(String) 
+    reading_material = Column(Text, nullable=True)
+    image_url = Column(String, nullable=True)
+    
+    # --- KOLOM PENTING IRT ---
+    difficulty = Column(Float, default=1.0) # Tingkat Kesulitan (Dinamis)
+    total_attempts = Column(Integer, default=0) # Berapa kali soal dikerjakan
+    total_correct = Column(Integer, default=0)  # Berapa kali dijawab benar
+    
+    exam = relationship("Exam", back_populates="questions")
+    options = relationship("Option", back_populates="question", cascade="all, delete")
+
+# --- OPSI JAWABAN ---
+class Option(Base):
+    __tablename__ = "options"
+    id = Column(Integer, primary_key=True, index=True)
+    question_id = Column(Integer, ForeignKey("questions.id", ondelete="CASCADE"))
+    label = Column(String)
+    option_index = Column(String)
+    is_math = Column(Boolean, default=False)
+    is_correct = Column(Boolean, default=False)
+    question = relationship("Question", back_populates="options")
+
+# --- HASIL UJIAN ---
+class ExamResult(Base):
+    __tablename__ = "exam_results"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    exam_id = Column(String, ForeignKey("exams.id", ondelete="CASCADE"))
+    correct_count = Column(Integer, default=0)
+    wrong_count = Column(Integer, default=0)
+    irt_score = Column(Float, default=0.0)
+    user = relationship("User", back_populates="results")
