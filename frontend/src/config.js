@@ -1,0 +1,1 @@
+export const API_URL = 'https://cbt-utbk-online-production.up.railway.app';
