@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Building2, ArrowRight, FileText, CheckCircle, XCircle } from 'lucide-react';
-import { API_URL } from './config';
+import { API_URL } from './config'; // Import Config
 
 // --- 1. KOMPONEN PILIH JURUSAN ---
 export const MajorSelection = ({ onNext }) => {
@@ -12,15 +12,14 @@ export const MajorSelection = ({ onNext }) => {
   const [majorId2, setMajorId2] = useState('');
 
   useEffect(() => {
-    // PERBAIKAN: Menggunakan Backtick (tombol di kiri angka 1)
+    // PERBAIKAN: Gunakan Backtick (`)
     fetch(`${API_URL}/majors`)
       .then(res => res.json())
       .then(data => {
         setMajors(data);
-        const univs = [...new Set(data.map(m => m.university))].sort();
-        setUniversities(univs);
+        setUniversities([...new Set(data.map(m => m.university))].sort());
       })
-      .catch(() => alert("Gagal mengambil data jurusan."));
+      .catch(() => alert("Gagal mengambil data jurusan. Pastikan backend menyala!"));
   }, []);
 
   const getMajorsByUniv = (univName) => majors.filter(m => m.university === univName).sort((a,b) => a.name.localeCompare(b.name));

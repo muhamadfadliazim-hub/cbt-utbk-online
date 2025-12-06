@@ -1,50 +1,47 @@
 from database import engine, SessionLocal
-import models
+import models # Pastikan ini diimport agar Base.metadata mengenali tabel
 from sqlalchemy import text
-import sys
 
 def reset_exam_tables():
-    print("🔄 MEMULAI RESET DATABASE TOTAL...")
+    print("🔄 MEMULAI RESET DATABASE...")
     
-    # 1. Paksa Drop Semua Tabel (Metode Kasar tapi Ampuh untuk Reset)
-    # Urutan penting untuk menghindari FK constraint error
-    tables = ["exam_results", "options", "questions", "exams", "exam_periods", "users", "majors", "system_config"]
-    
-    with engine.connect() as conn:
-        with conn.begin():
-            for t in tables:
-                conn.execute(text(f"DROP TABLE IF EXISTS {t} CASCADE"))
-    
-    print("✅ Semua tabel lama berhasil dimusnahkan.")
+    # 1. HAPUS SEMUA TABEL
+    # Kita gunakan metadata.drop_all yang aman
+    print("   - Menghapus tabel lama...")
+    models.Base.metadata.drop_all(bind=engine)
+    print("✅ Tabel lama dihapus.")
 
-    # 2. Buat Ulang Tabel dari Models
+    # 2. BUAT ULANG TABEL
+    print("   - Membuat tabel baru...")
     models.Base.metadata.create_all(bind=engine)
-    print("✅ Struktur tabel baru berhasil dibuat.")
+    print("✅ Struktur tabel berhasil dibuat.")
 
-    # 3. Seed Data Awal (Admin & Config)
+    # 3. ISI DATA AWAL (SEEDING)
+    print("   - Mengisi data Admin...")
     db = SessionLocal()
     try:
-        print("🌱 Seeding Data Awal...")
-        
-        # Buat Admin (Cara Explicit)
+        # Cara paling aman membuat object (menghindari error TypeError keyword)
+        # Kita buat object kosong dulu, baru isi atributnya
         admin = models.User()
         admin.username = "admin"
         admin.password = "123"
         admin.full_name = "Super Admin"
         admin.role = "admin"
+        
         db.add(admin)
 
-        # Buat Config
+        # Config Pengumuman
         config = models.SystemConfig()
         config.key = "release_announcement"
         config.value = "false"
+        
         db.add(config)
         
         db.commit()
-        print("✅ SUKSES! Admin (admin/123) berhasil dibuat.")
+        print("✅ SUKSES! Data Admin (admin/123) dan Config berhasil dibuat.")
         
     except Exception as e:
-        print(f"❌ Error saat seeding: {e}")
+        print(f"❌ Error saat seeding data: {e}")
         db.rollback()
     finally:
         db.close()

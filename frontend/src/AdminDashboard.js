@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Clock, Search, X, Filter } from 'lucide-react';
+import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
-import { API_URL } from './config';
+import { API_URL } from './config'; // Pastikan ini diimport!
 
 const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
@@ -20,7 +20,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
-  // --- API CALLS ---
+  // --- API CALLS (WAJIB PAKAI BACKTICK ` `) ---
   const fetchPeriods = () => fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(setPeriods);
   const fetchUsers = () => fetch(`${API_URL}/admin/users`).then(r=>r.json()).then(d=>{setUsers(d); setSelectedIds([])});
   
@@ -45,17 +45,37 @@ const AdminDashboard = ({ onLogout }) => {
       // eslint-disable-next-line
   }, [selectedRecapPeriod]);
 
-  // --- ACTIONS ---
-  const handleCreatePeriod = (e) => { 
+  // --- PERBAIKAN FITUR TAMBAH PERIODE ---
+  const handleCreatePeriod = async (e) => { 
       e.preventDefault(); 
-      fetch(`${API_URL}/admin/periods`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:newPeriodName})})
-      .then(r=>r.json()).then(d=>{alert(d.message); setNewPeriodName(''); fetchPeriods();}); 
+      if (!newPeriodName.trim()) return alert("Nama periode tidak boleh kosong");
+
+      try {
+        const res = await fetch(`${API_URL}/admin/periods`, {
+            method: 'POST', 
+            headers: {'Content-Type':'application/json'}, 
+            body: JSON.stringify({ name: newPeriodName })
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+            alert(data.message); 
+            setNewPeriodName(''); 
+            fetchPeriods();
+        } else {
+            alert("Gagal: " + data.detail);
+        }
+      } catch (error) {
+        alert("Gagal koneksi ke server.");
+      }
   };
 
   const togglePeriodActive = (id, s) => fetch(`${API_URL}/admin/periods/${id}/toggle`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active:!s})}).then(()=>fetchPeriods());
   
   const handleDeletePeriod = (id) => { 
-      if(window.confirm("Hapus Periode?")) fetch(`${API_URL}/admin/periods/${id}`, {method:'DELETE'}).then(()=>fetchPeriods()); 
+      if(window.confirm("Hapus Periode? Semua soal di dalamnya akan ikut terhapus.")) {
+          fetch(`${API_URL}/admin/periods/${id}`, {method:'DELETE'}).then(()=>fetchPeriods()); 
+      }
   };
   
   const handleUploadQuestion = (eid, f) => { 
@@ -137,8 +157,10 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
         
+        {/* TAB 2: USERS */}
         {tab === 'users' && (<div><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">Manajemen User</h2>{selectedIds.length > 0 && <button onClick={handleBulkDelete} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"><Trash2 size={16}/> Hapus {selectedIds.length}</button>}</div><div className="bg-white p-5 rounded-lg shadow mb-6 flex gap-3 flex-wrap"><input placeholder="Username" className="border p-2 rounded flex-1" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input placeholder="Nama Lengkap" className="border p-2 rounded flex-1" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input placeholder="Password" type="password" className="border p-2 rounded flex-1" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><select className="border p-2 rounded bg-gray-50" value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})}><option value="student">Siswa</option><option value="admin">Admin</option></select><button onClick={handleAddUser} className="bg-green-600 text-white px-4 py-2 rounded font-bold"><Plus size={16}/></button><div className="w-full h-px bg-gray-200 my-2"></div><label className="text-blue-600 cursor-pointer text-sm flex items-center gap-2 hover:underline"><Upload size={14}/> Upload Excel User (.xlsx)<input type="file" className="hidden" accept=".xlsx" onChange={handleBulkUpload}/></label></div><div className="bg-white shadow rounded overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={users.length > 0 && selectedIds.length === users.length}/></th><th className="p-3 text-left">Nama</th><th className="p-3 text-left">Username</th><th className="p-3 text-left">Role</th></tr></thead><tbody>{users.map(u => (<tr key={u.id} className="border-b hover:bg-gray-50"><td className="p-3 text-center"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={() => handleSelectOne(u.id)}/></td><td className="p-3">{u.full_name}</td><td className="p-3 font-mono">{u.username}</td><td className="p-3"><span className={`px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-green-100 text-green-700'}`}>{u.role.toUpperCase()}</span></td></tr>))}</tbody></table></div></div>)}
         
+        {/* TAB 3: RECAP */}
         {tab === 'recap' && (
             <div className="overflow-x-auto pb-20">
                 <div className="flex flex-col md:flex-row justify-between items-end mb-6 gap-4">

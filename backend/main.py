@@ -99,15 +99,33 @@ def get_admin_periods(db: Session = Depends(get_db)):
 
 @app.post("/admin/periods")
 def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
+    # 1. Buat Header Periode
     new_period = models.ExamPeriod(name=data.name, is_active=False)
     db.add(new_period)
     db.commit()
     db.refresh(new_period)
-    utbk_structure = [("PU", "Penalaran Umum", 30), ("PBM", "Pemahaman Bacaan & Menulis", 25), ("PPU", "Pengetahuan & Pemahaman Umum", 15), ("PK", "Pengetahuan Kuantitatif", 20), ("LBI", "Literasi Bahasa Indonesia", 42.5), ("LBE", "Literasi Bahasa Inggris", 20), ("PM", "Penalaran Matematika", 42.5)]
+    
+    # 2. Otomatis Generate 7 Subtes UTBK
+    utbk_structure = [
+        ("PU", "Penalaran Umum", 30),
+        ("PBM", "Pemahaman Bacaan & Menulis", 25),
+        ("PPU", "Pengetahuan & Pemahaman Umum", 15),
+        ("PK", "Pengetahuan Kuantitatif", 20),
+        ("LBI", "Literasi Bahasa Indonesia", 42.5),
+        ("LBE", "Literasi Bahasa Inggris", 20),
+        ("PM", "Penalaran Matematika", 42.5)
+    ]
+    
     for code, title, duration in utbk_structure:
-        db.add(models.Exam(id=f"P{new_period.id}_{code}", period_id=new_period.id, code=code, title=title, description="Standar SNBT", duration=duration))
+        # ID Unik: P{id}_{KODE}
+        exam_id = f"P{new_period.id}_{code}"
+        exam = models.Exam(
+            id=exam_id,
+            period_id=new_period.id, code=code, title=title, description="Standar SNBT", duration=duration
+        )
+        db.add(exam)
     db.commit()
-    return {"message": "Periode Berhasil Dibuat!"}
+    return {"message": "Periode Tryout Berhasil Dibuat!"}
 
 @app.post("/admin/periods/{period_id}/toggle")
 def toggle_period(period_id: int, data: TogglePeriodSchema, db: Session = Depends(get_db)):

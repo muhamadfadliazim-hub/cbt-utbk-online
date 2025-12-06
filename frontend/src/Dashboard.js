@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BookOpen, Calculator, PenTool, BrainCircuit, ChevronRight, Loader2, Clock, FileText, LogOut, FileBarChart, Folder } from 'lucide-react';
-import { API_URL } from './config'; // Import API_URL
+import { API_URL } from './config'; // Import Config
 
 const Dashboard = ({ onSelectExam, userName, onLogout, onGoToRecap }) => {
   const [periods, setPeriods] = useState([]); 
@@ -8,7 +8,7 @@ const Dashboard = ({ onSelectExam, userName, onLogout, onGoToRecap }) => {
   const [expandedPeriod, setExpandedPeriod] = useState(null);
 
   useEffect(() => {
-    // PERBAIKAN: Menggunakan Backtick (`) untuk template string
+    // PERBAIKAN: Gunakan API_URL dan Backtick
     fetch(`${API_URL}/student/periods`)
       .then(res => {
         if (!res.ok) throw new Error("Gagal mengambil data periode");
@@ -71,5 +71,4 @@ const Dashboard = ({ onSelectExam, userName, onLogout, onGoToRecap }) => {
     </div>
   );
 };
-
 export default Dashboard;

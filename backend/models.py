@@ -20,6 +20,7 @@ class Major(Base):
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
+    # PASTIKAN BARIS INI ADA DAN SAMA PERSIS:
     username = Column(String, unique=True, index=True) 
     full_name = Column(String)
     password = Column(String)
@@ -28,7 +29,7 @@ class User(Base):
     choice1_id = Column(Integer, ForeignKey("majors.id", ondelete="SET NULL"), nullable=True)
     choice2_id = Column(Integer, ForeignKey("majors.id", ondelete="SET NULL"), nullable=True)
 
-    results = relationship("ExamResult", back_populates="user", cascade="all, delete")
+    results = relationship("ExamResult", back_populates="user")
     choice1 = relationship("Major", foreign_keys=[choice1_id])
     choice2 = relationship("Major", foreign_keys=[choice2_id])
 
@@ -53,7 +54,7 @@ class Exam(Base):
     period = relationship("ExamPeriod", back_populates="exams")
     questions = relationship("Question", back_populates="exam", cascade="all, delete")
 
-# --- SOAL (UPDATE IRT) ---
+# --- SOAL ---
 class Question(Base):
     __tablename__ = "questions"
     id = Column(Integer, primary_key=True, index=True)
@@ -62,11 +63,7 @@ class Question(Base):
     type = Column(String) 
     reading_material = Column(Text, nullable=True)
     image_url = Column(String, nullable=True)
-    
-    # --- KOLOM PENTING IRT ---
-    difficulty = Column(Float, default=1.0) # Tingkat Kesulitan (Dinamis)
-    total_attempts = Column(Integer, default=0) # Berapa kali soal dikerjakan
-    total_correct = Column(Integer, default=0)  # Berapa kali dijawab benar
+    difficulty = Column(Float, default=1.0)
     
     exam = relationship("Exam", back_populates="questions")
     options = relationship("Option", back_populates="question", cascade="all, delete")
