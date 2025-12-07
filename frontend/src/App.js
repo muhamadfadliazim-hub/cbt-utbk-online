@@ -11,53 +11,50 @@ import { API_URL } from './config';
 import './App.css';
 
 function App() {
-  // State Utama
   const [view, setView] = useState('loading'); 
-  const [userData, setUserData] = useState(null);
   
-  // State Ujian
+  // Ambil data user langsung dari localStorage saat inisialisasi state
+  // Ini mencegah userData bernilai null saat refresh
+  const [userData, setUserData] = useState(() => {
+      const saved = localStorage.getItem('utbk_user');
+      return saved ? JSON.parse(saved) : null;
+  });
+  
   const [activeExamData, setActiveExamData] = useState(null);
   const [examResult, setExamResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // --- 1. INISIALISASI & CEK SESI ---
+  // --- 1. ROUTING & CEK SESI SAAT APLIKASI DIMULAI ---
   useEffect(() => {
-    const savedUserStr = localStorage.getItem('utbk_user');
     const savedStep = localStorage.getItem('utbk_step');
     const savedExamId = localStorage.getItem('current_exam_id');
 
-    if (savedUserStr) {
-      const user = JSON.parse(savedUserStr);
-      setUserData(user);
-      
-      // Routing Logika
-      if (user.role === 'admin') {
+    if (userData) {
+      if (userData.role === 'admin') {
           setView('admin_dashboard');
       } else {
           // Logika Siswa
-          if (!user.display1) {
-              setView('select_major'); // Belum pilih jurusan
+          if (!userData.display1) {
+              setView('select_major'); 
           } else if (savedStep === 'exam' && savedExamId) {
-              // Sedang ujian? Cek validitas
+              // Jika status masih ujian, muat ulang soal
               handleSelectExam(savedExamId, true);
           } else if (savedStep === 'result') {
-              // Jika refresh di halaman hasil, kembalikan ke dashboard (karena data result di-memory hilang)
+              // Jika refresh di halaman hasil, kembalikan ke dashboard (karena data nilai hilang dari memori)
               setView('dashboard');
-              // Opsional: Bisa fetch ulang result terakhir dari backend jika mau persistent
           } else if (savedStep === 'confirmation') {
               setView('confirmation');
           } else {
-              setView('dashboard'); // Default
+              setView('dashboard'); 
           }
       }
     } else {
         setView('login');
     }
-    setLoading(false);
-  // eslint-disable-next-line
+    // eslint-disable-next-line
   }, []); 
 
-  // --- 2. FUNGSI UPDATE VIEW ---
+  // --- 2. UTILITY ---
   const updateView = (newView) => { 
       setView(newView); 
       localStorage.setItem('utbk_step', newView); 
@@ -69,7 +66,7 @@ function App() {
     localStorage.setItem('utbk_user', JSON.stringify(user));
   };
 
-  // --- 3. HANDLER LOGIN & LOGOUT ---
+  // --- 3. LOGIN & LOGOUT ---
   const handleLogin = (loginData) => {
     const newData = { 
         ...userData, 
@@ -102,7 +99,7 @@ function App() {
     }
   };
 
-  // --- 4. HANDLER JURUSAN ---
+  // --- 4. PILIH JURUSAN ---
   const handleMajorSelected = async (selectionData) => {
     const newData = { 
         ...userData, 
@@ -119,24 +116,22 @@ function App() {
     } catch (err) { console.error(err); }
   };
 
-  // --- 5. HANDLER UJIAN ---
+  // --- 5. LOGIKA UJIAN ---
   const handleStartApp = () => updateView('dashboard');
 
   const handleSelectExam = useCallback(async (examId, isResume = false) => {
     if (!isResume) setLoading(true);
     try {
         const res = await fetch(`${API_URL}/exams/${examId}`);
-        if (!res.ok) throw new Error('Failed load exam');
+        if (!res.ok) throw new Error('Gagal memuat soal');
         const data = await res.json();
         
         setActiveExamData({ ...data, id: examId }); 
         
         if (!isResume) {
-            // Mulai ujian baru
             localStorage.setItem('current_exam_id', examId);
             updateView('exam'); 
         } else {
-            // Resume (refresh page)
             setView('exam');
         }
     } catch (err) {
@@ -145,14 +140,22 @@ function App() {
     } finally { setLoading(false); }
   }, []);
 
-  // --- [FIX UTAMA] HANDLER SUBMIT UJIAN ---
+  // --- [FIX] SUBMIT UJIAN ---
   const handleSubmitExam = (submissionData) => {
     setLoading(true);
     
-    // Pastikan data yang dikirim lengkap (answers + username)
+    // Pastikan username diambil dengan benar
+    const currentUser = userData || JSON.parse(localStorage.getItem('utbk_user'));
+    
+    if (!currentUser || !currentUser.username) {
+        alert("Sesi kadaluarsa. Silakan login ulang.");
+        handleLogout();
+        return;
+    }
+
     const payload = {
         answers: submissionData.answers,
-        username: userData.username
+        username: currentUser.username // Pastikan username terkirim
     };
 
     fetch(`${API_URL}/exams/${activeExamData.id}/submit`, {
@@ -161,24 +164,25 @@ function App() {
         body: JSON.stringify(payload)
     })
     .then(res => {
-        if (!res.ok) throw new Error("Gagal menyimpan jawaban");
+        if (!res.ok) throw new Error("Gagal menyimpan jawaban ke server");
         return res.json();
     })
     .then(data => {
-        // 1. Simpan Hasil ke State
+        // SUKSES
         setExamResult(data); 
         
-        // 2. BERSIHKAN STORAGE (KUNCI AGAR TIDAK BISA BALIK)
+        // HAPUS JEJAK UJIAN AGAR TIDAK BISA BALIK
         localStorage.removeItem('current_exam_id'); 
         localStorage.removeItem('saved_answers'); 
         localStorage.removeItem('saved_timer');
         
-        // 3. Pindah ke Halaman Hasil
+        // Pindah ke halaman hasil
         updateView('result');
     })
     .catch((err) => {
         console.error(err);
-        alert("Gagal mengirim jawaban. Mohon periksa koneksi internet Anda dan coba lagi.");
+        alert("Terjadi kesalahan saat mengirim jawaban. Cek koneksi Anda.");
+        // Jangan clear storage jika gagal, agar siswa bisa coba submit lagi
     })
     .finally(() => {
         setLoading(false);
@@ -191,17 +195,12 @@ function App() {
     updateView('dashboard');
   };
 
-  // --- RENDER ---
-  if (view === 'loading' || loading) {
-      return (
-        <div className="fixed inset-0 bg-white/90 z-50 flex items-center justify-center">
-            <Loader2 size={48} className="animate-spin text-blue-600"/>
-        </div>
-      );
-  }
+  if (view === 'loading') return null;
 
   return (
     <div className="App font-sans text-gray-800">
+      {/* LOADING OVERLAY */}
+      {loading && <div className="fixed inset-0 bg-white/90 z-50 flex items-center justify-center"><Loader2 size={48} className="animate-spin text-blue-600"/></div>}
       
       {view === 'login' && <Login onLogin={handleLogin} />}
       
@@ -227,18 +226,24 @@ function App() {
       {view === 'exam' && activeExamData && (
         <ExamSimulation 
             examData={activeExamData} 
-            // Pass fungsi submit yang baru
             onSubmit={handleSubmitExam} 
             onBack={handleBackToDashboard} 
         />
       )}
       
-      {/* TAMPILAN HASIL (Hanya muncul jika examResult ada) */}
-      {view === 'result' && examResult && (
-        <ResultSummary 
-            result={examResult} 
-            onBack={handleBackToDashboard} 
-        />
+      {/* TAMPILAN HASIL (Mencegah Blank) */}
+      {view === 'result' && (
+          examResult ? (
+            <ResultSummary 
+                result={examResult} 
+                onBack={handleBackToDashboard} 
+            />
+          ) : (
+            // Fallback jika data belum siap tapi view sudah result
+            <div className="flex h-screen items-center justify-center">
+                <Loader2 className="animate-spin text-indigo-600 mr-2"/> Memproses Hasil...
+            </div>
+          )
       )}
     </div>
   );

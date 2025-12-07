@@ -110,10 +110,46 @@ export const Confirmation = ({ userData, onStart, onBack }) => {
   );
 };
 
+// ... kode atas tetap sama ...
+
+// --- 3. KOMPONEN HASIL UJIAN ---
 export const ResultSummary = ({ result, onBack }) => {
-    // ... (Sama seperti sebelumnya) ...
-    // Agar hemat karakter, bagian ResultSummary tidak saya tulis ulang penuh 
-    // karena tidak ada perubahan logika, hanya MajorSelection yang berubah.
-    // Jika Anda ingin full code ResultSummary, pakai yang dari jawaban sebelumnya.
-    return null; 
+  // Pengaman Data
+  if (!result) return <div className="p-10 text-center">Menunggu data hasil...</div>;
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans">
+      <div className="bg-white p-10 rounded-2xl shadow-2xl max-w-lg w-full text-center border-t-8 border-indigo-600">
+        <div className="mb-6">
+            <h2 className="text-3xl font-extrabold text-gray-900 mb-2">Ujian Selesai!</h2>
+            <p className="text-gray-500">Jawaban Anda telah berhasil disimpan ke sistem.</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-6 mb-8">
+          <div className="bg-green-50 p-6 rounded-2xl border border-green-100 shadow-sm flex flex-col items-center">
+            <CheckCircle className="text-green-500 mb-2" size={40} />
+            <div className="text-4xl font-extrabold text-green-700">{result.correct || 0}</div>
+            <div className="text-sm font-bold text-green-600 uppercase tracking-wide">Jawaban Benar</div>
+          </div>
+
+          <div className="bg-red-50 p-6 rounded-2xl border border-red-100 shadow-sm flex flex-col items-center">
+            <XCircle className="text-red-500 mb-2" size={40} />
+            <div className="text-4xl font-extrabold text-red-700">{result.wrong || 0}</div>
+            <div className="text-sm font-bold text-red-600 uppercase tracking-wide">Jawaban Salah</div>
+          </div>
+        </div>
+
+        <div className="text-sm text-gray-400 mb-8 italic">
+            *Nilai IRT lengkap dapat dilihat di menu "Rekap Hasil" setelah semua sesi berakhir.
+        </div>
+
+        <button 
+            onClick={onBack} 
+            className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-lg hover:bg-indigo-700 transition shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+        >
+            Kembali ke Dashboard
+        </button>
+      </div>
+    </div>
+  );
 };
