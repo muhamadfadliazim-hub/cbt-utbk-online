@@ -23,6 +23,8 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
     if (!text) return { __html: '' };
     // Regex untuk mengganti [B]kata[/B] menjadi <b>kata</b>
     let html = text.replace(/\[B\](.*?)\[\/B\]/g, '<strong>$1</strong>');
+    let html = text.replace(/\[I\](.*?)\[\/I\]/g, '<em>$1</em>');
+    let html = text.replace(/\[U\](.*?)\[\/U\]/g, '<U>$1</U>');
     return { __html: html };
   };
 
