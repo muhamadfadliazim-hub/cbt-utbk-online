@@ -7,23 +7,16 @@ import AdminDashboard from './AdminDashboard';
 import { MajorSelection, Confirmation, ResultSummary } from './FlowComponents';
 import StudentRecap from './StudentRecap'; 
 import { Loader2 } from 'lucide-react';
-import { API_URL } from './config'; // Import API_URL
+import { API_URL } from './config'; 
 import './App.css';
 
 function App() {
   const [view, setView] = useState('loading'); 
   
-  // State User Data
   const [userData, setUserData] = useState({ 
-      name: '', 
-      username: '', 
-      role: '', 
-      display1: '',  
-      display2: '', 
-      pg1: '', 
-      pg2: '',
-      choice1_id: null, 
-      choice2_id: null 
+      name: '', username: '', role: '', 
+      display1: '', display2: '', pg1: '', pg2: '', 
+      choice1_id: null, choice2_id: null 
   });
   
   const [activeExamData, setActiveExamData] = useState(null);
@@ -53,7 +46,6 @@ function App() {
   const handleSelectExam = useCallback(async (examId, isResume = false) => {
     if (!isResume) setLoading(true);
     try {
-        // PERBAIKAN: Menggunakan Backtick (`) untuk template string
         const res = await fetch(`${API_URL}/exams/${examId}`);
         if (!res.ok) throw new Error('Failed');
         const data = await res.json();
@@ -76,9 +68,15 @@ function App() {
       if (!user.username) { localStorage.clear(); setView('login'); return; }
       setUserData(user);
       
-      if (user.role === 'admin') setView('admin_dashboard');
-      else if (savedStep === 'exam' && savedExamId) handleSelectExam(savedExamId, true);
-      else {
+      if (user.role === 'admin') {
+          setView('admin_dashboard');
+      } else if (savedStep === 'exam' && savedExamId) {
+          handleSelectExam(savedExamId, true);
+      } else if (savedStep === 'result') {
+          // FIX BLANK: Jika refresh di halaman result, kembalikan ke dashboard
+          // karena data 'examResult' hilang saat refresh (disimpan di state sementara)
+          setView('dashboard');
+      } else {
          if (user.role === 'student' && !user.display1) {
              setView('select_major'); 
          } else if (savedStep === 'confirmation') {
@@ -113,9 +111,7 @@ function App() {
         choice1_id: selectionData.choice1_id, choice2_id: selectionData.choice2_id
     };
     saveSession(newData, 'confirmation');
-    
     try {
-        // PERBAIKAN: Menggunakan Backtick (`)
         await fetch(`${API_URL}/users/select-major`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ username: userData.username, choice1_id: selectionData.choice1_id, choice2_id: selectionData.choice2_id })
@@ -124,20 +120,29 @@ function App() {
   };
 
   const handleStartApp = () => updateView('dashboard');
-  
   const handleGoToUpload = () => { setView('upload'); };
   const handleGoToStudentRecap = () => { updateView('student_recap'); };
 
   const handleSubmitExam = (answers) => {
     setLoading(true);
-    // PERBAIKAN: Menggunakan Backtick (`)
     fetch(`${API_URL}/exams/${activeExamData.id}/submit`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ answers, username: userData.username })
     }).then(res=>res.json()).then(data => {
-        setExamResult(data); updateView('result');
-        localStorage.removeItem('current_exam_id'); localStorage.removeItem('saved_answers'); localStorage.removeItem('saved_timer');
-    }).catch(() => alert("Gagal kirim.")).finally(() => setLoading(false));
+        // FIX BLANK: Pastikan data disimpan dulu ke state sebelum pindah view
+        setExamResult(data); 
+        
+        // Bersihkan storage ujian
+        localStorage.removeItem('current_exam_id'); 
+        localStorage.removeItem('saved_answers'); 
+        localStorage.removeItem('saved_timer');
+
+        // Baru pindah halaman
+        updateView('result');
+    }).catch((err) => {
+        console.error(err);
+        alert("Gagal mengirim jawaban. Cek koneksi internet.");
+    }).finally(() => setLoading(false));
   };
 
   if (view === 'loading') return null;
@@ -148,12 +153,7 @@ function App() {
       
       {view === 'login' && <Login onLogin={handleLogin} />}
       {view === 'admin_dashboard' && <AdminDashboard onLogout={handleLogout}/>}
-      {view === 'select_major' && (
-  <MajorSelection 
-    onNext={handleMajorSelected} 
-    onLogout={handleLogout} // <--- INI TAMBAHANNYA
-  />
-)}
+      {view === 'select_major' && <MajorSelection onNext={handleMajorSelected} onLogout={handleLogout}/>}
       {view === 'confirmation' && <Confirmation userData={userData} onStart={handleStartApp} onBack={() => saveSession(userData, 'select_major')}/>}
       
       {view === 'dashboard' && <Dashboard userName={userData.name} onSelectExam={handleSelectExam} onLogout={handleLogout} onGoToUpload={handleGoToUpload} onGoToRecap={handleGoToStudentRecap} />}
@@ -161,6 +161,8 @@ function App() {
       
       {view === 'upload' && <UploadExam onBack={() => updateView('admin_dashboard')} />}
       {view === 'exam' && activeExamData && <ExamSimulation examData={activeExamData} onBack={handleBackToDashboard} onSubmit={handleSubmitExam} />}
+      
+      {/* FIX BLANK: Pastikan examResult ada sebelum render ResultSummary */}
       {view === 'result' && examResult && <ResultSummary result={examResult} onBack={handleBackToDashboard} />}
     </div>
   );
