@@ -18,13 +18,18 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
 
   const answersRef = useRef(answers);
 
-  // 🌟 UTILITY BARU: Fungsi untuk mengubah [B] menjadi <b> (AMAN)
+// 🌟 UTILITY BARU: Fungsi penerjemah kode teks
   const formatMarkups = (text) => {
     if (!text) return { __html: '' };
-    // Regex untuk mengganti [B]kata[/B] menjadi <b>kata</b>
-    let html = text.replace(/\[B\](.*?)\[\/B\]/g, '<strong>$1</strong>');
-    let html = text.replace(/\[I\](.*?)\[\/I\]/g, '<em>$1</em>');
-    let html = text.replace(/\[U\](.*?)\[\/U\]/g, '<U>$1</U>');
+    
+    let html = text
+        // Ubah [B]teks[/B] jadi Tebal
+        .replace(/\[B\](.*?)\[\/B\]/g, '<strong>$1</strong>')
+        // Ubah [I]teks[/I] jadi Miring (Italic)
+        .replace(/\[I\](.*?)\[\/I\]/g, '<em>$1</em>')
+        // Ubah [U]teks[/U] jadi Garis Bawah (Underline)
+        .replace(/\[U\](.*?)\[\/U\]/g, '<u>$1</u>');
+
     return { __html: html };
   };
 
