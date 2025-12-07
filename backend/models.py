@@ -2,13 +2,11 @@ from sqlalchemy import Column, Integer, String, Boolean, Text, ForeignKey, Float
 from sqlalchemy.orm import relationship
 from database import Base
 
-# --- CONFIG ---
 class SystemConfig(Base):
     __tablename__ = "system_config"
     key = Column(String, primary_key=True, index=True)
     value = Column(String)
 
-# --- JURUSAN ---
 class Major(Base):
     __tablename__ = "majors"
     id = Column(Integer, primary_key=True, index=True) 
@@ -16,11 +14,9 @@ class Major(Base):
     name = Column(String) 
     passing_grade = Column(Float) 
 
-# --- USER ---
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
-    # PASTIKAN BARIS INI ADA DAN SAMA PERSIS:
     username = Column(String, unique=True, index=True) 
     full_name = Column(String)
     password = Column(String)
@@ -29,11 +25,10 @@ class User(Base):
     choice1_id = Column(Integer, ForeignKey("majors.id", ondelete="SET NULL"), nullable=True)
     choice2_id = Column(Integer, ForeignKey("majors.id", ondelete="SET NULL"), nullable=True)
 
-    results = relationship("ExamResult", back_populates="user")
+    results = relationship("ExamResult", back_populates="user", cascade="all, delete")
     choice1 = relationship("Major", foreign_keys=[choice1_id])
     choice2 = relationship("Major", foreign_keys=[choice2_id])
 
-# --- PERIODE UJIAN ---
 class ExamPeriod(Base):
     __tablename__ = "exam_periods"
     id = Column(Integer, primary_key=True, index=True)
@@ -41,7 +36,6 @@ class ExamPeriod(Base):
     is_active = Column(Boolean, default=False)
     exams = relationship("Exam", back_populates="period", cascade="all, delete")
 
-# --- SUBTES UJIAN ---
 class Exam(Base):
     __tablename__ = "exams"
     id = Column(String, primary_key=True, index=True) 
@@ -50,11 +44,9 @@ class Exam(Base):
     title = Column(String)
     description = Column(String)
     duration = Column(Float) 
-    
     period = relationship("ExamPeriod", back_populates="exams")
     questions = relationship("Question", back_populates="exam", cascade="all, delete")
 
-# --- SOAL ---
 class Question(Base):
     __tablename__ = "questions"
     id = Column(Integer, primary_key=True, index=True)
@@ -63,12 +55,19 @@ class Question(Base):
     type = Column(String) 
     reading_material = Column(Text, nullable=True)
     image_url = Column(String, nullable=True)
+    
+    # KOLOM IRT
     difficulty = Column(Float, default=1.0)
+    total_attempts = Column(Integer, default=0)
+    total_correct = Column(Integer, default=0)
+
+    # KOLOM LABEL TABEL (BARU)
+    label_true = Column(String, default="Benar") 
+    label_false = Column(String, default="Salah")
     
     exam = relationship("Exam", back_populates="questions")
     options = relationship("Option", back_populates="question", cascade="all, delete")
 
-# --- OPSI JAWABAN ---
 class Option(Base):
     __tablename__ = "options"
     id = Column(Integer, primary_key=True, index=True)
@@ -79,7 +78,6 @@ class Option(Base):
     is_correct = Column(Boolean, default=False)
     question = relationship("Question", back_populates="options")
 
-# --- HASIL UJIAN ---
 class ExamResult(Base):
     __tablename__ = "exam_results"
     id = Column(Integer, primary_key=True, index=True)

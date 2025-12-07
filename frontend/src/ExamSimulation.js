@@ -94,17 +94,45 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
       </header>
       <main className="flex flex-1 overflow-hidden relative">
         {isSubmitting && (<div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm"><div className="animate-spin rounded-full h-16 w-16 border-b-4 border-indigo-600 mb-4"></div><h2 className="text-2xl font-bold text-indigo-900">Waktu Habis!</h2><p className="text-gray-600">Sedang mengirim jawaban...</p></div>)}
+        
         {hasReading && (<div className="w-1/2 p-8 overflow-y-auto border-r bg-white scrollbar-thin"><div className="prose max-w-none text-gray-800 text-sm leading-relaxed"><h3 className="font-bold text-gray-500 mb-4 uppercase text-xs border-b pb-2 tracking-wide text-left">Wacana / Literasi</h3><div className="text-justify font-serif text-base leading-7" style={{whiteSpace: 'pre-wrap'}}>{question.reading_material}</div></div></div>)}
+        
         <div className={`flex-1 flex flex-col ${hasReading ? 'w-1/2' : 'w-full max-w-4xl mx-auto'}`}>
             <div className="flex-1 p-6 overflow-y-auto text-left">
                 <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 min-h-[400px]">
-                    <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-100"><span className="font-bold text-indigo-600 text-lg">Soal No. {currentIdx+1}</span><span className="text-xs font-bold px-3 py-1 bg-gray-100 text-gray-600 rounded-full uppercase tracking-wider">{question.type.replace('_', ' ')}</span></div>
-                    <div className="mb-8 text-lg text-gray-800 leading-relaxed text-left">{question.image_url && <img src={question.image_url} alt="Soal" className="max-w-full h-auto mb-6 rounded-lg border shadow-sm mx-auto block"/>}<div>{question.text.split(/(\$.*?\$)/).map((part, i) => part.startsWith('$') && part.endsWith('$') ? <InlineMath key={i} math={part.slice(1, -1)}/> : <span key={i}>{part}</span>)}</div></div>
+                    <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-100">
+                        <span className="font-bold text-indigo-600 text-lg">Soal No. {currentIdx+1}</span>
+                        {/* HAPUS LABEL TIPE SOAL (Clean Look) */}
+                    </div>
+                    
+                    <div className="mb-8 text-lg text-gray-800 leading-relaxed text-left">
+                        {question.image_url && <img src={question.image_url} alt="Soal" className="max-w-full h-auto mb-6 rounded-lg border shadow-sm mx-auto block"/>}
+                        <div>{question.text.split(/(\$.*?\$)/).map((part, i) => part.startsWith('$') && part.endsWith('$') ? <InlineMath key={i} math={part.slice(1, -1)}/> : <span key={i}>{part}</span>)}</div>
+                    </div>
+                    
                     <div className="space-y-3 text-left">
                         {question.type === 'short_answer' ? (
                             <input type="text" className="border-2 border-gray-300 p-4 rounded-lg w-full text-lg uppercase focus:border-indigo-500 outline-none transition" placeholder="Ketik jawaban singkat..." value={answers[question.id] || ''} onChange={(e)=>handleAnswer(e.target.value)}/>
                         ) : question.type === 'table_boolean' ? (
-                            <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden"><thead className="bg-gray-50"><tr><th className="p-3 text-left border-b font-bold text-gray-600">Pernyataan</th><th className="p-3 text-center w-24 border-b font-bold text-green-700 bg-green-50">Benar</th><th className="p-3 text-center w-24 border-b font-bold text-red-700 bg-red-50">Salah</th></tr></thead><tbody>{question.options.map(opt => (<tr key={opt.id} className="border-b last:border-0 hover:bg-gray-50"><td className="p-3 border-r">{opt.label}</td><td className="text-center border-r bg-green-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-green-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='B'} onChange={()=>handleAnswer('B',opt.id)}/></td><td className="text-center bg-red-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-red-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='S'} onChange={()=>handleAnswer('S',opt.id)}/></td></tr>))}</tbody></table>
+                            <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="p-3 text-left border-b font-bold text-gray-600">Pernyataan</th>
+                                        {/* LABEL DINAMIS DARI EXCEL */}
+                                        <th className="p-3 text-center w-24 border-b font-bold text-green-700 bg-green-50">{question.label_true || "Benar"}</th>
+                                        <th className="p-3 text-center w-24 border-b font-bold text-red-700 bg-red-50">{question.label_false || "Salah"}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {question.options.map(opt => (
+                                        <tr key={opt.id} className="border-b last:border-0 hover:bg-gray-50">
+                                            <td className="p-3 border-r">{opt.label}</td>
+                                            <td className="text-center border-r bg-green-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-green-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='B'} onChange={()=>handleAnswer('B',opt.id)}/></td>
+                                            <td className="text-center bg-red-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-red-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='S'} onChange={()=>handleAnswer('S',opt.id)}/></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         ) : (
                             question.options.map(opt => {
                                 const isComplex = question.type === 'complex';
@@ -116,7 +144,13 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
                     </div>
                 </div>
             </div>
-            <div className="bg-white border-t p-4 flex justify-between items-center shadow-lg z-40"><button disabled={currentIdx===0} onClick={()=>setCurrentIdx(c=>c-1)} className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2 font-bold transition shadow-sm"><ChevronLeft size={18}/> Sebelumnya</button><div className="flex gap-2 overflow-x-auto max-w-[60%] scrollbar-hide px-2 py-1">{questions.map((q, i) => (<button key={i} onClick={()=>setCurrentIdx(i)} className={`w-10 h-10 rounded-lg text-sm font-bold shrink-0 transition-all shadow-sm ${currentIdx===i ? 'bg-indigo-600 text-white ring-2 ring-indigo-300': isAnswered(q.id) ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' : 'bg-gray-100 text-gray-400 border border-gray-200 hover:bg-gray-200'}`}>{i+1}</button>))}</div><button disabled={currentIdx===questions.length-1} onClick={()=>setCurrentIdx(c=>c+1)} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md font-bold flex items-center gap-2 transition disabled:opacity-50">Selanjutnya <ChevronRight size={18}/></button></div>
+            
+            {/* NAVIGASI */}
+            <div className="bg-white border-t p-4 flex justify-between items-center shadow-lg z-40">
+                <button disabled={currentIdx===0} onClick={()=>setCurrentIdx(c=>c-1)} className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2 font-bold transition shadow-sm"><ChevronLeft size={18}/> Sebelumnya</button>
+                <div className="flex gap-2 overflow-x-auto max-w-[60%] scrollbar-hide px-2 py-1">{questions.map((q, i) => (<button key={i} onClick={()=>setCurrentIdx(i)} className={`w-10 h-10 rounded-lg text-sm font-bold shrink-0 transition-all shadow-sm ${currentIdx===i ? 'bg-indigo-600 text-white ring-2 ring-indigo-300': isAnswered(q.id) ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' : 'bg-gray-100 text-gray-400 border border-gray-200 hover:bg-gray-200'}`}>{i+1}</button>))}</div>
+                <button disabled={currentIdx===questions.length-1} onClick={()=>setCurrentIdx(c=>c+1)} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md font-bold flex items-center gap-2 transition disabled:opacity-50">Selanjutnya <ChevronRight size={18}/></button>
+            </div>
         </div>
       </main>
     </div>
