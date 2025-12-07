@@ -148,7 +148,12 @@ function App() {
       
       {view === 'login' && <Login onLogin={handleLogin} />}
       {view === 'admin_dashboard' && <AdminDashboard onLogout={handleLogout}/>}
-      {view === 'select_major' && <MajorSelection onNext={handleMajorSelected} />}
+      {view === 'select_major' && (
+  <MajorSelection 
+    onNext={handleMajorSelected} 
+    onLogout={handleLogout} // <--- INI TAMBAHANNYA
+  />
+)}
       {view === 'confirmation' && <Confirmation userData={userData} onStart={handleStartApp} onBack={() => saveSession(userData, 'select_major')}/>}
       
       {view === 'dashboard' && <Dashboard userName={userData.name} onSelectExam={handleSelectExam} onLogout={handleLogout} onGoToUpload={handleGoToUpload} onGoToRecap={handleGoToStudentRecap} />}

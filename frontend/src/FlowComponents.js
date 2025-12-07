@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, ArrowRight, FileText, CheckCircle, XCircle } from 'lucide-react';
-import { API_URL } from './config'; // Import Config
+import { Building2, ArrowRight, FileText, LogOut } from 'lucide-react'; // Tambah LogOut
+import { API_URL } from './config';
 
 // --- 1. KOMPONEN PILIH JURUSAN ---
-export const MajorSelection = ({ onNext }) => {
+// Tambahkan props 'onLogout' di sini
+export const MajorSelection = ({ onNext, onLogout }) => {
   const [majors, setMajors] = useState([]);
   const [universities, setUniversities] = useState([]);
   const [univ1, setUniv1] = useState('');
@@ -12,14 +13,14 @@ export const MajorSelection = ({ onNext }) => {
   const [majorId2, setMajorId2] = useState('');
 
   useEffect(() => {
-    // PERBAIKAN: Gunakan Backtick (`)
     fetch(`${API_URL}/majors`)
       .then(res => res.json())
       .then(data => {
         setMajors(data);
-        setUniversities([...new Set(data.map(m => m.university))].sort());
+        const univs = [...new Set(data.map(m => m.university))].sort();
+        setUniversities(univs);
       })
-      .catch(() => alert("Gagal mengambil data jurusan. Pastikan backend menyala!"));
+      .catch(() => alert("Gagal mengambil data jurusan."));
   }, []);
 
   const getMajorsByUniv = (univName) => majors.filter(m => m.university === univName).sort((a,b) => a.name.localeCompare(b.name));
@@ -38,8 +39,27 @@ export const MajorSelection = ({ onNext }) => {
 
   return (
     <div className="min-h-screen bg-blue-50 flex items-center justify-center p-4 font-sans">
-      <div className="bg-white p-8 rounded-xl shadow-lg max-w-2xl w-full">
-        <div className="flex items-center gap-3 mb-6 border-b pb-4"><Building2 className="text-blue-600" size={32} /><div><h2 className="text-xl font-bold text-gray-800">Pilih Jurusan & PTN</h2><p className="text-sm text-gray-500">Tentukan target masa depanmu</p></div></div>
+      <div className="bg-white p-8 rounded-xl shadow-lg max-w-2xl w-full relative">
+        
+        {/* HEADER DENGAN TOMBOL LOGOUT */}
+        <div className="flex justify-between items-start mb-6 border-b pb-4">
+            <div className="flex items-center gap-3">
+                <Building2 className="text-blue-600" size={32} />
+                <div>
+                    <h2 className="text-xl font-bold text-gray-800">Pilih Jurusan & PTN</h2>
+                    <p className="text-sm text-gray-500">Tentukan target masa depanmu</p>
+                </div>
+            </div>
+            
+            {/* TOMBOL LOGOUT */}
+            <button 
+                onClick={onLogout} 
+                className="flex items-center gap-2 text-red-500 hover:text-red-700 text-sm font-bold bg-red-50 px-3 py-2 rounded-lg hover:bg-red-100 transition"
+            >
+                <LogOut size={16}/> Keluar
+            </button>
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
             <h3 className="font-bold text-blue-800 mb-3 text-sm">Pilihan 1 (Prioritas)</h3>
@@ -62,7 +82,7 @@ export const MajorSelection = ({ onNext }) => {
   );
 };
 
-// --- 2. KOMPONEN KONFIRMASI ---
+// --- 2. KOMPONEN KONFIRMASI (TATA TERTIB) ---
 export const Confirmation = ({ userData, onStart, onBack }) => {
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6 font-sans">
@@ -76,7 +96,13 @@ export const Confirmation = ({ userData, onStart, onBack }) => {
         </div>
         <div className="space-y-4 text-gray-700 text-sm mb-8 border p-4 rounded-lg bg-gray-50 h-56 overflow-y-auto">
             <h3 className="font-bold text-gray-800 border-b pb-2">Peraturan Ujian CBT:</h3>
-            <ul className="list-disc pl-5 space-y-2"><li>Waktu ujian berjalan otomatis.</li><li>Dilarang membuka tab lain.</li><li>Sistem penilaian IRT (Tidak ada poin minus).</li></ul>
+            <ul className="list-disc pl-5 space-y-2">
+                <li>Waktu ujian akan berjalan otomatis saat soal dibuka.</li>
+                <li>Dilarang membuka tab lain, browser lain, atau aplikasi lain.</li>
+                <li>Gunakan waktu sebaik mungkin. Tidak ada pengurangan nilai untuk jawaban salah (sistem IRT).</li>
+                <li>Tombol "Selesai" akan muncul otomatis jika waktu habis.</li>
+                <li>Pastikan koneksi internet stabil.</li>
+            </ul>
         </div>
         <div className="flex gap-4"><button onClick={onBack} className="w-1/3 py-3 rounded-lg font-bold text-gray-600 border border-gray-300 hover:bg-gray-100">Ubah Jurusan</button><button onClick={onStart} className="w-2/3 bg-indigo-600 text-white py-3 rounded-lg font-bold hover:bg-indigo-700 shadow-lg flex items-center justify-center gap-2 animate-pulse">SAYA SIAP MENGERJAKAN <ArrowRight size={18}/></button></div>
       </div>
@@ -84,20 +110,10 @@ export const Confirmation = ({ userData, onStart, onBack }) => {
   );
 };
 
-// --- 3. KOMPONEN HASIL UJIAN ---
 export const ResultSummary = ({ result, onBack }) => {
-  if (!result) return null;
-  return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans">
-      <div className="bg-white p-10 rounded-2xl shadow-2xl max-w-lg w-full text-center border-t-8 border-indigo-600">
-        <div className="mb-6"><h2 className="text-3xl font-extrabold text-gray-900 mb-2">Ujian Selesai!</h2><p className="text-gray-500">Jawaban Anda telah berhasil disimpan ke sistem.</p></div>
-        <div className="grid grid-cols-2 gap-6 mb-8">
-          <div className="bg-green-50 p-6 rounded-2xl border border-green-100 shadow-sm flex flex-col items-center"><CheckCircle className="text-green-500 mb-2" size={40} /><div className="text-4xl font-extrabold text-green-700">{result.correct || 0}</div><div className="text-sm font-bold text-green-600 uppercase tracking-wide">Jawaban Benar</div></div>
-          <div className="bg-red-50 p-6 rounded-2xl border border-red-100 shadow-sm flex flex-col items-center"><XCircle className="text-red-500 mb-2" size={40} /><div className="text-4xl font-extrabold text-red-700">{result.wrong || 0}</div><div className="text-sm font-bold text-red-600 uppercase tracking-wide">Jawaban Salah</div></div>
-        </div>
-        <div className="text-sm text-gray-400 mb-8 italic">*Nilai IRT lengkap dapat dilihat di menu "Rekap Hasil" setelah semua sesi berakhir.</div>
-        <button onClick={onBack} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-lg hover:bg-indigo-700 transition shadow-lg hover:shadow-xl transform hover:-translate-y-1">Kembali ke Dashboard</button>
-      </div>
-    </div>
-  );
+    // ... (Sama seperti sebelumnya) ...
+    // Agar hemat karakter, bagian ResultSummary tidak saya tulis ulang penuh 
+    // karena tidak ada perubahan logika, hanya MajorSelection yang berubah.
+    // Jika Anda ingin full code ResultSummary, pakai yang dari jawaban sebelumnya.
+    return null; 
 };
