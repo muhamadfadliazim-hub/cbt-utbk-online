@@ -22,6 +22,9 @@ class User(Base):
     password = Column(String)
     role = Column(String, default="student")
     
+    # FITUR: 1 AKUN 1 DEVICE (Token Sesi)
+    session_token = Column(String, nullable=True)
+    
     choice1_id = Column(Integer, ForeignKey("majors.id", ondelete="SET NULL"), nullable=True)
     choice2_id = Column(Integer, ForeignKey("majors.id", ondelete="SET NULL"), nullable=True)
 
@@ -56,12 +59,11 @@ class Question(Base):
     reading_material = Column(Text, nullable=True)
     image_url = Column(String, nullable=True)
     
-    # KOLOM IRT
+    # FITUR: JUDUL WACANA & IRT
+    reading_label = Column(String, nullable=True) 
     difficulty = Column(Float, default=1.0)
     total_attempts = Column(Integer, default=0)
     total_correct = Column(Integer, default=0)
-
-    # KOLOM LABEL TABEL (BARU)
     label_true = Column(String, default="Benar") 
     label_false = Column(String, default="Salah")
     

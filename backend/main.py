@@ -8,14 +8,11 @@ from typing import Dict, Any, List, Optional
 import models, database
 import pandas as pd
 import io
+import uuid # FITUR: UUID untuk Token
 
-# 1. SETUP DATABASE
 models.Base.metadata.create_all(bind=database.engine)
-
-# 2. INISIALISASI APP
 app = FastAPI()
 
-# 3. SETUP CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -33,37 +30,28 @@ def get_db():
 class LoginSchema(BaseModel):
     username: str
     password: str
-
 class AnswerSchema(BaseModel):
     answers: Dict[str, Any] 
     username: str
-
 class UserCreateSchema(BaseModel):
     username: str
     full_name: str
     password: str
     role: str = "student" 
-
 class BulkDeleteSchema(BaseModel):
     user_ids: List[int]
-
 class MajorSelectionSchema(BaseModel):
     username: str
     choice1_id: int
     choice2_id: Optional[int] = None
-
 class ConfigSchema(BaseModel):
     value: str
-
 class PeriodCreateSchema(BaseModel):
     name: str
-
 class TogglePeriodSchema(BaseModel):
     is_active: bool
 
-# ==========================================
-# ENDPOINTS: CONFIG & TEMPLATE (UTBK ASLI)
-# ==========================================
+# --- ENDPOINTS ---
 
 @app.get("/config/release")
 def get_release_status(db: Session = Depends(get_db)):
@@ -80,71 +68,35 @@ def set_release_status(data: ConfigSchema, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Status pengumuman diperbarui", "is_released": cfg.value == "true"}
 
+# FITUR: TEMPLATE DENGAN JUDUL WACANA
 @app.get("/admin/download-template")
 def download_template_soal():
-    # CONTOH WACANA LITERASI
-    wacana = """Pemanasan global adalah peningkatan suhu rata-rata atmosfer, laut, dan daratan Bumi. Intergovernmental Panel on Climate Change (IPCC) menyimpulkan bahwa sebagian besar peningkatan suhu rata-rata global sejak pertengahan abad ke-20 kemungkinan besar disebabkan oleh meningkatnya konsentrasi gas-gas rumah kaca akibat aktivitas manusia."""
-
+    wacana = "Urban Heat Island (UHI) adalah kondisi..."
     data = [
-        # 1. LITERASI (Wacana + PG Biasa)
         {
             "Tipe": "PG", 
-            "Soal": "Apa penyebab utama pemanasan global menurut teks?", 
+            "Soal": "Apa penyebab UHI?", 
             "Bacaan": wacana, 
+            "Judul Wacana": "Teks Bacaan 1", # KOLOM BARU
             "Gambar": "",
-            "OpsiA": "Aktivitas vulkanik", "OpsiB": "Gas rumah kaca akibat manusia", 
-            "OpsiC": "Perubahan orbit bumi", "OpsiD": "Radiasi matahari", "OpsiE": "Penggundulan hutan alami", 
-            "Kunci": "B", "Kesulitan": 1.0, 
-            "Label1": "", "Label2": ""
+            "OpsiA": "Hujan", "OpsiB": "Gedung", "OpsiC": "Angin", "OpsiD": "Pohon", "OpsiE": "Sungai", 
+            "Kunci": "B", "Kesulitan": 1.0, "Label1": "", "Label2": ""
         },
-        # 2. PENALARAN UMUM (Tabel Benar/Salah)
         {
             "Tipe": "TABEL", 
-            "Soal": "Tentukan kebenaran pernyataan berikut:", 
-            "Bacaan": "", "Gambar": "",
-            "OpsiA": "Matahari terbit dari timur.", 
-            "OpsiB": "Air membeku pada 100 derajat Celcius.", 
-            "OpsiC": "", "OpsiD": "", "OpsiE": "", 
-            "Kunci": "B,S", # B=Benar, S=Salah
-            "Kesulitan": 1.0, 
-            "Label1": "Benar", "Label2": "Salah"
-        },
-        # 3. PENGETAHUAN KUANTITATIF (Isian Singkat + Gambar)
-        {
-            "Tipe": "ISIAN", 
-            "Soal": "Hitung luas segitiga jika alas=4 dan tinggi=3 (Tulis angka saja)", 
+            "Soal": "Tentukan kebenaran:", 
             "Bacaan": "", 
-            "Gambar": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/Triangle.Right.svg/200px-Triangle.Right.svg.png",
-            "OpsiA": "", "OpsiB": "", "OpsiC": "", "OpsiD": "", "OpsiE": "", 
-            "Kunci": "6", 
-            "Kesulitan": 1.0, "Label1": "", "Label2": ""
-        },
-        # 4. LITERASI BAHASA INGGRIS (PG Kompleks)
-        {
-            "Tipe": "PG KOMPLEKS", 
-            "Soal": "Which of the following are greenhouse gases? (Select multiple)", 
-            "Bacaan": "", "Gambar": "",
-            "OpsiA": "Carbon Dioxide", "OpsiB": "Oxygen", "OpsiC": "Methane", "OpsiD": "Nitrogen", "OpsiE": "Argon", 
-            "Kunci": "A,C", 
-            "Kesulitan": 1.0, "Label1": "", "Label2": ""
+            "Judul Wacana": "", 
+            "Gambar": "",
+            "OpsiA": "P1", "OpsiB": "P2", "OpsiC": "", "OpsiD": "", "OpsiE": "", 
+            "Kunci": "B,S", "Kesulitan": 1.0, "Label1": "Fakta", "Label2": "Opini"
         }
     ]
     df = pd.DataFrame(data)
-    
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False)
+    with pd.ExcelWriter(output, engine='openpyxl') as writer: df.to_excel(writer, index=False)
     output.seek(0)
-    
-    return StreamingResponse(
-        output, 
-        headers={'Content-Disposition': 'attachment; filename="template_soal_utbk_lengkap.xlsx"'}, 
-        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
-
-# ==========================================
-# ENDPOINTS: MANAJEMEN PERIODE
-# ==========================================
+    return StreamingResponse(output, headers={'Content-Disposition': 'attachment; filename="template_soal_utbk_lengkap.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @app.get("/admin/periods")
 def get_admin_periods(db: Session = Depends(get_db)):
@@ -156,33 +108,19 @@ def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
     db.add(new_period)
     db.commit()
     db.refresh(new_period)
-    
-    utbk_structure = [
-        ("PU", "Penalaran Umum", 30),
-        ("PBM", "Pemahaman Bacaan & Menulis", 25),
-        ("PPU", "Pengetahuan & Pemahaman Umum", 15),
-        ("PK", "Pengetahuan Kuantitatif", 20),
-        ("LBI", "Literasi Bahasa Indonesia", 42.5),
-        ("LBE", "Literasi Bahasa Inggris", 20),
-        ("PM", "Penalaran Matematika", 42.5)
-    ]
-    
+    utbk_structure = [("PU", "Penalaran Umum", 30), ("PBM", "Pemahaman Bacaan & Menulis", 25), ("PPU", "Pengetahuan & Pemahaman Umum", 15), ("PK", "Pengetahuan Kuantitatif", 20), ("LBI", "Literasi Bahasa Indonesia", 42.5), ("LBE", "Literasi Bahasa Inggris", 20), ("PM", "Penalaran Matematika", 42.5)]
     for code, title, duration in utbk_structure:
-        exam = models.Exam(
-            id=f"P{new_period.id}_{code}",
-            period_id=new_period.id, code=code, title=title, description="Standar SNBT", duration=duration
-        )
-        db.add(exam)
+        db.add(models.Exam(id=f"P{new_period.id}_{code}", period_id=new_period.id, code=code, title=title, description="Standar SNBT", duration=duration))
     db.commit()
     return {"message": "Periode Berhasil Dibuat!"}
 
 @app.post("/admin/periods/{period_id}/toggle")
 def toggle_period(period_id: int, data: TogglePeriodSchema, db: Session = Depends(get_db)):
     period = db.query(models.ExamPeriod).filter(models.ExamPeriod.id == period_id).first()
-    if not period: raise HTTPException(404, "Periode tidak ditemukan")
-    period.is_active = data.is_active
-    db.commit()
-    return {"message": "Status periode diubah"}
+    if period:
+        period.is_active = data.is_active
+        db.commit()
+    return {"message": "Status diubah"}
 
 @app.delete("/admin/periods/{period_id}")
 def delete_period(period_id: int, db: Session = Depends(get_db)):
@@ -194,68 +132,63 @@ def delete_period(period_id: int, db: Session = Depends(get_db)):
 
 @app.post("/admin/upload-questions/{exam_id}")
 async def upload_questions(exam_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    # Hapus soal lama (Pembersihan)
     try:
         q_ids = db.query(models.Question.id).filter(models.Question.exam_id == exam_id).all()
         q_ids = [q[0] for q in q_ids]
-        if q_ids:
-            db.query(models.Option).filter(models.Option.question_id.in_(q_ids)).delete(synchronize_session=False)
+        if q_ids: db.query(models.Option).filter(models.Option.question_id.in_(q_ids)).delete(synchronize_session=False)
         db.query(models.Question).filter(models.Question.exam_id == exam_id).delete(synchronize_session=False)
         db.commit()
-    except Exception:
-        db.rollback()
+    except Exception: db.rollback()
 
     try:
         content = await file.read()
         df = pd.read_excel(io.BytesIO(content))
         df.columns = df.columns.str.strip().str.title()
         
-        if 'Soal' not in df.columns: return {"message": "Format Excel Salah. Wajib ada kolom 'Soal'."}
+        if 'Soal' not in df.columns: return {"message": "Format Excel Salah"}
 
         count = 0
         for _, row in df.iterrows():
-            tipe_raw = str(row.get('Tipe', 'PG')).upper()
             q_type = 'multiple_choice'
-            if 'KOMPLEKS' in tipe_raw: q_type = 'complex'
-            elif 'ISIAN' in tipe_raw: q_type = 'short_answer'
-            elif 'TABEL' in tipe_raw: q_type = 'table_boolean'
-
-            # BACA LABEL CUSTOM (Fakta/Opini, Ya/Tidak)
-            l_true = str(row['Label1']) if 'Label1' in df.columns and pd.notna(row['Label1']) else "Benar"
-            l_false = str(row['Label2']) if 'Label2' in df.columns and pd.notna(row['Label2']) else "Salah"
+            if 'KOMPLEKS' in str(row.get('Tipe', '')).upper(): q_type = 'complex'
+            elif 'ISIAN' in str(row.get('Tipe', '')).upper(): q_type = 'short_answer'
+            elif 'TABEL' in str(row.get('Tipe', '')).upper(): q_type = 'table_boolean'
+            
+            label1 = str(row['Label1']) if 'Label1' in df.columns and pd.notna(row['Label1']) else "Benar"
+            label2 = str(row['Label2']) if 'Label2' in df.columns and pd.notna(row['Label2']) else "Salah"
+            judul = str(row['Judul Wacana']) if 'Judul Wacana' in df.columns and pd.notna(row['Judul Wacana']) else "Wacana"
 
             q = models.Question(
                 exam_id=exam_id, type=q_type, text=str(row['Soal']),
-                reading_material=str(row['Bacaan']) if 'Bacaan' in df.columns and pd.notna(row['Bacaan']) else None,
-                image_url=str(row['Gambar']) if 'Gambar' in df.columns and pd.notna(row['Gambar']) else None,
+                reading_material=str(row['Bacaan']) if pd.notna(row.get('Bacaan')) else None,
+                image_url=str(row['Gambar']) if pd.notna(row.get('Gambar')) else None,
                 difficulty=float(row.get('Kesulitan', 1.0)),
                 total_attempts=0, total_correct=0,
-                # SIMPAN LABEL
-                label_true=l_true, label_false=l_false
+                label_true=label1, label_false=label2,
+                reading_label=judul
             )
             db.add(q)
             db.commit()
 
             kunci = str(row.get('Kunci', ''))
-            
             if q_type == 'short_answer':
                 db.add(models.Option(question_id=q.id, option_index="KEY", label=kunci, is_correct=True))
             elif q_type == 'table_boolean':
                 keys = kunci.upper().split(',')
                 for i, col in enumerate(['Opsia', 'Opsib', 'Opsic', 'Opsid']):
-                    if col in df.columns and pd.notna(row[col]):
-                        is_true = (i < len(keys) and keys[i].strip() == "B")
-                        db.add(models.Option(question_id=q.id, option_index=str(i+1), label=str(row[col]), is_correct=is_true))
+                    if pd.notna(row.get(col)):
+                        db.add(models.Option(question_id=q.id, option_index=str(i+1), label=str(row[col]), is_correct=(i<len(keys) and keys[i].strip()=="B")))
             else:
                 key_set = set(k.strip() for k in kunci.upper().split(','))
                 for c, col in [('A','Opsia'),('B','Opsib'),('C','Opsic'),('D','Opsid'),('E','Opsie')]:
-                    if col in df.columns and pd.notna(row[col]):
+                    if pd.notna(row.get(col)):
                         db.add(models.Option(question_id=q.id, option_index=c, label=str(row[col]), is_correct=(c in key_set)))
             count += 1
-        
         db.commit()
-        return {"message": f"Sukses! {count} soal diupload."}
-    except Exception as e: return {"message": f"Error: {str(e)}"}
+        return {"message": f"Sukses! {count} soal."}
+    except Exception as e:
+        db.rollback()
+        return {"message": f"Error: {str(e)}"}
 
 @app.get("/admin/exams/{exam_id}/preview")
 def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
@@ -268,24 +201,34 @@ def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
         q_data.append({
             "id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url,
             "reading_material": q.reading_material, "difficulty": q.difficulty, "options": opts,
-            "label_true": q.label_true, "label_false": q.label_false
+            "label_true": q.label_true, "label_false": q.label_false,
+            "reading_label": q.reading_label
         })
     return {"title": exam.title, "questions": q_data}
 
-# ==========================================
-# ENDPOINTS: SISWA
-# ==========================================
-
+# --- FITUR: CEK STATUS UJIAN (LOCK ONE TIME) ---
 @app.get("/student/periods")
-def get_student_active_periods(db: Session = Depends(get_db)):
+def get_student_active_periods(username: str = None, db: Session = Depends(get_db)):
     periods = db.query(models.ExamPeriod).filter(models.ExamPeriod.is_active == True).order_by(models.ExamPeriod.id.desc()).all()
+    user_id = None
+    if username:
+        u = db.query(models.User).filter(models.User.username == username).first()
+        if u: user_id = u.id
+
     data = []
     order_map = {"PU":1, "PBM":2, "PPU":3, "PK":4, "LBI":5, "LBE":6, "PM":7}
     for p in periods:
         exams_info = []
         for e in p.exams:
             q_count = db.query(models.Question).filter(models.Question.exam_id == e.id).count()
-            exams_info.append({"id": e.id, "title": e.title, "duration": e.duration, "q_count": q_count})
+            
+            # CEK JIKA SUDAH DIKERJAKAN
+            is_done = False
+            if user_id:
+                res = db.query(models.ExamResult).filter_by(user_id=user_id, exam_id=e.id).first()
+                if res: is_done = True
+            
+            exams_info.append({"id": e.id, "title": e.title, "duration": e.duration, "q_count": q_count, "is_done": is_done})
         exams_info.sort(key=lambda x: order_map.get(x['id'].split('_')[-1], 99))
         data.append({"id": p.id, "name": p.name, "exams": exams_info})
     return data
@@ -301,19 +244,22 @@ def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
         q_data.append({
             "id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url, 
             "reading_material": q.reading_material, "options": opts,
-            "label_true": q.label_true, "label_false": q.label_false
+            "label_true": q.label_true, "label_false": q.label_false,
+            "reading_label": q.reading_label
         })
     q_data.sort(key=lambda x: x["id"]) 
     return {"id": exam.id, "title": exam.title, "duration": exam.duration, "questions": q_data}
 
 @app.post("/exams/{exam_id}/submit")
 def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
-    questions = db.query(models.Question).filter(models.Question.exam_id == exam_id).all()
     user = db.query(models.User).filter(models.User.username == data.username).first()
+    if not user: raise HTTPException(404, "User not found")
     
-    total_w, user_w, correct, wrong = 0.0, 0.0, 0, 0
+    questions = db.query(models.Question).filter(models.Question.exam_id == exam_id).all()
+    correct, wrong = 0, 0
+    total_w, user_w = 0.0, 0.0
+    
     for q in questions:
-        # LOGIKA IRT: Bobot naik jika banyak yang salah
         if q.total_attempts > 0:
             fail_rate = 1.0 - (q.total_correct / q.total_attempts)
             current_difficulty = 1.0 + (fail_rate * 2.0)
@@ -349,30 +295,40 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
             
     final_irt = (user_w / total_w) * 1000 if total_w > 0 else 0
     
-    if user:
-        prev = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first()
-        if prev: 
-            prev.correct_count = correct
-            prev.wrong_count = wrong
-            prev.irt_score = final_irt
-        else: 
-            db.add(models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct, wrong_count=wrong, irt_score=final_irt))
-        db.commit()
+    prev = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first()
+    if prev: prev.correct_count, prev.wrong_count, prev.irt_score = correct, wrong, final_irt
+    else: db.add(models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct, wrong_count=wrong, irt_score=final_irt))
+    
+    db.commit()
     return {"message": "Tersimpan", "correct": correct, "wrong": wrong}
 
-# ==========================================
-# ENDPOINTS: USER MANAGEMENT
-# ==========================================
-
+# --- FITUR: 1 AKUN 1 DEVICE (GENERATE TOKEN) ---
 @app.post("/login")
 def login(data: LoginSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.username == data.username).first()
     if not user or user.password != data.password: raise HTTPException(400, "Login Gagal")
+    
+    # Hanya Student yang dibatasi, Admin Bebas
+    token = str(uuid.uuid4())
+    if user.role == 'student':
+        user.session_token = token
+        db.commit()
+    else:
+        token = "admin-token" # Admin token statis/bebas
+
     p1 = f"{user.choice1.university} - {user.choice1.name}" if user.choice1 else ""
     p2 = f"{user.choice2.university} - {user.choice2.name}" if user.choice2 else ""
     pg1 = user.choice1.passing_grade if user.choice1 else 0
     pg2 = user.choice2.passing_grade if user.choice2 else 0
-    return {"message": "Login sukses", "name": user.full_name, "username": user.username, "role": user.role, "pilihan1": p1, "pilihan2": p2, "pg1": pg1, "pg2": pg2}
+    
+    return {
+        "message": "Login sukses", 
+        "name": user.full_name, 
+        "username": user.username, 
+        "role": user.role, 
+        "token": token, # Kirim token
+        "pilihan1": p1, "pilihan2": p2, "pg1": pg1, "pg2": pg2
+    }
 
 @app.get("/majors")
 def get_majors(db: Session = Depends(get_db)): return db.query(models.Major).all()
@@ -405,11 +361,9 @@ async def bulk_upload(file: UploadFile = File(...), db: Session = Depends(get_db
         content = await file.read()
         df = pd.read_csv(io.BytesIO(content)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(content))
         df.columns = df.columns.str.lower().str.strip()
-        if not all(k in df.columns for k in ['username','password','full_name']): return {"message": "Format salah"}
         count = 0
         for _, row in df.iterrows():
             if not db.query(models.User).filter_by(username=str(row['username'])).first():
-                # DETEKSI ROLE (Default: Student)
                 role = str(row.get('role', 'student')).strip().lower()
                 db.add(models.User(username=str(row['username']), password=str(row['password']), full_name=str(row['full_name']), role=role))
                 count += 1
@@ -471,6 +425,7 @@ def get_student_recap_list(username: str, db: Session = Depends(get_db)):
             score = res.irt_score if res else 0
             p_details.append({"code": code, "correct": res.correct_count if res else 0, "wrong": res.wrong_count if res else 0, "score": round(score, 2)})
             p_total += score
+        
         avg = p_total / 7
         status, accepted = "TIDAK LULUS", "-"
         if user.choice1 and avg >= user.choice1.passing_grade: status, accepted = "LULUS PILIHAN 1", f"{user.choice1.university} - {user.choice1.name}"

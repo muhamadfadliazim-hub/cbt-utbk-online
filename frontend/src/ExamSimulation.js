@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
-import { Clock, ChevronLeft, ChevronRight, AlertTriangle, Lock } from 'lucide-react';
+import { Clock, ChevronLeft, ChevronRight, AlertTriangle, Lock, ZoomIn, ZoomOut } from 'lucide-react';
 
 const ExamSimulation = ({ examData, onSubmit, onBack }) => {
   const savedAnswers = JSON.parse(localStorage.getItem('saved_answers')) || {};
@@ -12,7 +12,8 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
   const [answers, setAnswers] = useState(savedAnswers);
   const [timeLeft, setTimeLeft] = useState(initialTime);
   const [isSubmitting, setIsSubmitting] = useState(false); 
-  
+  const [fontSize, setFontSize] = useState(16); // Fitur Zoom
+
   const answersRef = useRef(answers);
 
   useEffect(() => {
@@ -24,7 +25,7 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
     if (!examData || isSubmitting) return;
     if (timeLeft <= 0) {
         setIsSubmitting(true);
-        alert("WAKTU HABIS! Jawaban Anda sedang dikirim ke server...");
+        alert("WAKTU HABIS! Jawaban dikirim otomatis.");
         onSubmit(answersRef.current);
         return;
     }
@@ -38,24 +39,10 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
     return () => clearInterval(timer);
   }, [timeLeft, examData, onSubmit, isSubmitting]);
 
-  if (!examData) return <div className="p-10 text-center">Memuat Data Ujian...</div>;
-
-  if (!examData.questions || examData.questions.length === 0) {
-      return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-6">
-            <div className="bg-white p-8 rounded-xl shadow-lg text-center max-w-md">
-                <AlertTriangle className="mx-auto text-orange-500 mb-4" size={48}/>
-                <h2 className="text-xl font-bold text-gray-800 mb-2">Soal Belum Tersedia</h2>
-                <p className="text-gray-500 mb-6">Admin belum mengupload soal untuk subtes ini.</p>
-                <button onClick={onBack} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700">Kembali ke Dashboard</button>
-            </div>
-        </div>
-      );
-  }
+  if (!examData || !examData.questions || examData.questions.length === 0) return <div className="p-10 text-center">Soal belum tersedia.</div>;
 
   const questions = examData.questions;
   const question = questions[currentIdx];
-  if (!question) return <div>Loading...</div>;
   const hasReading = !!question.reading_material;
 
   const handleAnswer = (val, subId = null) => {
@@ -80,58 +67,65 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
       return true;
   };
 
-  const formatTime = (seconds) => {
-      const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-      const s = (seconds % 60).toString().padStart(2, '0');
-      return `${m}:${s}`;
-  };
+  const formatTime = (s) => `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 font-sans select-none text-left">
-      <header className="bg-indigo-900 text-white p-4 flex justify-between items-center shadow-md z-50">
-        <div><h1 className="font-bold text-lg text-left">{examData.title}</h1><div className="flex items-center gap-1 text-xs text-indigo-200 mt-1"><Lock size={12}/> Mode Terkunci</div></div>
-        <div className={`flex items-center gap-2 font-mono text-2xl font-bold px-4 py-2 rounded-lg border-2 ${timeLeft < 300 ? 'bg-red-600 border-red-400 animate-pulse' : 'bg-indigo-800 border-indigo-600'}`}><Clock size={24} /> {formatTime(timeLeft)}</div>
+      <header className="bg-indigo-900 text-white p-3 flex justify-between items-center shadow-md z-50 sticky top-0">
+        <div className="flex items-center gap-4">
+            <div>
+                <h1 className="font-bold text-sm md:text-base">{examData.title}</h1>
+                <div className="flex items-center gap-1 text-[10px] text-indigo-200"><Lock size={10}/> Terkunci</div>
+            </div>
+            {/* FITUR 2: NO SOAL DI ATAS */}
+            <div className="bg-indigo-800 px-3 py-1 rounded text-sm font-mono border border-indigo-600">
+                SOAL <span className="font-bold text-yellow-400">{currentIdx + 1}</span> / {questions.length}
+            </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+            {/* FITUR ZOOM WACANA */}
+            {hasReading && (
+                <div className="flex bg-indigo-800 rounded-lg overflow-hidden border border-indigo-600">
+                    <button onClick={()=>setFontSize(s=>Math.max(12, s-2))} className="px-2 py-1 hover:bg-indigo-700 text-xs font-bold">A-</button>
+                    <button onClick={()=>setFontSize(s=>Math.min(24, s+2))} className="px-2 py-1 hover:bg-indigo-700 text-xs font-bold border-l border-indigo-600">A+</button>
+                </div>
+            )}
+            <div className={`flex items-center gap-2 font-mono text-xl font-bold px-3 py-1 rounded-lg border-2 ${timeLeft < 300 ? 'bg-red-600 border-red-400 animate-pulse' : 'bg-indigo-800 border-indigo-600'}`}>
+                <Clock size={20} /> {formatTime(timeLeft)}
+            </div>
+        </div>
       </header>
+
       <main className="flex flex-1 overflow-hidden relative">
         {isSubmitting && (<div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm"><div className="animate-spin rounded-full h-16 w-16 border-b-4 border-indigo-600 mb-4"></div><h2 className="text-2xl font-bold text-indigo-900">Waktu Habis!</h2><p className="text-gray-600">Sedang mengirim jawaban...</p></div>)}
         
-        {hasReading && (<div className="w-1/2 p-8 overflow-y-auto border-r bg-white scrollbar-thin"><div className="prose max-w-none text-gray-800 text-sm leading-relaxed"><h3 className="font-bold text-gray-500 mb-4 uppercase text-xs border-b pb-2 tracking-wide text-left">Wacana / Literasi</h3><div className="text-justify font-serif text-base leading-7" style={{whiteSpace: 'pre-wrap'}}>{question.reading_material}</div></div></div>)}
-        
+        {hasReading && (
+            <div className="w-1/2 p-6 overflow-y-auto border-r bg-white scrollbar-thin">
+                <div className="prose max-w-none text-gray-800 leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
+                    <h3 className="font-bold text-gray-500 mb-4 uppercase text-xs border-b pb-2 tracking-wide text-left">
+                        {question.reading_label || "Wacana"} 
+                    </h3>
+                    <div className="text-justify font-serif leading-8" style={{whiteSpace: 'pre-wrap'}}>{question.reading_material}</div>
+                </div>
+            </div>
+        )}
+
         <div className={`flex-1 flex flex-col ${hasReading ? 'w-1/2' : 'w-full max-w-4xl mx-auto'}`}>
             <div className="flex-1 p-6 overflow-y-auto text-left">
                 <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 min-h-[400px]">
-                    <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-100">
-                        <span className="font-bold text-indigo-600 text-lg">Soal No. {currentIdx+1}</span>
-                        {/* HAPUS LABEL TIPE SOAL (Clean Look) */}
-                    </div>
-                    
                     <div className="mb-8 text-lg text-gray-800 leading-relaxed text-left">
                         {question.image_url && <img src={question.image_url} alt="Soal" className="max-w-full h-auto mb-6 rounded-lg border shadow-sm mx-auto block"/>}
                         <div>{question.text.split(/(\$.*?\$)/).map((part, i) => part.startsWith('$') && part.endsWith('$') ? <InlineMath key={i} math={part.slice(1, -1)}/> : <span key={i}>{part}</span>)}</div>
                     </div>
-                    
+
                     <div className="space-y-3 text-left">
                         {question.type === 'short_answer' ? (
                             <input type="text" className="border-2 border-gray-300 p-4 rounded-lg w-full text-lg uppercase focus:border-indigo-500 outline-none transition" placeholder="Ketik jawaban singkat..." value={answers[question.id] || ''} onChange={(e)=>handleAnswer(e.target.value)}/>
                         ) : question.type === 'table_boolean' ? (
                             <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-                                <thead className="bg-gray-50">
-                                    <tr>
-                                        <th className="p-3 text-left border-b font-bold text-gray-600">Pernyataan</th>
-                                        {/* LABEL DINAMIS DARI EXCEL */}
-                                        <th className="p-3 text-center w-24 border-b font-bold text-green-700 bg-green-50">{question.label_true || "Benar"}</th>
-                                        <th className="p-3 text-center w-24 border-b font-bold text-red-700 bg-red-50">{question.label_false || "Salah"}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {question.options.map(opt => (
-                                        <tr key={opt.id} className="border-b last:border-0 hover:bg-gray-50">
-                                            <td className="p-3 border-r">{opt.label}</td>
-                                            <td className="text-center border-r bg-green-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-green-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='B'} onChange={()=>handleAnswer('B',opt.id)}/></td>
-                                            <td className="text-center bg-red-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-red-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='S'} onChange={()=>handleAnswer('S',opt.id)}/></td>
-                                        </tr>
-                                    ))}
-                                </tbody>
+                                <thead className="bg-gray-50"><tr><th className="p-3 text-left border-b font-bold text-gray-600">Pernyataan</th><th className="p-3 text-center w-24 border-b font-bold text-green-700 bg-green-50">{question.label_true || "Benar"}</th><th className="p-3 text-center w-24 border-b font-bold text-red-700 bg-red-50">{question.label_false || "Salah"}</th></tr></thead>
+                                <tbody>{question.options.map(opt => (<tr key={opt.id} className="border-b last:border-0 hover:bg-gray-50"><td className="p-3 border-r">{opt.label}</td><td className="text-center border-r bg-green-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-green-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='B'} onChange={()=>handleAnswer('B',opt.id)}/></td><td className="text-center bg-red-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-red-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='S'} onChange={()=>handleAnswer('S',opt.id)}/></td></tr>))}</tbody>
                             </table>
                         ) : (
                             question.options.map(opt => {
@@ -144,8 +138,7 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
                     </div>
                 </div>
             </div>
-            
-            {/* NAVIGASI */}
+
             <div className="bg-white border-t p-4 flex justify-between items-center shadow-lg z-40">
                 <button disabled={currentIdx===0} onClick={()=>setCurrentIdx(c=>c-1)} className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2 font-bold transition shadow-sm"><ChevronLeft size={18}/> Sebelumnya</button>
                 <div className="flex gap-2 overflow-x-auto max-w-[60%] scrollbar-hide px-2 py-1">{questions.map((q, i) => (<button key={i} onClick={()=>setCurrentIdx(i)} className={`w-10 h-10 rounded-lg text-sm font-bold shrink-0 transition-all shadow-sm ${currentIdx===i ? 'bg-indigo-600 text-white ring-2 ring-indigo-300': isAnswered(q.id) ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' : 'bg-gray-100 text-gray-400 border border-gray-200 hover:bg-gray-200'}`}>{i+1}</button>))}</div>
