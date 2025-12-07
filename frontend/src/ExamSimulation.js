@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
-import { Clock, ChevronLeft, ChevronRight, AlertTriangle, Lock, ZoomIn, ZoomOut } from 'lucide-react';
+import { Clock, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 
 const ExamSimulation = ({ examData, onSubmit, onBack }) => {
   const savedAnswers = JSON.parse(localStorage.getItem('saved_answers')) || {};
@@ -39,7 +39,8 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
     return () => clearInterval(timer);
   }, [timeLeft, examData, onSubmit, isSubmitting]);
 
-  if (!examData || !examData.questions || examData.questions.length === 0) return <div className="p-10 text-center">Soal belum tersedia.</div>;
+  if (!examData) return <div className="p-10 text-center">Memuat Data Ujian...</div>;
+  if (!examData.questions || examData.questions.length === 0) return <div className="p-10 text-center">Soal belum tersedia.</div>;
 
   const questions = examData.questions;
   const question = questions[currentIdx];
@@ -77,7 +78,7 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
                 <h1 className="font-bold text-sm md:text-base">{examData.title}</h1>
                 <div className="flex items-center gap-1 text-[10px] text-indigo-200"><Lock size={10}/> Terkunci</div>
             </div>
-            {/* FITUR 2: NO SOAL DI ATAS */}
+            
             <div className="bg-indigo-800 px-3 py-1 rounded text-sm font-mono border border-indigo-600">
                 SOAL <span className="font-bold text-yellow-400">{currentIdx + 1}</span> / {questions.length}
             </div>
@@ -87,10 +88,11 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
             {/* FITUR ZOOM WACANA */}
             {hasReading && (
                 <div className="flex bg-indigo-800 rounded-lg overflow-hidden border border-indigo-600">
-                    <button onClick={()=>setFontSize(s=>Math.max(12, s-2))} className="px-2 py-1 hover:bg-indigo-700 text-xs font-bold">A-</button>
-                    <button onClick={()=>setFontSize(s=>Math.min(24, s+2))} className="px-2 py-1 hover:bg-indigo-700 text-xs font-bold border-l border-indigo-600">A+</button>
+                    <button onClick={()=>setFontSize(s=>Math.max(12, s-2))} className="px-2 py-1 hover:bg-indigo-700 text-xs font-bold text-white">A-</button>
+                    <button onClick={()=>setFontSize(s=>Math.min(24, s+2))} className="px-2 py-1 hover:bg-indigo-700 text-xs font-bold border-l border-indigo-600 text-white">A+</button>
                 </div>
             )}
+            
             <div className={`flex items-center gap-2 font-mono text-xl font-bold px-3 py-1 rounded-lg border-2 ${timeLeft < 300 ? 'bg-red-600 border-red-400 animate-pulse' : 'bg-indigo-800 border-indigo-600'}`}>
                 <Clock size={20} /> {formatTime(timeLeft)}
             </div>
@@ -100,6 +102,7 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
       <main className="flex flex-1 overflow-hidden relative">
         {isSubmitting && (<div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm"><div className="animate-spin rounded-full h-16 w-16 border-b-4 border-indigo-600 mb-4"></div><h2 className="text-2xl font-bold text-indigo-900">Waktu Habis!</h2><p className="text-gray-600">Sedang mengirim jawaban...</p></div>)}
         
+        {/* WACANA (KIRI) */}
         {hasReading && (
             <div className="w-1/2 p-6 overflow-y-auto border-r bg-white scrollbar-thin">
                 <div className="prose max-w-none text-gray-800 leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
@@ -111,6 +114,7 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
             </div>
         )}
 
+        {/* SOAL (KANAN) */}
         <div className={`flex-1 flex flex-col ${hasReading ? 'w-1/2' : 'w-full max-w-4xl mx-auto'}`}>
             <div className="flex-1 p-6 overflow-y-auto text-left">
                 <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 min-h-[400px]">
