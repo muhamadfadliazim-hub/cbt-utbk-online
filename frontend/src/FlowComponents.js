@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, ArrowRight, FileText, LogOut } from 'lucide-react'; // Tambah LogOut
+import { Building2, ArrowRight, FileText, CheckCircle, XCircle, LogOut } from 'lucide-react';
 import { API_URL } from './config';
 
 // --- 1. KOMPONEN PILIH JURUSAN ---
-// Tambahkan props 'onLogout' di sini
 export const MajorSelection = ({ onNext, onLogout }) => {
   const [majors, setMajors] = useState([]);
   const [universities, setUniversities] = useState([]);
@@ -13,14 +12,10 @@ export const MajorSelection = ({ onNext, onLogout }) => {
   const [majorId2, setMajorId2] = useState('');
 
   useEffect(() => {
-    fetch(`${API_URL}/majors`)
-      .then(res => res.json())
-      .then(data => {
+    fetch(`${API_URL}/majors`).then(res => res.json()).then(data => {
         setMajors(data);
-        const univs = [...new Set(data.map(m => m.university))].sort();
-        setUniversities(univs);
-      })
-      .catch(() => alert("Gagal mengambil data jurusan."));
+        setUniversities([...new Set(data.map(m => m.university))].sort());
+    }).catch(() => alert("Gagal mengambil data jurusan."));
   }, []);
 
   const getMajorsByUniv = (univName) => majors.filter(m => m.university === univName).sort((a,b) => a.name.localeCompare(b.name));
@@ -39,9 +34,8 @@ export const MajorSelection = ({ onNext, onLogout }) => {
 
   return (
     <div className="min-h-screen bg-blue-50 flex items-center justify-center p-4 font-sans">
-      <div className="bg-white p-8 rounded-xl shadow-lg max-w-2xl w-full relative">
+      <div className="bg-white p-8 rounded-xl shadow-lg max-w-2xl w-full">
         
-        {/* HEADER DENGAN TOMBOL LOGOUT */}
         <div className="flex justify-between items-start mb-6 border-b pb-4">
             <div className="flex items-center gap-3">
                 <Building2 className="text-blue-600" size={32} />
@@ -50,13 +44,11 @@ export const MajorSelection = ({ onNext, onLogout }) => {
                     <p className="text-sm text-gray-500">Tentukan target masa depanmu</p>
                 </div>
             </div>
-            
-            {/* TOMBOL LOGOUT */}
             <button 
-                onClick={onLogout} 
-                className="flex items-center gap-2 text-red-500 hover:text-red-700 text-sm font-bold bg-red-50 px-3 py-2 rounded-lg hover:bg-red-100 transition"
+                onClick={onLogout}
+                className="flex items-center gap-2 px-3 py-1.5 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition text-xs font-bold"
             >
-                <LogOut size={16}/> Keluar
+                <LogOut size={14}/> Keluar
             </button>
         </div>
 
@@ -109,8 +101,6 @@ export const Confirmation = ({ userData, onStart, onBack }) => {
     </div>
   );
 };
-
-// ... kode atas tetap sama ...
 
 // --- 3. KOMPONEN HASIL UJIAN ---
 export const ResultSummary = ({ result, onBack }) => {
