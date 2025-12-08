@@ -8,7 +8,6 @@ from typing import Dict, Any, List, Optional
 import models, database
 import pandas as pd
 import io
-# UUID tidak lagi diimport
 
 models.Base.metadata.create_all(bind=database.engine)
 app = FastAPI()
@@ -26,16 +25,13 @@ def get_db():
     try: yield db
     finally: db.close()
 
-# --- SCHEMAS (TOKEN DIHILANGKAN) ---
+# --- SCHEMAS ---
 class LoginSchema(BaseModel):
     username: str
     password: str
-
 class AnswerSchema(BaseModel):
     answers: Dict[str, Any] 
     username: str
-    # Token dihilangkan
-
 class UserCreateSchema(BaseModel):
     username: str
     full_name: str
@@ -212,6 +208,7 @@ def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
         })
     return {"title": exam.title, "questions": q_data}
 
+# --- FITUR KUNCI UJIAN (STATUS is_done) ---
 @app.get("/student/periods")
 def get_student_active_periods(username: str = None, db: Session = Depends(get_db)):
     periods = db.query(models.ExamPeriod).filter(models.ExamPeriod.is_active == True).order_by(models.ExamPeriod.id.desc()).all()
@@ -226,10 +223,13 @@ def get_student_active_periods(username: str = None, db: Session = Depends(get_d
         exams_info = []
         for e in p.exams:
             q_count = db.query(models.Question).filter(models.Question.exam_id == e.id).count()
+            
+            # CEK APAKAH SUDAH DIKERJAKAN
             is_done = False
             if user_id:
                 res = db.query(models.ExamResult).filter_by(user_id=user_id, exam_id=e.id).first()
                 if res: is_done = True
+            
             exams_info.append({"id": e.id, "title": e.title, "duration": e.duration, "q_count": q_count, "is_done": is_done})
         exams_info.sort(key=lambda x: order_map.get(x['id'].split('_')[-1], 99))
         data.append({"id": p.id, "name": p.name, "exams": exams_info})
@@ -257,8 +257,11 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
     user = db.query(models.User).filter(models.User.username == data.username).first()
     if not user: raise HTTPException(404, "User not found")
     
-    # Logika Token dihilangkan
-    
+    # CEK DOUBLE SUBMIT
+    existing = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first()
+    if existing:
+        return {"message": "Ujian sudah dikerjakan sebelumnya.", "correct": existing.correct_count, "wrong": existing.wrong_count}
+
     questions = db.query(models.Question).filter(models.Question.exam_id == exam_id).all()
     correct, wrong = 0, 0
     total_w, user_w = 0.0, 0.0
@@ -299,10 +302,7 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
             
     final_irt = (user_w / total_w) * 1000 if total_w > 0 else 0
     
-    prev = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first()
-    if prev: prev.correct_count, prev.wrong_count, prev.irt_score = correct, wrong, final_irt
-    else: db.add(models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct, wrong_count=wrong, irt_score=final_irt))
-    
+    db.add(models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct, wrong_count=wrong, irt_score=final_irt))
     db.commit()
     return {"message": "Tersimpan", "correct": correct, "wrong": wrong}
 
@@ -323,4 +323,111 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
         "role": user.role, 
         "pilihan1": p1, "pilihan2": p2, "pg1": pg1, "pg2": pg2
     }
-# ... (Semua endpoint user management dan recap lainnya SAMA)
+
+@app.get("/majors")
+def get_majors(db: Session = Depends(get_db)): return db.query(models.Major).all()
+
+@app.post("/users/select-major")
+def set_user_major(data: MajorSelectionSchema, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.username == data.username).first()
+    if user: user.choice1_id, user.choice2_id = data.choice1_id, data.choice2_id; db.commit()
+    return {"message": "Saved"}
+
+@app.get("/admin/users")
+def get_all_users(db: Session = Depends(get_db)): return db.query(models.User).order_by(models.User.id.desc()).all()
+
+@app.post("/admin/users")
+def create_user(user: UserCreateSchema, db: Session = Depends(get_db)):
+    if db.query(models.User).filter_by(username=user.username).first(): raise HTTPException(400, "Username ada")
+    db.add(models.User(username=user.username, full_name=user.full_name, password=user.password, role=user.role))
+    db.commit()
+    return {"message": "OK"}
+
+@app.delete("/admin/users/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db)): db.query(models.User).filter_by(id=user_id).delete(); db.commit(); return {"message": "OK"}
+
+@app.post("/admin/users/delete-bulk")
+def delete_bulk(data: BulkDeleteSchema, db: Session = Depends(get_db)): db.execute(delete(models.User).where(models.User.id.in_(data.user_ids))); db.commit(); return {"message": "OK"}
+
+@app.post("/admin/users/bulk")
+async def bulk_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    try:
+        content = await file.read()
+        df = pd.read_csv(io.BytesIO(content)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(content))
+        df.columns = df.columns.str.lower().str.strip()
+        count = 0
+        for _, row in df.iterrows():
+            uname = str(row['username']).strip()
+            if not db.query(models.User).filter_by(username=uname).first():
+                # PERBAIKAN: Deteksi Role
+                role = str(row.get('role', 'student')).strip().lower()
+                db.add(models.User(username=uname, password=str(row['password']), full_name=str(row['full_name']), role=role))
+                count += 1
+        db.commit()
+        return {"message": f"{count} user"}
+    except Exception as e: return {"message": str(e)}
+
+@app.get("/admin/recap")
+def get_score_recap(period_id: Optional[int] = None, db: Session = Depends(get_db)):
+    users = db.query(models.User).filter(models.User.role == 'student').options(joinedload(models.User.results), joinedload(models.User.choice1), joinedload(models.User.choice2)).all()
+    data = []
+    for user in users:
+        user_results = [r for r in user.results if r.exam_id.startswith(f"P{period_id}_")] if period_id else user.results
+        if period_id and not user_results: continue
+        scores = {}
+        for res in user_results:
+            scores[res.exam_id.split('_')[-1]] = res.irt_score 
+        avg = sum(scores.values()) / 7 if len(scores) > 0 else 0
+        status, major = "TIDAK LULUS", "-"
+        if user.choice1 and avg >= user.choice1.passing_grade: status, major = "LULUS PILIHAN 1", f"{user.choice1.university} - {user.choice1.name}"
+        elif user.choice2 and avg >= user.choice2.passing_grade: status, major = "LULUS PILIHAN 2", f"{user.choice2.university} - {user.choice2.name}"
+        row = {"full_name": user.full_name, "username": user.username, "average": round(avg, 2), "status": status, "accepted_major": major}
+        for c in ["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"]: row[c] = round(scores.get(c, 0), 2)
+        data.append(row)
+    return data
+
+@app.get("/admin/recap/download")
+def download_recap_excel(period_id: Optional[int] = None, db: Session = Depends(get_db)):
+    data = get_score_recap(period_id, db)
+    df = pd.DataFrame(data)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer: df.to_excel(writer, index=False)
+    output.seek(0)
+    filename = f"rekap_periode_{period_id}.xlsx" if period_id else "rekap_semua.xlsx"
+    return StreamingResponse(output, headers={'Content-Disposition': f'attachment; filename="{filename}"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+@app.get("/student/recap/{username}")
+def get_student_recap_list(username: str, db: Session = Depends(get_db)):
+    cfg = db.query(models.SystemConfig).filter_by(key="release_announcement").first()
+    is_released = cfg.value == "true" if cfg else False
+    user = db.query(models.User).filter(models.User.username == username).options(joinedload(models.User.results), joinedload(models.User.choice1), joinedload(models.User.choice2)).first()
+    if not user: raise HTTPException(404, "User not found")
+    participated_periods = set()
+    for res in user.results:
+        try: participated_periods.add(int(res.exam_id.split('_')[0].replace('P', '')))
+        except: pass
+    periods_db = db.query(models.ExamPeriod).filter(models.ExamPeriod.id.in_(participated_periods)).all()
+    period_map = {p.id: p.name for p in periods_db}
+    reports = []
+    for p_id in participated_periods:
+        p_name = period_map.get(p_id, f"Tryout #{p_id}")
+        p_details, p_total = [], 0
+        for code in ["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"]:
+            res = next((r for r in user.results if r.exam_id == f"P{p_id}_{code}"), None)
+            score = res.irt_score if res else 0
+            p_details.append({"code": code, "correct": res.correct_count if res else 0, "wrong": res.wrong_count if res else 0, "score": round(score, 2)})
+            p_total += score
+        avg = p_total / 7
+        status, accepted = "TIDAK LULUS", "-"
+        if user.choice1 and avg >= user.choice1.passing_grade: status, accepted = "LULUS PILIHAN 1", f"{user.choice1.university} - {user.choice1.name}"
+        elif user.choice2 and avg >= user.choice2.passing_grade: status, accepted = "LULUS PILIHAN 2", f"{user.choice2.university} - {user.choice2.name}"
+        reports.append({"period_id": p_id, "period_name": p_name, "average": round(avg, 2), "status": status, "accepted_major": accepted, "details": p_details})
+    choice1_lbl = f"{user.choice1.university} - {user.choice1.name}" if user.choice1 else "-"
+    choice2_lbl = f"{user.choice2.university} - {user.choice2.name}" if user.choice2 else "-"
+    pg1 = user.choice1.passing_grade if user.choice1 else 0
+    pg2 = user.choice2.passing_grade if user.choice2 else 0
+    return {
+        "is_released": is_released, "full_name": user.full_name, 
+        "choice1_label": choice1_lbl, "choice1_pg": pg1, "choice2_label": choice2_lbl, "choice2_pg": pg2,
+        "reports": reports
+    }

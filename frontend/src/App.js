@@ -213,9 +213,11 @@ function App() {
       {view === 'dashboard' && (
         <Dashboard 
             userName={userData?.name} 
+            username={userData?.username} // <--- PERBAIKAN: Kirim props username
             onSelectExam={handleSelectExam} 
             onLogout={handleLogout} 
-            onGoToRecap={() => updateView('student_recap')} 
+            onGoToUpload={handleGoToUpload} 
+            onGoToRecap={handleGoToStudentRecap} 
         />
       )}
 

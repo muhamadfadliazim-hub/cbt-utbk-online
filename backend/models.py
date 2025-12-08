@@ -22,8 +22,6 @@ class User(Base):
     password = Column(String)
     role = Column(String, default="student")
     
-    # KOLOM SESSION_TOKEN TIDAK DIGUNAKAN
-    
     choice1_id = Column(Integer, ForeignKey("majors.id", ondelete="SET NULL"), nullable=True)
     choice2_id = Column(Integer, ForeignKey("majors.id", ondelete="SET NULL"), nullable=True)
 
@@ -36,8 +34,7 @@ class ExamPeriod(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String) 
     is_active = Column(Boolean, default=False)
-    # 🌟 PERBAIKAN BUG: Harus mereferensikan class "Exam"
-    exams = relationship("Exam", back_populates="period", cascade="all, delete") 
+    exams = relationship("Exam", back_populates="period", cascade="all, delete")
 
 class Exam(Base):
     __tablename__ = "exams"
@@ -59,16 +56,14 @@ class Question(Base):
     reading_material = Column(Text, nullable=True)
     image_url = Column(String, nullable=True)
     
-    # FITUR: JUDUL WACANA & RUJUKAN
+    # Metadata Soal
     reading_label = Column(String, nullable=True) 
-    citation = Column(String, nullable=True)
-    
-    # IRT STATS
     difficulty = Column(Float, default=1.0)
     total_attempts = Column(Integer, default=0)
     total_correct = Column(Integer, default=0)
     label_true = Column(String, default="Benar") 
     label_false = Column(String, default="Salah")
+    citation = Column(String, nullable=True) 
     
     exam = relationship("Exam", back_populates="questions")
     options = relationship("Option", back_populates="question", cascade="all, delete")

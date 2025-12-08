@@ -1,26 +1,23 @@
 import React, { useEffect, useState } from 'react';
-import { BookOpen, Calculator, PenTool, BrainCircuit, ChevronRight, Loader2, Clock, FileText, LogOut, FileBarChart, Folder } from 'lucide-react';
-import { API_URL } from './config'; // Import Config
+import { BookOpen, Calculator, PenTool, BrainCircuit, ChevronRight, Loader2, Clock, FileText, LogOut, FileBarChart, Folder, CheckCircle } from 'lucide-react';
+import { API_URL } from './config';
 
-const Dashboard = ({ onSelectExam, userName, onLogout, onGoToRecap }) => {
+const Dashboard = ({ onSelectExam, userName, username, onLogout, onGoToRecap }) => {
   const [periods, setPeriods] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [expandedPeriod, setExpandedPeriod] = useState(null);
 
   useEffect(() => {
-    // PERBAIKAN: Gunakan API_URL dan Backtick
-    fetch(`${API_URL}/student/periods`)
-      .then(res => {
-        if (!res.ok) throw new Error("Gagal mengambil data periode");
-        return res.json();
-      })
+    // Kirim username agar backend bisa cek status is_done
+    fetch(`${API_URL}/student/periods?username=${username}`)
+      .then(res => res.json())
       .then(data => { 
         if (Array.isArray(data)) setPeriods(data);
         else setPeriods([]); 
         setLoading(false); 
       })
       .catch(err => { setPeriods([]); setLoading(false); });
-  }, []);
+  }, [username]);
 
   const getIcon = (title) => {
     if (title.includes('Kuantitatif') || title.includes('Matematika')) return <Calculator className="text-blue-500" />;
@@ -55,10 +52,13 @@ const Dashboard = ({ onSelectExam, userName, onLogout, onGoToRecap }) => {
                         {expandedPeriod === period.id && (
                             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 border-t border-gray-200">
                                 {period.exams.map(exam => (
-                                    <div key={exam.id} onClick={() => onSelectExam(exam.id)} className="bg-white p-4 rounded-lg border border-gray-200 hover:shadow-md hover:border-blue-400 cursor-pointer transition flex items-center gap-4 group">
-                                        <div className="p-3 bg-gray-100 rounded-lg group-hover:bg-blue-50 transition-colors">{getIcon(exam.title)}</div>
-                                        <div><h4 className="font-bold text-gray-800 text-sm group-hover:text-blue-700 transition-colors">{exam.title}</h4><div className="text-xs text-gray-500 mt-1 flex gap-3"><span className="flex items-center gap-1"><Clock size={12}/> {exam.duration}m</span><span className="flex items-center gap-1"><FileText size={12}/> {exam.q_count} Soal</span></div></div>
-                                        <ChevronRight className="ml-auto text-gray-300 group-hover:text-blue-500 transition-colors" size={18}/>
+                                    <div key={exam.id} onClick={() => !exam.is_done && onSelectExam(exam.id)} className={`p-4 rounded-lg border transition flex items-center gap-4 group relative ${exam.is_done ? 'bg-gray-100 border-gray-200 cursor-not-allowed opacity-75' : 'bg-white border-gray-200 hover:shadow-md hover:border-blue-400 cursor-pointer'}`}>
+                                        <div className={`p-3 rounded-lg transition-colors ${exam.is_done ? 'bg-gray-200' : 'bg-gray-100 group-hover:bg-blue-50'}`}>{exam.is_done ? <CheckCircle className="text-green-600"/> : getIcon(exam.title)}</div>
+                                        <div>
+                                            <h4 className={`font-bold text-sm ${exam.is_done ? 'text-gray-500' : 'text-gray-800 group-hover:text-blue-700'}`}>{exam.title}</h4>
+                                            <div className="text-xs text-gray-500 mt-1 flex gap-3"><span className="flex items-center gap-1"><Clock size={12}/> {exam.duration}m</span><span className="flex items-center gap-1"><FileText size={12}/> {exam.q_count} Soal</span></div>
+                                        </div>
+                                        {exam.is_done ? (<div className="ml-auto bg-green-100 text-green-700 text-[10px] font-bold px-2 py-1 rounded border border-green-200">SELESAI</div>) : (<ChevronRight className="ml-auto text-gray-300 group-hover:text-blue-500 transition-colors" size={18}/>)}
                                     </div>
                                 ))}
                             </div>

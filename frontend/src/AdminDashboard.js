@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock } from 'lucide-react';
+import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
 
 const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
+  // State di-init dengan [] agar tidak error saat map pertama kali
   const [periods, setPeriods] = useState([]);
   const [newPeriodName, setNewPeriodName] = useState('');
   const [expandedPeriod, setExpandedPeriod] = useState(null);
@@ -20,23 +21,29 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
-  // --- API CALLS (DENGAN PENGAMAN) ---
+  // --- API CALLS (DENGAN PENGAMAN ARRAY) ---
   const fetchPeriods = () => {
     fetch(`${API_URL}/admin/periods`)
       .then(r => r.json())
       .then(data => {
           // PENGAMAN: Hanya set jika data adalah Array
           if (Array.isArray(data)) setPeriods(data);
-          else setPeriods([]); 
+          else {
+              console.error("Data periode bukan array:", data);
+              setPeriods([]); 
+          }
       })
-      .catch(() => setPeriods([]));
+      .catch((err) => {
+          console.error("Gagal fetch periods:", err);
+          setPeriods([]);
+      });
   };
 
   const fetchUsers = () => {
     fetch(`${API_URL}/admin/users`)
         .then(r => r.json())
         .then(data => {
-            if (Array.isArray(data)) {
+            if (Array.isArray(data)) { 
                 setUsers(data); 
                 setSelectedIds([]);
             } else {
@@ -148,7 +155,8 @@ const AdminDashboard = ({ onLogout }) => {
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
                     <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-xl font-bold text-gray-800">Preview: {previewData.title}</h3><p className="text-sm text-gray-500">Total: {previewData.questions.length} Soal</p></div><button onClick={() => setShowPreview(false)} className="p-2 hover:bg-gray-200 rounded-full"><X/></button></div>
                     <div className="flex-1 overflow-y-auto p-6 space-y-8">
-                        {previewData.questions.length === 0 ? (<div className="text-center text-gray-400 py-10">Belum ada soal.</div>) : (
+                        {/* SAFE GUARD: Check length */}
+                        {(!previewData.questions || previewData.questions.length === 0) ? (<div className="text-center text-gray-400 py-10">Belum ada soal.</div>) : (
                             previewData.questions.map((q, idx) => (
                                 <div key={q.id} className="border p-4 rounded-lg bg-gray-50 relative"><div className="absolute top-2 right-2 bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded font-bold">Bobot: {q.difficulty}</div><div className="mb-4"><span className="font-bold text-indigo-600 mr-2">No. {idx + 1}</span><div className="text-gray-800 mt-1">{q.reading_material && <div className="p-3 bg-white border mb-2 text-sm italic whitespace-pre-wrap">{q.reading_material}</div>}{q.image_url && <img src={q.image_url} alt="soal" className="max-h-48 mb-2 rounded border"/>}{q.text.split(/(\$.*?\$)/).map((part, i) => part.startsWith('$') && part.endsWith('$') ? <InlineMath key={i} math={part.slice(1, -1)}/> : <span key={i}>{part}</span>)}</div></div><div className="space-y-2 pl-4">{q.type === 'short_answer' ? (<div className="p-2 bg-green-100 border border-green-300 rounded text-green-800 font-mono text-sm"><strong>Kunci Jawaban:</strong> {q.options[0]?.label}</div>) : (q.options.map(opt => (<div key={opt.id} className={`p-2 rounded text-sm border flex items-center gap-2 ${opt.is_correct ? 'bg-green-100 border-green-300 ring-1 ring-green-500' : 'bg-white border-gray-300'}`}><span className={`w-6 h-6 flex items-center justify-center rounded font-bold text-xs ${opt.is_correct ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>{opt.id}</span><span className={opt.is_correct ? 'font-bold text-green-900' : 'text-gray-700'}>{opt.label}</span>{opt.is_correct && <CheckCircle size={14} className="text-green-600 ml-auto"/>}</div>)))}</div></div>
                             ))
@@ -165,7 +173,7 @@ const AdminDashboard = ({ onLogout }) => {
                 <div className="bg-white p-6 rounded-xl shadow-sm border mb-8 flex gap-4 items-end"><div className="flex-1"><label className="block text-sm font-bold text-gray-600 mb-1">Nama Periode Baru</label><input className="w-full p-2 border rounded" placeholder="Contoh: Tryout Akbar Batch 1" value={newPeriodName} onChange={(e)=>setNewPeriodName(e.target.value)}/></div><button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold hover:bg-indigo-700 h-10">+ Buat Periode</button></div>
                 
                 <div className="space-y-6">
-                    {/* SAFE GUARD: Check Array.isArray sebelum .map */}
+                    {/* SAFE GUARD: Array.isArray */}
                     {Array.isArray(periods) && periods.map(period => (
                         <div key={period.id} className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
                             <div className="p-5 bg-gray-50 flex items-center justify-between border-b">
@@ -183,17 +191,14 @@ const AdminDashboard = ({ onLogout }) => {
                             )}
                         </div>
                     ))}
-                    {/* Jika Kosong atau Error */}
+                    {/* Pesan jika kosong */}
                     {(!Array.isArray(periods) || periods.length === 0) && (
-                        <div className="text-center p-8 text-gray-400 italic bg-white rounded border">
-                            Belum ada periode ujian. Silakan buat baru.
-                        </div>
+                        <div className="text-center p-8 bg-white border rounded text-gray-400">Belum ada periode.</div>
                     )}
                 </div>
             </div>
         )}
         
-        {/* TAB 2 & 3: USERS & RECAP */}
         {tab === 'users' && (<div><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">Manajemen User</h2>{selectedIds.length > 0 && <button onClick={handleBulkDelete} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"><Trash2 size={16}/> Hapus {selectedIds.length}</button>}</div><div className="bg-white p-5 rounded-lg shadow mb-6 flex gap-3 flex-wrap"><input placeholder="Username" className="border p-2 rounded flex-1" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input placeholder="Nama Lengkap" className="border p-2 rounded flex-1" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input placeholder="Password" type="password" className="border p-2 rounded flex-1" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><select className="border p-2 rounded bg-gray-50" value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})}><option value="student">Siswa</option><option value="admin">Admin</option></select><button onClick={handleAddUser} className="bg-green-600 text-white px-4 py-2 rounded font-bold"><Plus size={16}/></button><div className="w-full h-px bg-gray-200 my-2"></div><label className="text-blue-600 cursor-pointer text-sm flex items-center gap-2 hover:underline"><Upload size={14}/> Upload Excel User (.xlsx)<input type="file" className="hidden" accept=".xlsx" onChange={handleBulkUpload}/></label></div><div className="bg-white shadow rounded overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={users.length > 0 && selectedIds.length === users.length}/></th><th className="p-3 text-left">Nama</th><th className="p-3 text-left">Username</th><th className="p-3 text-left">Role</th></tr></thead><tbody>{Array.isArray(users) && users.map(u => (<tr key={u.id} className="border-b hover:bg-gray-50"><td className="p-3 text-center"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={() => handleSelectOne(u.id)}/></td><td className="p-3">{u.full_name}</td><td className="p-3 font-mono">{u.username}</td><td className="p-3"><span className={`px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-green-100 text-green-700'}`}>{u.role.toUpperCase()}</span></td></tr>))}</tbody></table></div></div>)}
         
         {tab === 'recap' && (
@@ -206,11 +211,11 @@ const AdminDashboard = ({ onLogout }) => {
                     <table className="min-w-full text-sm text-left border-collapse">
                         <thead className="bg-indigo-900 text-white"><tr><th className="p-4 border-r border-indigo-800 w-64" rowSpan="2">Nama Siswa</th><th className="p-2 text-center border-b border-indigo-800 bg-indigo-800" colSpan="7">Skor 7 Subtes (IRT)</th><th className="p-4 text-center border-l border-indigo-800 bg-blue-900 w-24" rowSpan="2">Skor Akhir</th><th className="p-4 border-l border-indigo-800 bg-indigo-800" rowSpan="2">Keterangan Lulus</th></tr><tr>{["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"].map(sub => (<th key={sub} className="p-2 text-center border-r border-indigo-700 bg-indigo-700 text-xs font-bold w-16">{sub}</th>))}</tr></thead>
                         <tbody className="divide-y divide-gray-100">
-                            {/* SAFE MAP: Pastikan recap adalah array */}
+                            {/* SAFE GUARD: Check Array.isArray */}
                             {Array.isArray(recap) && recap.map((r, i) => (
                                 <tr key={i} className={`hover:bg-gray-50 transition-colors ${r.status.startsWith('LULUS') ? 'bg-green-50/30' : ''}`}><td className="p-4 border-r border-gray-100"><div className="font-bold text-gray-800">{r.full_name}</div><div className="text-xs text-gray-400 font-mono mt-0.5">{r.username}</div></td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PU}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PPU}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PBM}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PK}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.LBI}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.LBE}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PM}</td><td className="p-4 text-center border-l border-gray-100 font-extrabold text-blue-700 text-lg bg-blue-50/50">{r.average}</td><td className="p-4 border-l border-gray-100 align-middle">{r.status.startsWith('LULUS') ? (<div><span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-green-100 text-green-700 mb-1"><CheckCircle size={12}/> LULUS</span><div className="text-xs font-bold text-gray-700 leading-tight">{r.accepted_major}</div></div>) : (<span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-red-100 text-red-600"><XCircle size={12}/> TIDAK LULUS</span>)}</td></tr>
                             ))}
-                            {(!Array.isArray(recap) || recap.length === 0) && <tr><td colSpan="11" className="p-8 text-center text-gray-400 italic">Belum ada data nilai untuk periode ini.</td></tr>}
+                            {(!Array.isArray(recap) || recap.length === 0) && <tr><td colSpan="11" className="p-8 text-center text-gray-400 italic">Belum ada data nilai.</td></tr>}
                         </tbody>
                     </table>
                 </div>
