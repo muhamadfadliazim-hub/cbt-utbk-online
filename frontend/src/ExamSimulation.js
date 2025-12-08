@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import 'katex/dist/katex.min.css';
-import { InlineMath, BlockMath } from 'react-katex'; // Pastikan BlockMath juga diimport
+// PERBAIKAN: Menghapus 'BlockMath' dari import karena tidak digunakan
+import { InlineMath } from 'react-katex';
 import { Clock, ChevronLeft, ChevronRight, Save, Lock } from 'lucide-react';
 
 const ExamSimulation = ({ examData, onSubmit, onBack }) => {
@@ -20,7 +21,7 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
 
   const answersRef = useRef(answers);
 
-  // 🌟 UTILITY 1: Fungsi Format Markup (Bold, Italic, Underline)
+  // UTILITY: Format Markup (Bold, Italic, Underline) & HTML Text
   const formatHtmlText = (text) => {
     if (!text) return '';
     return text
@@ -34,23 +35,14 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
         .replace(/\n/g, '<br/>');
   };
 
-  // 🌟 UTILITY 2: Render Teks Campuran (HTML + LaTeX)
-  // Fungsi ini memecah string berdasarkan tanda $ untuk memisahkan teks biasa dan rumus
+  // UTILITY: Render Teks Campuran (HTML + LaTeX)
   const renderMixedContent = (content) => {
     if (!content) return null;
-
-    // Split berdasarkan tanda $ (LaTeX inline)
-    // Regex ini menangkap $...$ sebagai grup pemisah
     const parts = content.split(/(\$.*?\$)/g);
-
     return parts.map((part, index) => {
-        // Jika bagian ini diawali dan diakhiri $, maka ini LaTeX Inline
         if (part.startsWith('$') && part.endsWith('$')) {
-            // Hapus tanda $ dan render dengan Katex
             return <InlineMath key={index} math={part.slice(1, -1)} />;
-        } 
-        // Jika bukan, maka ini teks biasa (HTML markup)
-        else {
+        } else {
             return (
                 <span 
                     key={index} 
@@ -168,15 +160,13 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
       <main className="flex flex-1 overflow-hidden relative">
         {isSubmitting && (<div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm"><div className="animate-spin rounded-full h-16 w-16 border-b-4 border-indigo-600 mb-4"></div><h2 className="text-2xl font-bold text-indigo-900">Waktu Habis!</h2><p className="text-gray-600">Sedang mengirim jawaban...</p></div>)}
         
-        {/* PANEL KIRI: WACANA */}
         {hasReading && (
             <div className="w-1/2 p-6 overflow-y-auto border-r bg-white scrollbar-thin">
                 <div className="prose max-w-none text-gray-800 leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
                     <h3 className="font-bold text-gray-500 mb-2 uppercase text-xs border-b pb-2 tracking-wide text-left">{question.reading_label || "Wacana"}</h3>
                     {question.citation && <p className="text-gray-400 text-xs italic mb-4 mt-[-8px] text-right">Sumber: {question.citation}</p>}
                     
-                    {/* WACANA: RENDER MENGGUNAKAN FUNGSI BARU */}
-                    <div className="text-justify font-serif leading-8" style={{whiteSpace: 'pre-wrap'}}>
+                    <div className="text-justify font-serif leading-8">
                         {renderMixedContent(question.reading_material)}
                     </div>
                     
@@ -185,20 +175,17 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
             </div>
         )}
 
-        {/* PANEL KANAN: SOAL */}
         <div className={`flex-1 flex flex-col ${hasReading ? 'w-1/2' : 'w-full max-w-4xl mx-auto'}`}>
             <div className="flex-1 p-6 overflow-y-auto text-left">
                 <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 min-h-[400px]">
                     <div className="mb-8 text-lg text-gray-800 leading-relaxed text-left">
                         {!hasReading && question.image_url && (<div className="mb-6 flex justify-center"><img src={question.image_url} alt="Soal" className="max-w-full h-auto rounded-lg border shadow-sm object-contain max-h-[400px]" onError={(e) => { e.target.onerror=null; e.target.src="https://via.placeholder.com/400x200?text=Gagal+Muat+Gambar"; }}/></div>)}
                         
-                        {/* SOAL: RENDER MENGGUNAKAN FUNGSI BARU JUGA */}
                         <div>
                             {renderMixedContent(question.text)}
                         </div>
                     </div>
                     
-                    {/* OPSI JAWABAN */}
                     <div className="space-y-3 text-left">
                         {question.type === 'short_answer' ? (
                             <input type="text" className="border-2 border-gray-300 p-4 rounded-lg w-full text-lg uppercase focus:border-indigo-500 outline-none transition" placeholder="Ketik jawaban singkat..." value={answers[question.id] || ''} onChange={(e)=>handleAnswer(e.target.value)}/>
@@ -213,7 +200,6 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
                                     <div key={opt.id} onClick={()=>handleAnswer(opt.id)} className={`p-4 border-2 rounded-xl cursor-pointer flex items-center transition-all duration-200 ${active ? 'bg-indigo-50 border-indigo-500 shadow-md transform scale-[1.01]': 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'}`}>
                                         <div className={`w-8 h-8 flex items-center justify-center mr-4 font-bold text-sm rounded-full transition-colors ${active?'bg-indigo-600 text-white':'bg-gray-200 text-gray-600'}`}>{opt.id}</div>
                                         <div className="text-sm font-medium text-gray-700 w-full">
-                                            {/* OPSI: RENDER MENGGUNAKAN FUNGSI BARU */}
                                             {renderMixedContent(opt.label)}
                                         </div>
                                         {isComplex && <div className={`w-5 h-5 border-2 rounded ml-auto flex items-center justify-center ${active ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300'}`}>{active && <span className="text-white text-xs">✓</span>}</div>}
@@ -238,4 +224,5 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
     </div>
   );
 };
+
 export default ExamSimulation;
