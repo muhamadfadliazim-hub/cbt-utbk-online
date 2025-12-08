@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
-import { Clock, ChevronLeft, ChevronRight, Save } from 'lucide-react';
+import { Clock, ChevronLeft, ChevronRight, Save, Lock } from 'lucide-react';
 
 const ExamSimulation = ({ examData, onSubmit, onBack }) => {
   const savedAnswers = JSON.parse(localStorage.getItem('saved_answers')) || {};
@@ -9,6 +9,10 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
   const initialTime = savedTimer ? parseInt(savedTimer, 10) : (examData?.duration || 30) * 60;
   
   const userData = JSON.parse(localStorage.getItem('utbk_user')) || {};
+  
+  // LOGIKA KUNCI: 
+  // Jika allow_submit === false, maka siswa TIDAK BISA submit sebelum waktu habis.
+  const isSubmitAllowed = examData.allow_submit !== false; 
 
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState(savedAnswers);
@@ -18,21 +22,23 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
 
   const answersRef = useRef(answers);
 
-  // 🌟 UTILITY: Fungsi Format Markup (Bold, Italic, Underline)
   const formatMarkups = (text) => {
     if (!text) return { __html: '' };
-    
-    // Perbaikan: Hanya deklarasi satu kali
     const htmlContent = text
         .replace(/\[B\](.*?)\[\/B\]/g, '<strong>$1</strong>')
         .replace(/\[I\](.*?)\[\/I\]/g, '<em>$1</em>')
         .replace(/\[U\](.*?)\[\/U\]/g, '<u>$1</u>')
-        .replace(/\n/g, '<br/>'); // Convert enter ke baris baru
-
+        .replace(/\n/g, '<br/>');
     return { __html: htmlContent };
   };
 
   const handleFinalSubmit = useCallback(() => {
+      // PENGAMAN: Jika tombol dikunci dan waktu belum habis, tolak aksi.
+      if (!isSubmitAllowed && timeLeft > 0) {
+          alert("Tombol Akhiri Ujian dinonaktifkan oleh Admin. Anda harus menunggu hingga waktu habis.");
+          return;
+      }
+
       if(!window.confirm("Apakah Anda yakin ingin MENGAKHIRI ujian dan mengirim jawaban? Ujian tidak bisa diulang.")) return;
       setIsSubmitting(true);
       
@@ -42,7 +48,7 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
       };
 
       onSubmit(finalAnswers);
-  }, [onSubmit, userData.username]);
+  }, [onSubmit, userData.username, isSubmitAllowed, timeLeft]);
 
   useEffect(() => {
     answersRef.current = answers;
@@ -54,7 +60,9 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
     if (timeLeft <= 0) {
         setIsSubmitting(true);
         alert("WAKTU HABIS! Jawaban dikirim otomatis.");
-        handleFinalSubmit(); 
+        setIsSubmitting(true);
+        const finalAnswers = { answers: answersRef.current, username: userData.username };
+        onSubmit(finalAnswers);
         return;
     }
     const timer = setInterval(() => {
@@ -65,7 +73,7 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [timeLeft, examData, isSubmitting, handleFinalSubmit]);
+  }, [timeLeft, examData, isSubmitting, onSubmit, userData.username]);
 
   if (!examData) return <div className="p-10 text-center">Memuat Data Ujian...</div>;
   if (!examData.questions || examData.questions.length === 0) return <div className="p-10 text-center">Soal belum tersedia.</div>;
@@ -124,13 +132,7 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
 
         <div className="flex overflow-x-auto gap-2 py-1 w-full md:w-auto md:justify-end">
             {questions.map((q, i) => (
-                <button 
-                    key={i} 
-                    onClick={()=>setCurrentIdx(i)} 
-                    className={`w-8 h-8 rounded-full text-xs font-bold shrink-0 transition-all shadow-sm ${currentIdx===i ? 'bg-yellow-400 text-indigo-900 ring-2 ring-yellow-200': isAnswered(q.id) ? 'bg-indigo-500 text-white border border-indigo-200' : 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'}`}
-                >
-                    {i+1}
-                </button>
+                <button key={i} onClick={()=>setCurrentIdx(i)} className={`w-8 h-8 rounded-full text-xs font-bold shrink-0 transition-all shadow-sm ${currentIdx===i ? 'bg-yellow-400 text-indigo-900 ring-2 ring-yellow-200': isAnswered(q.id) ? 'bg-indigo-500 text-white border border-indigo-200' : 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'}`}>{i+1}</button>
             ))}
         </div>
       </header>
@@ -141,29 +143,10 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
         {hasReading && (
             <div className="w-1/2 p-6 overflow-y-auto border-r bg-white scrollbar-thin">
                 <div className="prose max-w-none text-gray-800 leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
-                    <h3 className="font-bold text-gray-500 mb-2 uppercase text-xs border-b pb-2 tracking-wide text-left">
-                        {question.reading_label || "Wacana"} 
-                    </h3>
-                    {question.citation && (
-                        <p className="text-gray-400 text-xs italic mb-4 mt-[-8px] text-right">
-                            Sumber: {question.citation}
-                        </p>
-                    )}
-                    <div className="text-justify font-serif leading-8" 
-                         style={{whiteSpace: 'pre-wrap'}}
-                         dangerouslySetInnerHTML={formatMarkups(question.reading_material)} 
-                    />
-                    
-                    {question.image_url && (
-                        <div className="mt-6 mb-4 flex justify-center">
-                            <img 
-                                src={question.image_url} 
-                                alt="Ilustrasi Wacana" 
-                                className="max-w-full h-auto rounded-lg border shadow-sm object-contain max-h-[400px]"
-                                onError={(e) => { e.target.style.display='none'; }} 
-                            />
-                        </div>
-                    )}
+                    <h3 className="font-bold text-gray-500 mb-2 uppercase text-xs border-b pb-2 tracking-wide text-left">{question.reading_label || "Wacana"}</h3>
+                    {question.citation && <p className="text-gray-400 text-xs italic mb-4 mt-[-8px] text-right">Sumber: {question.citation}</p>}
+                    <div className="text-justify font-serif leading-8" dangerouslySetInnerHTML={formatMarkups(question.reading_material)} />
+                    {question.image_url && (<div className="mt-6 mb-4 flex justify-center"><img src={question.image_url} alt="Ilustrasi" className="max-w-full h-auto rounded-lg border shadow-sm object-contain max-h-[400px]" onError={(e) => { e.target.style.display='none'; }} /></div>)}
                 </div>
             </div>
         )}
@@ -172,33 +155,16 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
             <div className="flex-1 p-6 overflow-y-auto text-left">
                 <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 min-h-[400px]">
                     <div className="mb-8 text-lg text-gray-800 leading-relaxed text-left">
-                        
-                        {!hasReading && question.image_url && (
-                            <div className="mb-6 flex justify-center">
-                                <img 
-                                    src={question.image_url} 
-                                    alt="Soal" 
-                                    className="max-w-full h-auto rounded-lg border shadow-sm object-contain max-h-[400px]"
-                                    onError={(e) => { e.target.onerror=null; e.target.src="https://via.placeholder.com/400x200?text=Gagal+Muat+Gambar"; }}
-                                />
-                            </div>
-                        )}
-
-                        <div>{question.text.split(/(\$.*?\$)/).map((part, i) => 
-                            part.startsWith('$') && part.endsWith('$') 
-                            ? <InlineMath key={i} math={part.slice(1, -1)}/> 
-                            : <span key={i} dangerouslySetInnerHTML={formatMarkups(part)} />
-                        )}</div>
+                        {!hasReading && question.image_url && (<div className="mb-6 flex justify-center"><img src={question.image_url} alt="Soal" className="max-w-full h-auto rounded-lg border shadow-sm object-contain max-h-[400px]" onError={(e) => { e.target.onerror=null; e.target.src="https://via.placeholder.com/400x200?text=Gagal+Muat+Gambar"; }}/></div>)}
+                        <div>{question.text.split(/(\$.*?\$)/).map((part, i) => part.startsWith('$') && part.endsWith('$') ? <InlineMath key={i} math={part.slice(1, -1)}/> : <span key={i} dangerouslySetInnerHTML={formatMarkups(part)} />)}</div>
                     </div>
-
+                    
+                    {/* OPSI JAWABAN (Sama seperti sebelumnya) */}
                     <div className="space-y-3 text-left">
                         {question.type === 'short_answer' ? (
                             <input type="text" className="border-2 border-gray-300 p-4 rounded-lg w-full text-lg uppercase focus:border-indigo-500 outline-none transition" placeholder="Ketik jawaban singkat..." value={answers[question.id] || ''} onChange={(e)=>handleAnswer(e.target.value)}/>
                         ) : question.type === 'table_boolean' ? (
-                            <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-                                <thead className="bg-gray-50"><tr><th className="p-3 text-left border-b font-bold text-gray-600">Pernyataan</th><th className="p-3 text-center w-24 border-b font-bold text-green-700 bg-green-50">{question.label_true || "Benar"}</th><th className="p-3 text-center w-24 border-b font-bold text-red-700 bg-red-50">{question.label_false || "Salah"}</th></tr></thead>
-                                <tbody>{question.options.map(opt => (<tr key={opt.id} className="border-b last:border-0 hover:bg-gray-50"><td className="p-3 border-r">{opt.label}</td><td className="text-center border-r bg-green-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-green-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='B'} onChange={()=>handleAnswer('B',opt.id)}/></td><td className="text-center bg-red-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-red-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='S'} onChange={()=>handleAnswer('S',opt.id)}/></td></tr>))}</tbody>
-                            </table>
+                            <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden"><thead className="bg-gray-50"><tr><th className="p-3 text-left border-b font-bold text-gray-600">Pernyataan</th><th className="p-3 text-center w-24 border-b font-bold text-green-700 bg-green-50">{question.label_true || "Benar"}</th><th className="p-3 text-center w-24 border-b font-bold text-red-700 bg-red-50">{question.label_false || "Salah"}</th></tr></thead><tbody>{question.options.map(opt => (<tr key={opt.id} className="border-b last:border-0 hover:bg-gray-50"><td className="p-3 border-r">{opt.label}</td><td className="text-center border-r bg-green-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-green-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='B'} onChange={()=>handleAnswer('B',opt.id)}/></td><td className="text-center bg-red-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-red-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='S'} onChange={()=>handleAnswer('S',opt.id)}/></td></tr>))}</tbody></table>
                         ) : (
                             question.options.map(opt => {
                                 const isComplex = question.type === 'complex';
@@ -213,9 +179,18 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
 
             <div className="bg-white border-t p-4 flex justify-between items-center shadow-lg z-40">
                 <button disabled={currentIdx===0} onClick={()=>setCurrentIdx(c=>c-1)} className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2 font-bold transition shadow-sm"><ChevronLeft size={18}/> Sebelumnya</button>
-                <button disabled={currentIdx!==questions.length-1 || isSubmitting} onClick={handleFinalSubmit} className={`px-5 py-2.5 rounded-lg shadow-md font-bold transition flex items-center gap-2 ${currentIdx===questions.length-1 ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-400 text-gray-700 cursor-not-allowed'}`}>
-                    <Save size={18}/> {isSubmitting ? 'Mengirim...' : 'AKHIRI & SUBMIT'}
+                
+                {/* TOMBOL AKHIRI: DISABLE JIKA DIKUNCI ADMIN & WAKTU MASIH ADA */}
+                <button 
+                    disabled={(!isSubmitAllowed && timeLeft > 0) || isSubmitting} 
+                    onClick={handleFinalSubmit} 
+                    className={`px-5 py-2.5 rounded-lg shadow-md font-bold transition flex items-center gap-2 ${(isSubmitAllowed || timeLeft <= 0) ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-400 text-gray-700 cursor-not-allowed'}`}
+                    title={!isSubmitAllowed && timeLeft > 0 ? "Tombol dikunci oleh Admin" : "Kirim Jawaban"}
+                >
+                    <Save size={18}/> 
+                    {!isSubmitAllowed && timeLeft > 0 ? `Terkunci (${formatTime(timeLeft)})` : isSubmitting ? 'Mengirim...' : 'AKHIRI & SUBMIT'}
                 </button>
+                
                 <button disabled={currentIdx===questions.length-1} onClick={()=>setCurrentIdx(c=>c+1)} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md font-bold flex items-center gap-2 transition disabled:opacity-50">Berikutnya <ChevronRight size={18}/></button>
             </div>
         </div>

@@ -240,12 +240,16 @@ def get_student_active_periods(username: str = None, db: Session = Depends(get_d
         data.append({"id": p.id, "name": p.name, "exams": exams_info})
     return data
 
+# --- UPDATE DI backend/main.py ---
+
 @app.get("/exams/{exam_id}")
 def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
-    exam = db.query(models.Exam).filter(models.Exam.id == exam_id).first()
+    # Load Exam beserta Period-nya untuk cek allow_submit
+    exam = db.query(models.Exam).options(joinedload(models.Exam.period)).filter(models.Exam.id == exam_id).first()
+    
     if not exam: raise HTTPException(404, "Ujian tidak ditemukan")
     
-    # Ambil allow_submit dari parent period
+    # Ambil status allow_submit dari periode (Default True jika tidak ada periode)
     allow_submit = exam.period.allow_submit if exam.period else True
 
     q_data = []
@@ -259,10 +263,13 @@ def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
             "reading_label": q.reading_label, "citation": q.citation
         })
     q_data.sort(key=lambda x: x["id"]) 
+    
     return {
-        "id": exam.id, "title": exam.title, 
-        "duration": exam.duration, "questions": q_data,
-        "allow_submit": allow_submit # Kirim info ini ke frontend ujian
+        "id": exam.id, 
+        "title": exam.title, 
+        "duration": exam.duration, 
+        "questions": q_data,
+        "allow_submit": allow_submit # <--- INI KUNCI PENTINGNYA
     }
 
 @app.post("/exams/{exam_id}/submit")

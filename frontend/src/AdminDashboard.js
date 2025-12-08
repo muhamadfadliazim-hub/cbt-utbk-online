@@ -1,18 +1,67 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock, RefreshCcw } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
+
+// --- KOMPONEN KECIL: MENU RESET (SUPAYA TIDAK HILANG SAAT DI-HOVER) ---
+const ResetMenu = ({ resultId, completedExams, onReset }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const menuRef = useRef(null);
+
+    // Tutup menu jika klik di luar
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (menuRef.current && !menuRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    return (
+        <div className="relative" ref={menuRef}>
+            <button 
+                onClick={() => setIsOpen(!isOpen)} 
+                className={`p-2 rounded transition ${isOpen ? 'bg-red-100 text-red-600' : 'text-gray-400 hover:text-red-600'}`}
+                title="Reset Nilai"
+            >
+                <RefreshCcw size={18}/>
+            </button>
+            
+            {isOpen && (
+                <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 shadow-xl rounded-lg z-50 overflow-hidden">
+                    <div className="bg-gray-50 px-3 py-2 text-xs font-bold text-gray-500 border-b">
+                        PILIH UJIAN UNTUK DI-RESET:
+                    </div>
+                    {completedExams.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-gray-400">Tidak ada data.</div>
+                    ) : (
+                        completedExams.map((exam) => (
+                            <button 
+                                key={exam.exam_id} 
+                                onClick={() => { onReset(resultId, exam.exam_id); setIsOpen(false); }} 
+                                className="w-full text-left px-3 py-3 text-sm hover:bg-red-50 text-gray-700 hover:text-red-700 flex justify-between items-center border-b last:border-0 transition"
+                            >
+                                <span className="font-medium">{exam.code}</span>
+                                <Trash2 size={14}/>
+                            </button>
+                        ))
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
   const [periods, setPeriods] = useState([]);
   const [newPeriodName, setNewPeriodName] = useState('');
   const [expandedPeriod, setExpandedPeriod] = useState(null);
-  
   const [previewData, setPreviewData] = useState(null); 
   const [showPreview, setShowPreview] = useState(false);
-
   const [users, setUsers] = useState([]);
   const [recap, setRecap] = useState([]);
   const [isReleased, setIsReleased] = useState(false);
@@ -51,7 +100,7 @@ const AdminDashboard = ({ onLogout }) => {
     if (tab === 'periods') fetchPeriods();
     if (tab === 'users') fetchUsers();
     if (tab === 'recap') { fetchPeriods(); fetchRecap(); fetchReleaseStatus(); }
-    // eslint-disable-next-line
+  // eslint-disable-next-line
   }, [tab]);
 
   useEffect(() => {
@@ -62,18 +111,18 @@ const AdminDashboard = ({ onLogout }) => {
   // --- ACTIONS ---
   const handleCreatePeriod = (e) => { 
       e.preventDefault(); 
+      if(!newPeriodName.trim()) return alert("Nama wajib diisi");
       fetch(`${API_URL}/admin/periods`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:newPeriodName})})
       .then(r=>r.json()).then(d=>{alert(d.message); setNewPeriodName(''); fetchPeriods();}); 
   };
 
   const togglePeriodActive = (id, s) => fetch(`${API_URL}/admin/periods/${id}/toggle`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active:!s})}).then(()=>fetchPeriods());
   
-  // ACTION BARU: Toggle Tombol Submit
   const togglePeriodSubmit = (id, currentStatus) => {
       fetch(`${API_URL}/admin/periods/${id}/toggle-submit`, {
           method: 'POST', 
           headers:{'Content-Type':'application/json'}, 
-          body:JSON.stringify({is_active: !currentStatus}) // Kita reuse schema toggle
+          body:JSON.stringify({is_active: !currentStatus}) 
       }).then(() => fetchPeriods());
   };
 
@@ -131,9 +180,8 @@ const AdminDashboard = ({ onLogout }) => {
       window.open(url, '_blank');
   };
 
-  // ACTION BARU: RESET NILAI SISWA
   const handleResetResult = (userId, examId) => {
-      if(window.confirm("Yakin reset nilai siswa ini? Siswa harus mengerjakan ulang.")) {
+      if(window.confirm("Yakin reset nilai siswa ini?")) {
           fetch(`${API_URL}/admin/reset-result`, {
               method: 'POST',
               headers: {'Content-Type': 'application/json'},
@@ -176,9 +224,15 @@ const AdminDashboard = ({ onLogout }) => {
                                     <div><h3 className="font-bold text-xl text-gray-800">{period.name}</h3><div className="flex items-center gap-2 mt-1"><span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${period.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`}>{period.is_active ? "PUBLIK" : "DRAFT"}</span></div></div>
                                 </div>
                                 <div className="flex gap-3">
-                                    {/* TOMBOL TOGGLE SUBMIT */}
-                                    <button onClick={() => togglePeriodSubmit(period.id, period.allow_submit)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white shadow transition ${period.allow_submit ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-500 hover:bg-red-600'}`}>{period.allow_submit ? <><Unlock size={16}/> Submit: ON</> : <><Lock size={16}/> Submit: OFF</>}</button>
-
+                                    {/* BUTTON SUBMIT ON/OFF YANG LEBIH JELAS */}
+                                    <button 
+                                        onClick={() => togglePeriodSubmit(period.id, period.allow_submit)} 
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white shadow transition ${period.allow_submit ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-500 hover:bg-red-600 ring-2 ring-red-300'}`}
+                                        title={period.allow_submit ? "Siswa BISA Submit" : "Siswa TIDAK BISA Submit"}
+                                    >
+                                        {period.allow_submit ? <><Unlock size={16}/> Submit: ON</> : <><Lock size={16}/> Submit: OFF</>}
+                                    </button>
+                                    
                                     <button onClick={() => togglePeriodActive(period.id, period.is_active)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white shadow transition ${period.is_active ? 'bg-orange-500 hover:bg-orange-600' : 'bg-green-600 hover:bg-green-700'}`}>{period.is_active ? <><EyeOff size={16}/> Sembunyikan</> : <><Eye size={16}/> Tampilkan</>}</button>
                                     <button onClick={() => handleDeletePeriod(period.id)} className="bg-red-50 text-red-600 p-2.5 rounded-lg hover:bg-red-100 border border-red-200"><Trash2 size={18}/></button>
                                 </div>
@@ -188,15 +242,12 @@ const AdminDashboard = ({ onLogout }) => {
                             )}
                         </div>
                     ))}
-                    {(!Array.isArray(periods) || periods.length === 0) && <div className="text-center p-8 bg-white border rounded text-gray-400">Belum ada periode.</div>}
                 </div>
             </div>
         )}
         
-        {/* USERS TAB TETAP SAMA */}
         {tab === 'users' && (<div><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">Manajemen User</h2>{selectedIds.length > 0 && <button onClick={handleBulkDelete} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"><Trash2 size={16}/> Hapus {selectedIds.length}</button>}</div><div className="bg-white p-5 rounded-lg shadow mb-6 flex gap-3 flex-wrap"><input placeholder="Username" className="border p-2 rounded flex-1" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input placeholder="Nama Lengkap" className="border p-2 rounded flex-1" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input placeholder="Password" type="password" className="border p-2 rounded flex-1" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><select className="border p-2 rounded bg-gray-50" value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})}><option value="student">Siswa</option><option value="admin">Admin</option></select><button onClick={handleAddUser} className="bg-green-600 text-white px-4 py-2 rounded font-bold"><Plus size={16}/></button><div className="w-full h-px bg-gray-200 my-2"></div><label className="text-blue-600 cursor-pointer text-sm flex items-center gap-2 hover:underline"><Upload size={14}/> Upload Excel User (.xlsx)<input type="file" className="hidden" accept=".xlsx" onChange={handleBulkUpload}/></label></div><div className="bg-white shadow rounded overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={users.length > 0 && selectedIds.length === users.length}/></th><th className="p-3 text-left">Nama</th><th className="p-3 text-left">Username</th><th className="p-3 text-left">Role</th></tr></thead><tbody>{Array.isArray(users) && users.map(u => (<tr key={u.id} className="border-b hover:bg-gray-50"><td className="p-3 text-center"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={() => handleSelectOne(u.id)}/></td><td className="p-3">{u.full_name}</td><td className="p-3 font-mono">{u.username}</td><td className="p-3"><span className={`px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-green-100 text-green-700'}`}>{u.role.toUpperCase()}</span></td></tr>))}</tbody></table></div></div>)}
         
-        {/* RECAP TAB DENGAN TOMBOL RESET */}
         {tab === 'recap' && (
             <div className="overflow-x-auto pb-20">
                 <div className="flex flex-col md:flex-row justify-between items-end mb-6 gap-4">
@@ -213,19 +264,13 @@ const AdminDashboard = ({ onLogout }) => {
                                     <td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PU}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PPU}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PBM}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PK}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.LBI}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.LBE}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PM}</td>
                                     <td className="p-4 text-center border-l border-gray-100 font-extrabold text-blue-700 text-lg bg-blue-50/50">{r.average}</td>
                                     <td className="p-4 border-l border-gray-100 align-middle">{r.status.startsWith('LULUS') ? (<div><span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-green-100 text-green-700 mb-1"><CheckCircle size={12}/> LULUS</span></div>) : (<span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-red-100 text-red-600"><XCircle size={12}/> TIDAK LULUS</span>)}</td>
-                                    {/* KOLOM RESET */}
-                                    <td className="p-4 border-l border-gray-100 text-center">
-                                        <div className="relative group">
-                                            <button className="text-gray-400 hover:text-red-600 transition"><RefreshCcw size={16}/></button>
-                                            <div className="absolute right-0 top-full mt-2 w-48 bg-white border shadow-lg rounded-lg z-10 hidden group-hover:block p-1">
-                                                <div className="text-xs font-bold text-gray-500 px-3 py-2 border-b">Pilih Subtes utk Reset:</div>
-                                                {r.completed_exams && r.completed_exams.map(exam => (
-                                                    <button key={exam.exam_id} onClick={() => handleResetResult(r.id, exam.exam_id)} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600 flex justify-between">
-                                                        <span>{exam.code}</span> <Trash2 size={12}/>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
+                                    {/* MENGGUNAKAN KOMPONEN ResetMenu YANG STABIL */}
+                                    <td className="p-4 border-l border-gray-100 text-center align-middle">
+                                        <ResetMenu 
+                                            resultId={r.id} 
+                                            completedExams={r.completed_exams} 
+                                            onReset={handleResetResult} 
+                                        />
                                     </td>
                                 </tr>
                             ))}
