@@ -49,6 +49,9 @@ class PeriodCreateSchema(BaseModel):
     name: str
 class TogglePeriodSchema(BaseModel):
     is_active: bool
+class ResetResultSchema(BaseModel):
+    user_id: int
+    exam_id: str
 
 # --- ENDPOINTS ---
 
@@ -71,26 +74,8 @@ def set_release_status(data: ConfigSchema, db: Session = Depends(get_db)):
 def download_template_soal():
     wacana = "Urban Heat Island (UHI) adalah kondisi..."
     data = [
-        {
-            "Tipe": "PG", 
-            "Soal": "Apa penyebab UHI?", 
-            "Bacaan": wacana, 
-            "Judul Wacana": "Teks Bacaan 1", 
-            "Sumber Wacana": "Kompas.com/Edisi 2024",
-            "Gambar": "",
-            "OpsiA": "Hujan", "OpsiB": "Gedung", "OpsiC": "Angin", "OpsiD": "Pohon", "OpsiE": "Sungai", 
-            "Kunci": "B", "Kesulitan": 1.0, "Label1": "", "Label2": ""
-        },
-        {
-            "Tipe": "TABEL", 
-            "Soal": "Tentukan kebenaran:", 
-            "Bacaan": "", 
-            "Judul Wacana": "", 
-            "Sumber Wacana": "",
-            "Gambar": "",
-            "OpsiA": "P1", "OpsiB": "P2", "OpsiC": "", "OpsiD": "", "OpsiE": "", 
-            "Kunci": "B,S", "Kesulitan": 1.0, "Label1": "Fakta", "Label2": "Opini"
-        }
+        {"Tipe": "PG", "Soal": "Apa penyebab UHI?", "Bacaan": wacana, "Judul Wacana": "Teks 1", "Sumber Wacana": "Sumber", "Gambar": "", "OpsiA": "A", "OpsiB": "B", "OpsiC": "C", "OpsiD": "D", "OpsiE": "E", "Kunci": "B", "Kesulitan": 1.0, "Label1": "", "Label2": ""},
+        {"Tipe": "TABEL", "Soal": "Tentukan kebenaran:", "Bacaan": "", "Judul Wacana": "", "Sumber Wacana": "", "Gambar": "", "OpsiA": "P1", "OpsiB": "P2", "OpsiC": "", "OpsiD": "", "OpsiE": "", "Kunci": "B,S", "Kesulitan": 1.0, "Label1": "Fakta", "Label2": "Opini"}
     ]
     df = pd.DataFrame(data)
     output = io.BytesIO()
@@ -100,11 +85,12 @@ def download_template_soal():
 
 @app.get("/admin/periods")
 def get_admin_periods(db: Session = Depends(get_db)):
+    # Tambahkan allow_submit ke response
     return db.query(models.ExamPeriod).order_by(models.ExamPeriod.id.desc()).options(joinedload(models.ExamPeriod.exams)).all()
 
 @app.post("/admin/periods")
 def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
-    new_period = models.ExamPeriod(name=data.name, is_active=False)
+    new_period = models.ExamPeriod(name=data.name, is_active=False, allow_submit=True)
     db.add(new_period)
     db.commit()
     db.refresh(new_period)
@@ -122,6 +108,15 @@ def toggle_period(period_id: int, data: TogglePeriodSchema, db: Session = Depend
         db.commit()
     return {"message": "Status diubah"}
 
+# FITUR BARU: TOGGLE TOMBOL SUBMIT
+@app.post("/admin/periods/{period_id}/toggle-submit")
+def toggle_period_submit(period_id: int, data: TogglePeriodSchema, db: Session = Depends(get_db)):
+    period = db.query(models.ExamPeriod).filter(models.ExamPeriod.id == period_id).first()
+    if period:
+        period.allow_submit = data.is_active # Kita reuse schema, is_active disini maksudnya allow_submit
+        db.commit()
+    return {"message": "Setting Tombol Submit Diubah"}
+
 @app.delete("/admin/periods/{period_id}")
 def delete_period(period_id: int, db: Session = Depends(get_db)):
     period = db.query(models.ExamPeriod).filter(models.ExamPeriod.id == period_id).first()
@@ -129,6 +124,16 @@ def delete_period(period_id: int, db: Session = Depends(get_db)):
         db.delete(period)
         db.commit()
     return {"message": "Periode dihapus"}
+
+# FITUR BARU: RESET HASIL SISWA
+@app.post("/admin/reset-result")
+def reset_student_result(data: ResetResultSchema, db: Session = Depends(get_db)):
+    result = db.query(models.ExamResult).filter_by(user_id=data.user_id, exam_id=data.exam_id).first()
+    if result:
+        db.delete(result)
+        db.commit()
+        return {"message": "Hasil ujian berhasil direset. Siswa bisa mengerjakan ulang."}
+    raise HTTPException(404, "Data hasil tidak ditemukan")
 
 @app.post("/admin/upload-questions/{exam_id}")
 async def upload_questions(exam_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
@@ -144,7 +149,6 @@ async def upload_questions(exam_id: str, file: UploadFile = File(...), db: Sessi
         content = await file.read()
         df = pd.read_excel(io.BytesIO(content))
         df.columns = df.columns.str.strip().str.title()
-        
         if 'Soal' not in df.columns: return {"message": "Format Excel Salah"}
 
         count = 0
@@ -166,8 +170,7 @@ async def upload_questions(exam_id: str, file: UploadFile = File(...), db: Sessi
                 difficulty=float(row.get('Kesulitan', 1.0)),
                 total_attempts=0, total_correct=0,
                 label_true=label1, label_false=label2,
-                reading_label=judul,
-                citation=sumber
+                reading_label=judul, citation=sumber
             )
             db.add(q)
             db.commit()
@@ -208,7 +211,6 @@ def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
         })
     return {"title": exam.title, "questions": q_data}
 
-# --- FITUR KUNCI UJIAN (STATUS is_done) ---
 @app.get("/student/periods")
 def get_student_active_periods(username: str = None, db: Session = Depends(get_db)):
     periods = db.query(models.ExamPeriod).filter(models.ExamPeriod.is_active == True).order_by(models.ExamPeriod.id.desc()).all()
@@ -223,14 +225,17 @@ def get_student_active_periods(username: str = None, db: Session = Depends(get_d
         exams_info = []
         for e in p.exams:
             q_count = db.query(models.Question).filter(models.Question.exam_id == e.id).count()
-            
-            # CEK APAKAH SUDAH DIKERJAKAN
             is_done = False
             if user_id:
                 res = db.query(models.ExamResult).filter_by(user_id=user_id, exam_id=e.id).first()
                 if res: is_done = True
             
-            exams_info.append({"id": e.id, "title": e.title, "duration": e.duration, "q_count": q_count, "is_done": is_done})
+            # KIRIM STATUS allow_submit KE FRONTEND
+            exams_info.append({
+                "id": e.id, "title": e.title, "duration": e.duration, 
+                "q_count": q_count, "is_done": is_done, 
+                "allow_submit": p.allow_submit # INFO PENTING
+            })
         exams_info.sort(key=lambda x: order_map.get(x['id'].split('_')[-1], 99))
         data.append({"id": p.id, "name": p.name, "exams": exams_info})
     return data
@@ -239,6 +244,10 @@ def get_student_active_periods(username: str = None, db: Session = Depends(get_d
 def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
     exam = db.query(models.Exam).filter(models.Exam.id == exam_id).first()
     if not exam: raise HTTPException(404, "Ujian tidak ditemukan")
+    
+    # Ambil allow_submit dari parent period
+    allow_submit = exam.period.allow_submit if exam.period else True
+
     q_data = []
     for q in exam.questions:
         opts = [{"id": o.option_index, "label": o.label, "is_math": o.is_math} for o in q.options]
@@ -250,17 +259,19 @@ def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
             "reading_label": q.reading_label, "citation": q.citation
         })
     q_data.sort(key=lambda x: x["id"]) 
-    return {"id": exam.id, "title": exam.title, "duration": exam.duration, "questions": q_data}
+    return {
+        "id": exam.id, "title": exam.title, 
+        "duration": exam.duration, "questions": q_data,
+        "allow_submit": allow_submit # Kirim info ini ke frontend ujian
+    }
 
 @app.post("/exams/{exam_id}/submit")
 def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.username == data.username).first()
     if not user: raise HTTPException(404, "User not found")
     
-    # CEK DOUBLE SUBMIT
     existing = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first()
-    if existing:
-        return {"message": "Ujian sudah dikerjakan sebelumnya.", "correct": existing.correct_count, "wrong": existing.wrong_count}
+    if existing: return {"message": "Sudah dikerjakan"}
 
     questions = db.query(models.Question).filter(models.Question.exam_id == exam_id).all()
     correct, wrong = 0, 0
@@ -310,19 +321,11 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
 def login(data: LoginSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.username == data.username).first()
     if not user or user.password != data.password: raise HTTPException(400, "Login Gagal")
-    
     p1 = f"{user.choice1.university} - {user.choice1.name}" if user.choice1 else ""
     p2 = f"{user.choice2.university} - {user.choice2.name}" if user.choice2 else ""
     pg1 = user.choice1.passing_grade if user.choice1 else 0
     pg2 = user.choice2.passing_grade if user.choice2 else 0
-    
-    return {
-        "message": "Login sukses", 
-        "name": user.full_name, 
-        "username": user.username, 
-        "role": user.role, 
-        "pilihan1": p1, "pilihan2": p2, "pg1": pg1, "pg2": pg2
-    }
+    return {"message": "Login sukses", "name": user.full_name, "username": user.username, "role": user.role, "pilihan1": p1, "pilihan2": p2, "pg1": pg1, "pg2": pg2}
 
 @app.get("/majors")
 def get_majors(db: Session = Depends(get_db)): return db.query(models.Major).all()
@@ -357,11 +360,9 @@ async def bulk_upload(file: UploadFile = File(...), db: Session = Depends(get_db
         df.columns = df.columns.str.lower().str.strip()
         count = 0
         for _, row in df.iterrows():
-            uname = str(row['username']).strip()
-            if not db.query(models.User).filter_by(username=uname).first():
-                # PERBAIKAN: Deteksi Role
+            if not db.query(models.User).filter_by(username=str(row['username'])).first():
                 role = str(row.get('role', 'student')).strip().lower()
-                db.add(models.User(username=uname, password=str(row['password']), full_name=str(row['full_name']), role=role))
+                db.add(models.User(username=str(row['username']), password=str(row['password']), full_name=str(row['full_name']), role=role))
                 count += 1
         db.commit()
         return {"message": f"{count} user"}
@@ -372,16 +373,33 @@ def get_score_recap(period_id: Optional[int] = None, db: Session = Depends(get_d
     users = db.query(models.User).filter(models.User.role == 'student').options(joinedload(models.User.results), joinedload(models.User.choice1), joinedload(models.User.choice2)).all()
     data = []
     for user in users:
+        # PENTING: Sertakan user.id agar admin bisa mereset nilai berdasarkan ID ini
         user_results = [r for r in user.results if r.exam_id.startswith(f"P{period_id}_")] if period_id else user.results
         if period_id and not user_results: continue
+        
         scores = {}
+        # Buat daftar ID subtes yang sudah dikerjakan untuk dropdown reset
+        completed_exams = []
+        
         for res in user_results:
-            scores[res.exam_id.split('_')[-1]] = res.irt_score 
+            suffix = res.exam_id.split('_')[-1]
+            scores[suffix] = res.irt_score 
+            completed_exams.append({"code": suffix, "exam_id": res.exam_id})
+
         avg = sum(scores.values()) / 7 if len(scores) > 0 else 0
         status, major = "TIDAK LULUS", "-"
         if user.choice1 and avg >= user.choice1.passing_grade: status, major = "LULUS PILIHAN 1", f"{user.choice1.university} - {user.choice1.name}"
         elif user.choice2 and avg >= user.choice2.passing_grade: status, major = "LULUS PILIHAN 2", f"{user.choice2.university} - {user.choice2.name}"
-        row = {"full_name": user.full_name, "username": user.username, "average": round(avg, 2), "status": status, "accepted_major": major}
+        
+        row = {
+            "id": user.id, # USER ID UNTUK API RESET
+            "full_name": user.full_name, 
+            "username": user.username, 
+            "average": round(avg, 2), 
+            "status": status, 
+            "accepted_major": major,
+            "completed_exams": completed_exams # Daftar ujian yang bisa direset
+        }
         for c in ["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"]: row[c] = round(scores.get(c, 0), 2)
         data.append(row)
     return data
@@ -389,7 +407,15 @@ def get_score_recap(period_id: Optional[int] = None, db: Session = Depends(get_d
 @app.get("/admin/recap/download")
 def download_recap_excel(period_id: Optional[int] = None, db: Session = Depends(get_db)):
     data = get_score_recap(period_id, db)
-    df = pd.DataFrame(data)
+    # Flatten data for Excel (remove nested objects)
+    flat_data = []
+    for d in data:
+        row = d.copy()
+        del row['completed_exams'] # Hapus kolom teknis ini dari Excel
+        del row['id']
+        flat_data.append(row)
+
+    df = pd.DataFrame(flat_data)
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer: df.to_excel(writer, index=False)
     output.seek(0)

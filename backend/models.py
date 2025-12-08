@@ -34,6 +34,10 @@ class ExamPeriod(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String) 
     is_active = Column(Boolean, default=False)
+    
+    # FITUR BARU: Mengontrol apakah tombol submit muncul/aktif
+    allow_submit = Column(Boolean, default=True) 
+    
     exams = relationship("Exam", back_populates="period", cascade="all, delete")
 
 class Exam(Base):
@@ -56,14 +60,14 @@ class Question(Base):
     reading_material = Column(Text, nullable=True)
     image_url = Column(String, nullable=True)
     
-    # Metadata Soal
     reading_label = Column(String, nullable=True) 
+    citation = Column(String, nullable=True)
+    
     difficulty = Column(Float, default=1.0)
     total_attempts = Column(Integer, default=0)
     total_correct = Column(Integer, default=0)
     label_true = Column(String, default="Benar") 
     label_false = Column(String, default="Salah")
-    citation = Column(String, nullable=True) 
     
     exam = relationship("Exam", back_populates="questions")
     options = relationship("Option", back_populates="question", cascade="all, delete")
