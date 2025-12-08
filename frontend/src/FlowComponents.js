@@ -4,7 +4,7 @@ import { API_URL } from './config';
 
 // --- 1. KOMPONEN PILIH JURUSAN ---
 export const MajorSelection = ({ onNext, onLogout }) => {
-  const [majors, setMajors] = useState([]);
+  const [majors, setMajors] = useState([]); // Default array kosong
   const [universities, setUniversities] = useState([]);
   const [univ1, setUniv1] = useState('');
   const [majorId1, setMajorId1] = useState('');
@@ -12,19 +12,43 @@ export const MajorSelection = ({ onNext, onLogout }) => {
   const [majorId2, setMajorId2] = useState('');
 
   useEffect(() => {
-    fetch(`${API_URL}/majors`).then(res => res.json()).then(data => {
-        setMajors(data);
-        setUniversities([...new Set(data.map(m => m.university))].sort());
-    }).catch(() => alert("Gagal mengambil data jurusan."));
+    fetch(`${API_URL}/majors`)
+      .then(res => {
+        if (!res.ok) throw new Error("Gagal mengambil data");
+        return res.json();
+      })
+      .then(data => {
+        // PERBAIKAN: Cek apakah data benar-benar Array sebelum di-set
+        if (Array.isArray(data)) {
+            setMajors(data);
+            const univs = [...new Set(data.map(m => m.university))].sort();
+            setUniversities(univs);
+        } else {
+            console.error("Data jurusan bukan array:", data);
+            setMajors([]); // Fallback ke array kosong agar tidak error
+        }
+      })
+      .catch((err) => {
+          console.error(err);
+          setMajors([]); // Fallback jika fetch gagal total
+      });
   }, []);
 
-  const getMajorsByUniv = (univName) => majors.filter(m => m.university === univName).sort((a,b) => a.name.localeCompare(b.name));
+  // PERBAIKAN: Tambahkan pengaman (Array.isArray) di sini juga
+  const getMajorsByUniv = (univName) => {
+    if (!Array.isArray(majors)) return [];
+    return majors.filter(m => m.university === univName).sort((a,b) => a.name.localeCompare(b.name));
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!majorId1) { alert("Pilihan 1 Wajib!"); return; }
-    const c1 = majors.find(m => m.id === parseInt(majorId1));
-    const c2 = majors.find(m => m.id === parseInt(majorId2));
+    
+    // Pastikan majors ada isinya sebelum di-find
+    const safeMajors = Array.isArray(majors) ? majors : [];
+    const c1 = safeMajors.find(m => m.id === parseInt(majorId1));
+    const c2 = safeMajors.find(m => m.id === parseInt(majorId2));
+    
     onNext({
       choice1_id: parseInt(majorId1), choice2_id: majorId2 ? parseInt(majorId2) : null,
       display1: c1 ? `${c1.university} - ${c1.name}` : '', pg1: c1 ? c1.passing_grade : '',
@@ -56,14 +80,23 @@ export const MajorSelection = ({ onNext, onLogout }) => {
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
             <h3 className="font-bold text-blue-800 mb-3 text-sm">Pilihan 1 (Prioritas)</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <select className="w-full p-2 border rounded text-sm" value={univ1} onChange={(e) => { setUniv1(e.target.value); setMajorId1(''); }}><option value="">-- Pilih PTN --</option>{universities.map((univ) => <option key={univ} value={univ}>{univ}</option>)}</select>
-              <select className="w-full p-2 border rounded text-sm" value={majorId1} onChange={(e) => setMajorId1(e.target.value)} disabled={!univ1}><option value="">-- Pilih Jurusan --</option>{getMajorsByUniv(univ1).map((m) => <option key={m.id} value={m.id}>{m.name} (PG: {m.passing_grade})</option>)}</select>
+              <select className="w-full p-2 border rounded text-sm" value={univ1} onChange={(e) => { setUniv1(e.target.value); setMajorId1(''); }}>
+                <option value="">-- Pilih PTN --</option>
+                {universities.map((univ) => <option key={univ} value={univ}>{univ}</option>)}
+              </select>
+              <select className="w-full p-2 border rounded text-sm" value={majorId1} onChange={(e) => setMajorId1(e.target.value)} disabled={!univ1}>
+                <option value="">-- Pilih Jurusan --</option>
+                {getMajorsByUniv(univ1).map((m) => <option key={m.id} value={m.id}>{m.name} (PG: {m.passing_grade})</option>)}
+              </select>
             </div>
           </div>
           <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
             <h3 className="font-bold text-gray-600 mb-3 text-sm">Pilihan 2 (Opsional)</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <select className="w-full p-2 border rounded text-sm" value={univ2} onChange={(e) => { setUniv2(e.target.value); setMajorId2(''); }}><option value="">-- Pilih PTN --</option>{universities.map((univ) => <option key={univ} value={univ}>{univ}</option>)}</select>
+              <select className="w-full p-2 border rounded text-sm" value={univ2} onChange={(e) => { setUniv2(e.target.value); setMajorId2(''); }}>
+                <option value="">-- Pilih PTN --</option>
+                {universities.map((univ) => <option key={univ} value={univ}>{univ}</option>)}
+              </select>
               <select className="w-full p-2 border rounded text-sm" value={majorId2} onChange={(e) => setMajorId2(e.target.value)} disabled={!univ2}><option value="">-- Pilih Jurusan --</option>{getMajorsByUniv(univ2).map((m) => <option key={m.id} value={m.id}>{m.name} (PG: {m.passing_grade})</option>)}</select>
             </div>
           </div>
