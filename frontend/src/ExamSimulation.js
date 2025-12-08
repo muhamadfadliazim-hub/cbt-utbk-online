@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
-import { Clock, ChevronLeft, ChevronRight, Save, Lock } from 'lucide-react';
+import { Clock, ChevronLeft, ChevronRight, Save } from 'lucide-react';
 
 const ExamSimulation = ({ examData, onSubmit, onBack }) => {
   const savedAnswers = JSON.parse(localStorage.getItem('saved_answers')) || {};
@@ -18,14 +18,17 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
 
   const answersRef = useRef(answers);
 
-  // UTILITY: Format Markup [B], [I], [U]
+  // 🌟 UTILITY: Fungsi Format Markup (Bold, Italic, Underline)
   const formatMarkups = (text) => {
     if (!text) return { __html: '' };
+    
+    // Perbaikan: Hanya deklarasi satu kali
     const htmlContent = text
         .replace(/\[B\](.*?)\[\/B\]/g, '<strong>$1</strong>')
         .replace(/\[I\](.*?)\[\/I\]/g, '<em>$1</em>')
         .replace(/\[U\](.*?)\[\/U\]/g, '<u>$1</u>')
         .replace(/\n/g, '<br/>'); // Convert enter ke baris baru
+
     return { __html: htmlContent };
   };
 
@@ -97,7 +100,6 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 font-sans select-none text-left">
-      {/* HEADER */}
       <header className="bg-indigo-900 text-white p-3 flex flex-col md:flex-row justify-between items-center shadow-md z-50 sticky top-0">
         <div className="flex items-center justify-between w-full md:w-auto mb-2 md:mb-0">
             <div className="flex items-center gap-4">
@@ -120,7 +122,6 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
             </div>
         </div>
 
-        {/* NAVIGASI PINDAH KE ATAS */}
         <div className="flex overflow-x-auto gap-2 py-1 w-full md:w-auto md:justify-end">
             {questions.map((q, i) => (
                 <button 
@@ -137,7 +138,6 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
       <main className="flex flex-1 overflow-hidden relative">
         {isSubmitting && (<div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm"><div className="animate-spin rounded-full h-16 w-16 border-b-4 border-indigo-600 mb-4"></div><h2 className="text-2xl font-bold text-indigo-900">Waktu Habis!</h2><p className="text-gray-600">Sedang mengirim jawaban...</p></div>)}
         
-        {/* PANEL KIRI: WACANA (DAN GAMBAR JIKA ADA WACANA) */}
         {hasReading && (
             <div className="w-1/2 p-6 overflow-y-auto border-r bg-white scrollbar-thin">
                 <div className="prose max-w-none text-gray-800 leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
@@ -149,12 +149,11 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
                             Sumber: {question.citation}
                         </p>
                     )}
-                    {/* TEKS WACANA */}
                     <div className="text-justify font-serif leading-8" 
+                         style={{whiteSpace: 'pre-wrap'}}
                          dangerouslySetInnerHTML={formatMarkups(question.reading_material)} 
                     />
                     
-                    {/* PERBAIKAN: GAMBAR PINDAH KE SINI (DI BAWAH WACANA) */}
                     {question.image_url && (
                         <div className="mt-6 mb-4 flex justify-center">
                             <img 
@@ -169,13 +168,11 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
             </div>
         )}
 
-        {/* PANEL KANAN: SOAL */}
         <div className={`flex-1 flex flex-col ${hasReading ? 'w-1/2' : 'w-full max-w-4xl mx-auto'}`}>
             <div className="flex-1 p-6 overflow-y-auto text-left">
                 <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 min-h-[400px]">
                     <div className="mb-8 text-lg text-gray-800 leading-relaxed text-left">
                         
-                        {/* JIKA TIDAK ADA WACANA, GAMBAR MUNCUL DI SINI (ATAS SOAL) */}
                         {!hasReading && question.image_url && (
                             <div className="mb-6 flex justify-center">
                                 <img 
@@ -187,7 +184,6 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
                             </div>
                         )}
 
-                        {/* TEKS SOAL */}
                         <div>{question.text.split(/(\$.*?\$)/).map((part, i) => 
                             part.startsWith('$') && part.endsWith('$') 
                             ? <InlineMath key={i} math={part.slice(1, -1)}/> 
@@ -195,7 +191,6 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
                         )}</div>
                     </div>
 
-                    {/* OPSI JAWABAN */}
                     <div className="space-y-3 text-left">
                         {question.type === 'short_answer' ? (
                             <input type="text" className="border-2 border-gray-300 p-4 rounded-lg w-full text-lg uppercase focus:border-indigo-500 outline-none transition" placeholder="Ketik jawaban singkat..." value={answers[question.id] || ''} onChange={(e)=>handleAnswer(e.target.value)}/>
