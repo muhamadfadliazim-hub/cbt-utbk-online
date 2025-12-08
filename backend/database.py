@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 # --- KONEKSI SEMENTARA KE RAILWAY ---
 # Kita hardcode URL ini AGAR script di laptop bisa "menembak" ke database online
 # TEMPEL URL RAILWAY DI SINI (PAKE TANDA KUTIP)
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:12345@localhost:5300/utbk_db")
+SQLALCHEMY_DATABASE_URL = "postgresql://postgres:GhjmdUrvVZJeEuzWKokkQrnGBXUsoxiM@switchyard.proxy.rlwy.net:12762/railway"
 
 # Fix format URL (jika perlu)
 if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
