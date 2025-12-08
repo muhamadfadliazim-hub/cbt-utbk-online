@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import 'katex/dist/katex.min.css';
-import { InlineMath } from 'react-katex';
-// KITA PAKAI LOCK DISINI SUPAYA TAMPILAN LEBIH JELAS
+import { InlineMath, BlockMath } from 'react-katex'; // Pastikan BlockMath juga diimport
 import { Clock, ChevronLeft, ChevronRight, Save, Lock } from 'lucide-react';
 
 const ExamSimulation = ({ examData, onSubmit, onBack }) => {
@@ -11,7 +10,6 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
   
   const userData = JSON.parse(localStorage.getItem('utbk_user')) || {};
   
-  // LOGIKA KUNCI DARI ADMIN
   const isSubmitAllowed = examData.allow_submit !== false; 
 
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -22,24 +20,54 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
 
   const answersRef = useRef(answers);
 
-  const formatMarkups = (text) => {
-    if (!text) return { __html: '' };
-    const htmlContent = text
+  // 🌟 UTILITY 1: Fungsi Format Markup (Bold, Italic, Underline)
+  const formatHtmlText = (text) => {
+    if (!text) return '';
+    return text
         .replace(/\[B\](.*?)\[\/B\]/g, '<strong>$1</strong>')
         .replace(/\[I\](.*?)\[\/I\]/g, '<em>$1</em>')
         .replace(/\[U\](.*?)\[\/U\]/g, '<u>$1</u>')
+        .replace(/\[S\](.*?)\[\/S\]/g, '<span style="font-size: 12px;">$1</span>')
+        .replace(/\[M\](.*?)\[\/M\]/g, '<span style="font-size: 14px;">$1</span>')
+        .replace(/\[L\](.*?)\[\/L\]/g, '<span style="font-size: 18px;">$1</span>')
+        .replace(/\[XL\](.*?)\[\/XL\]/g, '<span style="font-size: 24px; font-weight: bold;">$1</span>')
         .replace(/\n/g, '<br/>');
-    return { __html: htmlContent };
+  };
+
+  // 🌟 UTILITY 2: Render Teks Campuran (HTML + LaTeX)
+  // Fungsi ini memecah string berdasarkan tanda $ untuk memisahkan teks biasa dan rumus
+  const renderMixedContent = (content) => {
+    if (!content) return null;
+
+    // Split berdasarkan tanda $ (LaTeX inline)
+    // Regex ini menangkap $...$ sebagai grup pemisah
+    const parts = content.split(/(\$.*?\$)/g);
+
+    return parts.map((part, index) => {
+        // Jika bagian ini diawali dan diakhiri $, maka ini LaTeX Inline
+        if (part.startsWith('$') && part.endsWith('$')) {
+            // Hapus tanda $ dan render dengan Katex
+            return <InlineMath key={index} math={part.slice(1, -1)} />;
+        } 
+        // Jika bukan, maka ini teks biasa (HTML markup)
+        else {
+            return (
+                <span 
+                    key={index} 
+                    dangerouslySetInnerHTML={{ __html: formatHtmlText(part) }} 
+                />
+            );
+        }
+    });
   };
 
   const handleFinalSubmit = useCallback(() => {
-      // CEK STATUS KUNCI
       if (!isSubmitAllowed && timeLeft > 0) {
-          alert("Tombol Akhiri Ujian dikunci oleh Admin. Anda harus menunggu hingga waktu habis.");
+          alert("Tombol Akhiri Ujian dinonaktifkan oleh Admin. Anda harus menunggu hingga waktu habis.");
           return;
       }
 
-      if(!window.confirm("Apakah Anda yakin ingin MENGAKHIRI ujian dan mengirim jawaban?")) return;
+      if(!window.confirm("Apakah Anda yakin ingin MENGAKHIRI ujian dan mengirim jawaban? Ujian tidak bisa diulang.")) return;
       setIsSubmitting(true);
       
       const finalAnswers = {
@@ -108,7 +136,6 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 font-sans select-none text-left">
-      {/* HEADER */}
       <header className="bg-indigo-900 text-white p-3 flex flex-col md:flex-row justify-between items-center shadow-md z-50 sticky top-0">
         <div className="flex items-center justify-between w-full md:w-auto mb-2 md:mb-0">
             <div className="flex items-center gap-4">
@@ -141,27 +168,37 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
       <main className="flex flex-1 overflow-hidden relative">
         {isSubmitting && (<div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm"><div className="animate-spin rounded-full h-16 w-16 border-b-4 border-indigo-600 mb-4"></div><h2 className="text-2xl font-bold text-indigo-900">Waktu Habis!</h2><p className="text-gray-600">Sedang mengirim jawaban...</p></div>)}
         
-        {/* WACANA */}
+        {/* PANEL KIRI: WACANA */}
         {hasReading && (
             <div className="w-1/2 p-6 overflow-y-auto border-r bg-white scrollbar-thin">
                 <div className="prose max-w-none text-gray-800 leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
                     <h3 className="font-bold text-gray-500 mb-2 uppercase text-xs border-b pb-2 tracking-wide text-left">{question.reading_label || "Wacana"}</h3>
                     {question.citation && <p className="text-gray-400 text-xs italic mb-4 mt-[-8px] text-right">Sumber: {question.citation}</p>}
-                    <div className="text-justify font-serif leading-8" dangerouslySetInnerHTML={formatMarkups(question.reading_material)} />
+                    
+                    {/* WACANA: RENDER MENGGUNAKAN FUNGSI BARU */}
+                    <div className="text-justify font-serif leading-8" style={{whiteSpace: 'pre-wrap'}}>
+                        {renderMixedContent(question.reading_material)}
+                    </div>
+                    
                     {question.image_url && (<div className="mt-6 mb-4 flex justify-center"><img src={question.image_url} alt="Ilustrasi" className="max-w-full h-auto rounded-lg border shadow-sm object-contain max-h-[400px]" onError={(e) => { e.target.style.display='none'; }} /></div>)}
                 </div>
             </div>
         )}
 
-        {/* SOAL */}
+        {/* PANEL KANAN: SOAL */}
         <div className={`flex-1 flex flex-col ${hasReading ? 'w-1/2' : 'w-full max-w-4xl mx-auto'}`}>
             <div className="flex-1 p-6 overflow-y-auto text-left">
                 <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 min-h-[400px]">
                     <div className="mb-8 text-lg text-gray-800 leading-relaxed text-left">
                         {!hasReading && question.image_url && (<div className="mb-6 flex justify-center"><img src={question.image_url} alt="Soal" className="max-w-full h-auto rounded-lg border shadow-sm object-contain max-h-[400px]" onError={(e) => { e.target.onerror=null; e.target.src="https://via.placeholder.com/400x200?text=Gagal+Muat+Gambar"; }}/></div>)}
-                        <div>{question.text.split(/(\$.*?\$)/).map((part, i) => part.startsWith('$') && part.endsWith('$') ? <InlineMath key={i} math={part.slice(1, -1)}/> : <span key={i} dangerouslySetInnerHTML={formatMarkups(part)} />)}</div>
+                        
+                        {/* SOAL: RENDER MENGGUNAKAN FUNGSI BARU JUGA */}
+                        <div>
+                            {renderMixedContent(question.text)}
+                        </div>
                     </div>
                     
+                    {/* OPSI JAWABAN */}
                     <div className="space-y-3 text-left">
                         {question.type === 'short_answer' ? (
                             <input type="text" className="border-2 border-gray-300 p-4 rounded-lg w-full text-lg uppercase focus:border-indigo-500 outline-none transition" placeholder="Ketik jawaban singkat..." value={answers[question.id] || ''} onChange={(e)=>handleAnswer(e.target.value)}/>
@@ -172,7 +209,16 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
                                 const isComplex = question.type === 'complex';
                                 const userVal = answers[question.id];
                                 const active = isComplex ? Array.isArray(userVal) && userVal.includes(opt.id) : userVal === opt.id;
-                                return (<div key={opt.id} onClick={()=>handleAnswer(opt.id)} className={`p-4 border-2 rounded-xl cursor-pointer flex items-center transition-all duration-200 ${active ? 'bg-indigo-50 border-indigo-500 shadow-md transform scale-[1.01]': 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'}`}><div className={`w-8 h-8 flex items-center justify-center mr-4 font-bold text-sm rounded-full transition-colors ${active?'bg-indigo-600 text-white':'bg-gray-200 text-gray-600'}`}>{opt.id}</div><div className="text-sm font-medium text-gray-700 w-full">{opt.label.split(/(\$.*?\$)/).map((part, i) => part.startsWith('$') && part.endsWith('$') ? <InlineMath key={i} math={part.slice(1, -1)}/> : <span key={i} dangerouslySetInnerHTML={formatMarkups(part)} />)}</div>{isComplex && <div className={`w-5 h-5 border-2 rounded ml-auto flex items-center justify-center ${active ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300'}`}>{active && <span className="text-white text-xs">✓</span>}</div>}</div>)
+                                return (
+                                    <div key={opt.id} onClick={()=>handleAnswer(opt.id)} className={`p-4 border-2 rounded-xl cursor-pointer flex items-center transition-all duration-200 ${active ? 'bg-indigo-50 border-indigo-500 shadow-md transform scale-[1.01]': 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'}`}>
+                                        <div className={`w-8 h-8 flex items-center justify-center mr-4 font-bold text-sm rounded-full transition-colors ${active?'bg-indigo-600 text-white':'bg-gray-200 text-gray-600'}`}>{opt.id}</div>
+                                        <div className="text-sm font-medium text-gray-700 w-full">
+                                            {/* OPSI: RENDER MENGGUNAKAN FUNGSI BARU */}
+                                            {renderMixedContent(opt.label)}
+                                        </div>
+                                        {isComplex && <div className={`w-5 h-5 border-2 rounded ml-auto flex items-center justify-center ${active ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300'}`}>{active && <span className="text-white text-xs">✓</span>}</div>}
+                                    </div>
+                                )
                             })
                         )}
                     </div>
@@ -181,19 +227,10 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
 
             <div className="bg-white border-t p-4 flex justify-between items-center shadow-lg z-40">
                 <button disabled={currentIdx===0} onClick={()=>setCurrentIdx(c=>c-1)} className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2 font-bold transition shadow-sm"><ChevronLeft size={18}/> Sebelumnya</button>
-                
-                {/* TOMBOL AKHIRI: Berubah Ikon & Teks jika dikunci */}
-                <button 
-                    disabled={(!isSubmitAllowed && timeLeft > 0) || isSubmitting} 
-                    onClick={handleFinalSubmit} 
-                    className={`px-5 py-2.5 rounded-lg shadow-md font-bold transition flex items-center gap-2 ${(isSubmitAllowed || timeLeft <= 0) ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-400 text-gray-700 cursor-not-allowed'}`}
-                    title={!isSubmitAllowed && timeLeft > 0 ? "Tombol dikunci oleh Admin" : "Kirim Jawaban"}
-                >
-                    {/* GUNAKAN LOCK JIKA DIKUNCI, SAVE JIKA BOLEH */}
+                <button disabled={(!isSubmitAllowed && timeLeft > 0) || isSubmitting} onClick={handleFinalSubmit} className={`px-5 py-2.5 rounded-lg shadow-md font-bold transition flex items-center gap-2 ${(isSubmitAllowed || timeLeft <= 0) ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-400 text-gray-700 cursor-not-allowed'}`} title={!isSubmitAllowed && timeLeft > 0 ? "Tombol dikunci oleh Admin" : "Kirim Jawaban"}>
                     {(!isSubmitAllowed && timeLeft > 0) ? <Lock size={18}/> : <Save size={18}/>} 
                     {!isSubmitAllowed && timeLeft > 0 ? `Terkunci (${formatTime(timeLeft)})` : isSubmitting ? 'Mengirim...' : 'AKHIRI & SUBMIT'}
                 </button>
-                
                 <button disabled={currentIdx===questions.length-1} onClick={()=>setCurrentIdx(c=>c+1)} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md font-bold flex items-center gap-2 transition disabled:opacity-50">Berikutnya <ChevronRight size={18}/></button>
             </div>
         </div>
