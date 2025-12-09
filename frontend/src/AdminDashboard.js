@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter } from 'lucide-react';
+import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
@@ -61,7 +61,7 @@ const AdminDashboard = ({ onLogout }) => {
     if (tab === 'recap') { fetchPeriods(); fetchRecap(); fetchReleaseStatus(); } 
   }, [tab, fetchPeriods, fetchUsers, fetchRecap, fetchReleaseStatus]);
 
-  useEffect(() => { if (tab === 'recap') fetchRecap(); }, [selectedRecapPeriod, fetchRecap]);
+  useEffect(() => { if (tab === 'recap') fetchRecap(); }, [selectedRecapPeriod, fetchRecap, tab]);
 
   // --- ACTIONS ---
   
@@ -77,7 +77,6 @@ const AdminDashboard = ({ onLogout }) => {
       e.preventDefault(); 
       if(!newPeriodName.trim()) return alert("Nama periode wajib diisi");
       
-      // Logic: Use checkbox list if selected, otherwise check text input, otherwise null (public)
       let finalAllowed = null;
       if (selectedWhitelist.length > 0) {
           finalAllowed = selectedWhitelist.join(',');
@@ -200,14 +199,12 @@ const AdminDashboard = ({ onLogout }) => {
                                 className="w-full p-2 border rounded bg-gray-50 cursor-pointer flex justify-between items-center hover:bg-gray-100"
                             >
                                 <span className="text-sm text-gray-600">
-                                    {selectedWhitelist.length > 0 ? `${selectedWhitelist.length} Peserta Terpilih` : (allowedUsers || "Semua Peserta (Public)")}
+                                    {selectedWhitelist.length > 0 ? `${selectedWhitelist.length} Peserta Terpilih` : "Semua Peserta (Public)"}
                                 </span>
                                 <Users size={16} className="text-gray-400"/>
                             </div>
-                            {/* Hidden input for manual override if needed */}
-                            <input className="hidden" value={allowedUsers} onChange={(e)=>setAllowedUsers(e.target.value)} />
                         </div>
-                        <button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold hover:bg-indigo-700 h-10">+ Buat</button>
+                        <button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold hover:bg-indigo-700 h-10 mt-6">+ Buat</button>
                     </div>
                 </div>
 
