@@ -1,36 +1,20 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, RefreshCcw, Clock } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
-
-const ResetMenu = ({ resultId, completedExams, onReset }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const menuRef = useRef(null);
-    useEffect(() => {
-        const handleClickOutside = (event) => { if (menuRef.current && !menuRef.current.contains(event.target)) setIsOpen(false); };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-    return (
-        <div className="relative" ref={menuRef}>
-            <button onClick={() => setIsOpen(!isOpen)} className={`p-2 rounded transition ${isOpen ? 'bg-red-100 text-red-600' : 'text-gray-400 hover:text-red-600'}`} title="Reset Nilai"><RefreshCcw size={18}/></button>
-            {isOpen && (<div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 shadow-xl rounded-lg z-50 overflow-hidden"><div className="bg-gray-50 px-3 py-2 text-xs font-bold text-gray-500 border-b">PILIH UJIAN UNTUK DI-RESET:</div>{(!completedExams || completedExams.length === 0) ? (<div className="px-3 py-2 text-xs text-gray-400">Belum ada ujian selesai.</div>) : (completedExams.map((exam) => (<button key={exam.exam_id} onClick={() => { if(window.confirm(`Reset nilai ${exam.code}?`)) { onReset(resultId, exam.exam_id); setIsOpen(false); } }} className="w-full text-left px-3 py-3 text-sm hover:bg-red-50 text-gray-700 hover:text-red-700 flex justify-between items-center border-b last:border-0 transition"><span className="font-medium">{exam.code}</span><Trash2 size={14}/></button>)))}</div>)}
-        </div>
-    );
-};
 
 const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
   const [periods, setPeriods] = useState([]);
   const [newPeriodName, setNewPeriodName] = useState('');
-  const [allowedUsers, setAllowedUsers] = useState(''); 
+  const [allowedUsers, setAllowedUsers] = useState('');
   
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewData, setPreviewData] = useState(null); 
   const [showPreview, setShowPreview] = useState(false);
 
-  // New state for user modal
+  // Modal Checklist User
   const [showUserModal, setShowUserModal] = useState(false);
   const [selectedWhitelist, setSelectedWhitelist] = useState([]);
 
@@ -41,6 +25,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
+  // --- API CALLS ---
   const fetchPeriods = useCallback(() => {
     fetch(`${API_URL}/admin/periods`)
       .then(r => r.json())
@@ -69,14 +54,17 @@ const AdminDashboard = ({ onLogout }) => {
       fetch(`${API_URL}/config/release`).then(r=>r.json()).then(d=>setIsReleased(d.is_released));
   }, []);
 
-  useEffect(() => { 
-      fetchUsers();
-      if (tab === 'periods') fetchPeriods(); 
-      if (tab === 'recap') { fetchPeriods(); fetchRecap(); fetchReleaseStatus(); } 
+  // --- EFFECTS ---
+  useEffect(() => {
+    fetchUsers(); 
+    if (tab === 'periods') fetchPeriods(); 
+    if (tab === 'recap') { fetchPeriods(); fetchRecap(); fetchReleaseStatus(); } 
   }, [tab, fetchPeriods, fetchUsers, fetchRecap, fetchReleaseStatus]);
-  
-  useEffect(() => { if (tab === 'recap') fetchRecap(); }, [selectedRecapPeriod, fetchRecap, tab]);
 
+  useEffect(() => { if (tab === 'recap') fetchRecap(); }, [selectedRecapPeriod, fetchRecap]);
+
+  // --- ACTIONS ---
+  
   const toggleUserWhitelist = (username) => {
       if (selectedWhitelist.includes(username)) {
           setSelectedWhitelist(selectedWhitelist.filter(u => u !== username));
@@ -89,21 +77,27 @@ const AdminDashboard = ({ onLogout }) => {
       e.preventDefault(); 
       if(!newPeriodName.trim()) return alert("Nama periode wajib diisi");
       
-      const allowedString = selectedWhitelist.length > 0 ? selectedWhitelist.join(',') : null;
+      // Logic: Use checkbox list if selected, otherwise check text input, otherwise null (public)
+      let finalAllowed = null;
+      if (selectedWhitelist.length > 0) {
+          finalAllowed = selectedWhitelist.join(',');
+      } else if (allowedUsers.trim() !== '') {
+          finalAllowed = allowedUsers;
+      }
 
       fetch(`${API_URL}/admin/periods`, {
           method:'POST', 
           headers:{'Content-Type':'application/json'}, 
           body:JSON.stringify({
               name: newPeriodName,
-              allowed_usernames: allowedString
+              allowed_usernames: finalAllowed
           })
       })
       .then(r=>r.json()).then(d=>{
           alert(d.message); 
           setNewPeriodName(''); 
-          setSelectedWhitelist([]); 
-          setAllowedUsers('');
+          setAllowedUsers(''); 
+          setSelectedWhitelist([]);
           fetchPeriods();
       }); 
   };
@@ -131,7 +125,6 @@ const AdminDashboard = ({ onLogout }) => {
           })
           .then(r => r.json())
           .then(d => { 
-              // alert(d.message); 
               fetchRecap(); 
           })
           .catch(() => alert("Gagal reset."));
@@ -143,7 +136,6 @@ const AdminDashboard = ({ onLogout }) => {
       <aside className="w-64 bg-indigo-900 text-white p-6 flex flex-col"><h1 className="text-2xl font-bold mb-8">Admin Panel</h1><nav className="space-y-4 flex-1"><button onClick={()=>setTab('periods')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='periods'?'bg-indigo-700':''}`}><FileText size={18}/> Manajemen Soal</button><button onClick={()=>setTab('users')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='users'?'bg-indigo-700':''}`}><Users size={18}/> User & Siswa</button><button onClick={()=>setTab('recap')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='recap'?'bg-indigo-700':''}`}><FileText size={18}/> Rekap Nilai</button></nav><button onClick={onLogout} className="flex items-center gap-3 p-3 rounded hover:bg-red-600 bg-indigo-800 mt-auto"><LogOut size={18}/> Keluar</button></aside>
       
       <main className="flex-1 p-8 overflow-y-auto relative">
-        {/* MODAL PREVIEW SOAL */}
         {showPreview && previewData && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
@@ -202,18 +194,20 @@ const AdminDashboard = ({ onLogout }) => {
                             <input className="w-full p-2 border rounded" placeholder="Contoh: Tryout Akbar 1" value={newPeriodName} onChange={(e)=>setNewPeriodName(e.target.value)}/>
                         </div>
                         <div className="w-1/3">
-                            <label className="block text-sm font-bold text-gray-600 mb-1">Akses Peserta</label>
+                            <label className="block text-sm font-bold text-gray-600 mb-1">Akses Peserta (Opsional)</label>
                             <div 
                                 onClick={() => setShowUserModal(true)}
                                 className="w-full p-2 border rounded bg-gray-50 cursor-pointer flex justify-between items-center hover:bg-gray-100"
                             >
                                 <span className="text-sm text-gray-600">
-                                    {selectedWhitelist.length > 0 ? `${selectedWhitelist.length} Peserta Terpilih` : "Semua Peserta (Public)"}
+                                    {selectedWhitelist.length > 0 ? `${selectedWhitelist.length} Peserta Terpilih` : (allowedUsers || "Semua Peserta (Public)")}
                                 </span>
                                 <Users size={16} className="text-gray-400"/>
                             </div>
+                            {/* Hidden input for manual override if needed */}
+                            <input className="hidden" value={allowedUsers} onChange={(e)=>setAllowedUsers(e.target.value)} />
                         </div>
-                        <button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold hover:bg-indigo-700 h-10 mt-6">+ Buat</button>
+                        <button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold hover:bg-indigo-700 h-10">+ Buat</button>
                     </div>
                 </div>
 
@@ -296,4 +290,5 @@ const AdminDashboard = ({ onLogout }) => {
     </div>
   );
 };
+
 export default AdminDashboard;
