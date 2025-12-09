@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock, RefreshCcw } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+// Removed unused imports: RefreshCcw
+import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
@@ -8,11 +9,15 @@ const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
   const [periods, setPeriods] = useState([]);
   const [newPeriodName, setNewPeriodName] = useState('');
-  const [allowedUsers, setAllowedUsers] = useState('');
+  const [allowedUsers, setAllowedUsers] = useState(''); 
   
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewData, setPreviewData] = useState(null); 
   const [showPreview, setShowPreview] = useState(false);
+
+  // New state for user modal
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [selectedWhitelist, setSelectedWhitelist] = useState([]);
 
   const [users, setUsers] = useState([]);
   const [recap, setRecap] = useState([]);
@@ -21,7 +26,6 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
-  // --- API CALLS (Wrapped in useCallback) ---
   const fetchPeriods = useCallback(() => {
     fetch(`${API_URL}/admin/periods`)
       .then(r => r.json())
@@ -50,38 +54,41 @@ const AdminDashboard = ({ onLogout }) => {
       fetch(`${API_URL}/config/release`).then(r=>r.json()).then(d=>setIsReleased(d.is_released));
   }, []);
 
-  // --- EFFECTS ---
-  useEffect(() => {
-    fetchUsers(); // Always fetch users for whitelist feature
-    
-    if (tab === 'periods') fetchPeriods();
-    if (tab === 'recap') { 
-        fetchPeriods(); 
-        fetchRecap(); 
-        fetchReleaseStatus(); 
-    }
-  }, [tab, fetchPeriods, fetchUsers, fetchRecap, fetchReleaseStatus]);
-
   useEffect(() => { 
-      if (tab === 'recap') fetchRecap(); 
-  }, [selectedRecapPeriod, fetchRecap, tab]);
+      fetchUsers();
+      if (tab === 'periods') fetchPeriods(); 
+      if (tab === 'recap') { fetchPeriods(); fetchRecap(); fetchReleaseStatus(); } 
+  }, [tab, fetchPeriods, fetchUsers, fetchRecap, fetchReleaseStatus]);
+  
+  useEffect(() => { if (tab === 'recap') fetchRecap(); }, [selectedRecapPeriod, fetchRecap]);
 
-  // --- ACTIONS ---
+  const toggleUserWhitelist = (username) => {
+      if (selectedWhitelist.includes(username)) {
+          setSelectedWhitelist(selectedWhitelist.filter(u => u !== username));
+      } else {
+          setSelectedWhitelist([...selectedWhitelist, username]);
+      }
+  };
+
   const handleCreatePeriod = (e) => { 
       e.preventDefault(); 
       if(!newPeriodName.trim()) return alert("Nama periode wajib diisi");
+      
+      const allowedString = selectedWhitelist.length > 0 ? selectedWhitelist.join(',') : null;
+
       fetch(`${API_URL}/admin/periods`, {
           method:'POST', 
           headers:{'Content-Type':'application/json'}, 
           body:JSON.stringify({
               name: newPeriodName,
-              allowed_usernames: allowedUsers 
+              allowed_usernames: allowedString
           })
       })
       .then(r=>r.json()).then(d=>{
           alert(d.message); 
           setNewPeriodName(''); 
-          setAllowedUsers(''); 
+          setSelectedWhitelist([]); 
+          setAllowedUsers('');
           fetchPeriods();
       }); 
   };
@@ -109,6 +116,7 @@ const AdminDashboard = ({ onLogout }) => {
           })
           .then(r => r.json())
           .then(d => { 
+              // alert(d.message); 
               fetchRecap(); 
           })
           .catch(() => alert("Gagal reset."));
@@ -120,7 +128,6 @@ const AdminDashboard = ({ onLogout }) => {
       <aside className="w-64 bg-indigo-900 text-white p-6 flex flex-col"><h1 className="text-2xl font-bold mb-8">Admin Panel</h1><nav className="space-y-4 flex-1"><button onClick={()=>setTab('periods')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='periods'?'bg-indigo-700':''}`}><FileText size={18}/> Manajemen Soal</button><button onClick={()=>setTab('users')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='users'?'bg-indigo-700':''}`}><Users size={18}/> User & Siswa</button><button onClick={()=>setTab('recap')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='recap'?'bg-indigo-700':''}`}><FileText size={18}/> Rekap Nilai</button></nav><button onClick={onLogout} className="flex items-center gap-3 p-3 rounded hover:bg-red-600 bg-indigo-800 mt-auto"><LogOut size={18}/> Keluar</button></aside>
       
       <main className="flex-1 p-8 overflow-y-auto relative">
-        {/* MODAL PREVIEW SOAL */}
         {showPreview && previewData && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
@@ -129,6 +136,41 @@ const AdminDashboard = ({ onLogout }) => {
                         {(!previewData.questions || previewData.questions.length === 0) ? (<div className="text-center text-gray-400 py-10">Belum ada soal.</div>) : (previewData.questions.map((q, idx) => (<div key={q.id} className="border p-4 rounded-lg bg-gray-50 relative"><div className="absolute top-2 right-2 bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded font-bold">Bobot: {q.difficulty}</div><div className="mb-4"><span className="font-bold text-indigo-600 mr-2">No. {idx + 1}</span><div className="text-gray-800 mt-1">{q.reading_material && <div className="p-3 bg-white border mb-2 text-sm italic whitespace-pre-wrap">{q.reading_material}</div>}{q.image_url && <img src={q.image_url} alt="soal" className="max-h-48 mb-2 rounded border"/>}{q.text.split(/(\$.*?\$)/).map((part, i) => part.startsWith('$') && part.endsWith('$') ? <InlineMath key={i} math={part.slice(1, -1)}/> : <span key={i}>{part}</span>)}</div></div><div className="space-y-2 pl-4">{q.type === 'short_answer' ? (<div className="p-2 bg-green-100 border border-green-300 rounded text-green-800 font-mono text-sm"><strong>Kunci Jawaban:</strong> {q.options[0]?.label}</div>) : (q.options.map(opt => (<div key={opt.id} className={`p-2 rounded text-sm border flex items-center gap-2 ${opt.is_correct ? 'bg-green-100 border-green-300 ring-1 ring-green-500' : 'bg-white border-gray-300'}`}><span className={`w-6 h-6 flex items-center justify-center rounded font-bold text-xs ${opt.is_correct ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'}`}>{opt.id}</span><span className={opt.is_correct ? 'font-bold text-green-900' : 'text-gray-700'}>{opt.label}</span>{opt.is_correct && <CheckCircle size={14} className="text-green-600 ml-auto"/>}</div>)))}</div></div>)))}
                     </div>
                     <div className="p-4 border-t bg-gray-50 rounded-b-xl text-right"><button onClick={() => setShowPreview(false)} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700">Tutup</button></div>
+                </div>
+            </div>
+        )}
+
+        {/* MODAL PILIH USER (WHITELIST) - FITUR BARU */}
+        {showUserModal && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">
+                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
+                        <h3 className="font-bold text-gray-800">Pilih Peserta</h3>
+                        <button onClick={() => setShowUserModal(false)}><X/></button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4">
+                        <div className="space-y-2">
+                            {users.filter(u => u.role === 'student').map(u => (
+                                <label key={u.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 border rounded cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        className="w-5 h-5 accent-indigo-600"
+                                        checked={selectedWhitelist.includes(u.username)} 
+                                        onChange={() => toggleUserWhitelist(u.username)}
+                                    />
+                                    <div>
+                                        <div className="font-bold text-sm">{u.full_name}</div>
+                                        <div className="text-xs text-gray-400">{u.username}</div>
+                                    </div>
+                                </label>
+                            ))}
+                            {users.length === 0 && <p className="text-center text-gray-400">Belum ada user siswa.</p>}
+                        </div>
+                    </div>
+                    <div className="p-4 border-t bg-gray-50 rounded-b-xl flex justify-between items-center">
+                        <span className="text-xs text-gray-500">{selectedWhitelist.length} siswa dipilih</span>
+                        <button onClick={() => setShowUserModal(false)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-sm">Selesai</button>
+                    </div>
                 </div>
             </div>
         )}
@@ -145,13 +187,15 @@ const AdminDashboard = ({ onLogout }) => {
                         </div>
                         <div className="w-1/3">
                             <label className="block text-sm font-bold text-gray-600 mb-1">Akses Peserta (Opsional)</label>
-                            <input 
-                                className="w-full p-2 border rounded" 
-                                placeholder="Username: siswa1, siswa2..." 
-                                value={allowedUsers} 
-                                onChange={(e)=>setAllowedUsers(e.target.value)}
-                            />
-                            <p className="text-[10px] text-gray-400 mt-1">*Kosongkan jika untuk semua siswa</p>
+                            <div 
+                                onClick={() => setShowUserModal(true)}
+                                className="w-full p-2 border rounded bg-gray-50 cursor-pointer flex justify-between items-center hover:bg-gray-100"
+                            >
+                                <span className="text-sm text-gray-600">
+                                    {selectedWhitelist.length > 0 ? `${selectedWhitelist.length} Peserta Terpilih` : "Semua Peserta (Public)"}
+                                </span>
+                                <Users size={16} className="text-gray-400"/>
+                            </div>
                         </div>
                         <button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold hover:bg-indigo-700 h-10 mt-6">+ Buat</button>
                     </div>
@@ -199,7 +243,7 @@ const AdminDashboard = ({ onLogout }) => {
                 </div>
                 <div className="bg-white shadow-lg rounded-xl overflow-hidden border border-gray-200">
                     <table className="min-w-full text-sm text-left border-collapse">
-                        <thead className="bg-indigo-900 text-white"><tr><th className="p-4 border-r border-indigo-800 w-64" rowSpan="2">Nama Siswa</th><th className="p-2 text-center border-b border-indigo-800 bg-indigo-800" colSpan="7">Skor 7 Subtes (IRT)</th><th className="p-4 text-center border-l border-indigo-800 bg-blue-900 w-24" rowSpan="2">Skor Akhir</th><th className="p-4 border-l border-indigo-800 bg-indigo-800" rowSpan="2">Keterangan</th><th className="p-4 border-l border-indigo-800 w-24 bg-red-900" rowSpan="2">Reset</th></tr><tr>{["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"].map(sub => (<th key={sub} className="p-2 text-center border-r border-indigo-700 bg-indigo-700 text-xs font-bold w-16">{sub}</th>))}</tr></thead>
+                        <thead className="bg-indigo-900 text-white"><tr><th className="p-4 border-r border-indigo-800 w-64" rowSpan="2">Nama Siswa</th><th className="p-2 text-center border-b border-indigo-800 bg-indigo-800" colSpan="7">Skor 7 Subtes (IRT)</th><th className="p-4 text-center border-l border-indigo-800 bg-blue-900 w-24" rowSpan="2">Skor Akhir</th><th className="p-4 border-l border-indigo-800 bg-indigo-800" rowSpan="2">Keterangan</th><th className="p-4 border-l border-indigo-800 w-32 bg-red-900" rowSpan="2">Reset Nilai</th></tr><tr>{["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"].map(sub => (<th key={sub} className="p-2 text-center border-r border-indigo-700 bg-indigo-700 text-xs font-bold w-16">{sub}</th>))}</tr></thead>
                         <tbody className="divide-y divide-gray-100">
                             {Array.isArray(recap) && recap.map((r, i) => (
                                 <tr key={i} className={`hover:bg-gray-50 transition-colors ${r.status.startsWith('LULUS') ? 'bg-green-50/30' : ''}`}>
@@ -208,8 +252,7 @@ const AdminDashboard = ({ onLogout }) => {
                                     <td className="p-4 text-center border-l border-gray-100 font-extrabold text-blue-700 text-lg bg-blue-50/50">{r.average}</td>
                                     <td className="p-4 border-l border-gray-100 align-middle">{r.status.startsWith('LULUS') ? (<div><span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-green-100 text-green-700 mb-1"><CheckCircle size={12}/> LULUS</span></div>) : (<span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-red-100 text-red-600"><XCircle size={12}/> TIDAK LULUS</span>)}</td>
                                     
-                                    {/* RESET BUTTON */}
-                                    <td className="p-4 border-l border-gray-100 text-center align-middle">
+                                    <td className="p-4 border-l border-gray-100 text-center align-middle bg-gray-50">
                                         <div className="flex flex-wrap gap-1 justify-center">
                                             {r.completed_exams && r.completed_exams.length > 0 ? (
                                                 r.completed_exams.map(exam => (
@@ -237,5 +280,4 @@ const AdminDashboard = ({ onLogout }) => {
     </div>
   );
 };
-
 export default AdminDashboard;
