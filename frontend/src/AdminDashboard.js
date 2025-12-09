@@ -1,31 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
-// Added missing imports: Clock, Upload
-import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, RefreshCcw, Clock } from 'lucide-react';
+ import React, { useState, useEffect, useCallback } from 'react';
+import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
-import { InlineMath } from 'react-katex'; // Ensure InlineMath is imported
+import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
-
-const ResetMenu = ({ resultId, completedExams, onReset }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const menuRef = useRef(null);
-    useEffect(() => {
-        const handleClickOutside = (event) => { if (menuRef.current && !menuRef.current.contains(event.target)) setIsOpen(false); };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-    return (
-        <div className="relative" ref={menuRef}>
-            <button onClick={() => setIsOpen(!isOpen)} className={`p-2 rounded transition ${isOpen ? 'bg-red-100 text-red-600' : 'text-gray-400 hover:text-red-600'}`} title="Reset Nilai"><RefreshCcw size={18}/></button>
-            {isOpen && (<div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 shadow-xl rounded-lg z-50 overflow-hidden"><div className="bg-gray-50 px-3 py-2 text-xs font-bold text-gray-500 border-b">PILIH UJIAN UNTUK DI-RESET:</div>{(!completedExams || completedExams.length === 0) ? (<div className="px-3 py-2 text-xs text-gray-400">Belum ada ujian selesai.</div>) : (completedExams.map((exam) => (<button key={exam.exam_id} onClick={() => { if(window.confirm(`Reset nilai ${exam.code}?`)) { onReset(resultId, exam.exam_id); setIsOpen(false); } }} className="w-full text-left px-3 py-3 text-sm hover:bg-red-50 text-gray-700 hover:text-red-700 flex justify-between items-center border-b last:border-0 transition"><span className="font-medium">{exam.code}</span><Trash2 size={14}/></button>)))}</div>)}
-        </div>
-    );
-};
 
 const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
   const [periods, setPeriods] = useState([]);
   const [newPeriodName, setNewPeriodName] = useState('');
-  const [allowedUsers, setAllowedUsers] = useState(''); 
+  const [allowedUsers, setAllowedUsers] = useState('');
   
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewData, setPreviewData] = useState(null); 
@@ -38,20 +21,53 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
-  const fetchPeriods = () => { fetch(`${API_URL}/admin/periods`).then(r => r.json()).then(data => { if (Array.isArray(data)) setPeriods(data); else setPeriods([]); }).catch(() => setPeriods([])); };
-  const fetchUsers = () => { fetch(`${API_URL}/admin/users`).then(r => r.json()).then(data => { if (Array.isArray(data)) { setUsers(data); setSelectedIds([]); } else setUsers([]); }).catch(() => setUsers([])); };
-  const fetchRecap = () => { const url = selectedRecapPeriod ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap`; fetch(url).then(r => r.json()).then(data => { if (Array.isArray(data)) setRecap(data); else setRecap([]); }).catch(() => setRecap([])); };
-  const fetchReleaseStatus = () => fetch(`${API_URL}/config/release`).then(r=>r.json()).then(d=>setIsReleased(d.is_released));
+  // --- API CALLS (Wrapped in useCallback) ---
+  const fetchPeriods = useCallback(() => {
+    fetch(`${API_URL}/admin/periods`)
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setPeriods(data); else setPeriods([]); })
+      .catch(() => setPeriods([]));
+  }, []);
 
-  useEffect(() => { 
-      // Fetch users early for whitelist feature
-      fetchUsers();
-      if (tab === 'periods') fetchPeriods(); 
-      if (tab === 'recap') { fetchPeriods(); fetchRecap(); fetchReleaseStatus(); } 
-  }, [tab]);
+  const fetchUsers = useCallback(() => {
+    fetch(`${API_URL}/admin/users`)
+        .then(r => r.json())
+        .then(data => { if (Array.isArray(data)) { setUsers(data); setSelectedIds([]); } else setUsers([]); })
+        .catch(() => setUsers([]));
+  }, []);
   
-  useEffect(() => { if (tab === 'recap') fetchRecap(); }, [selectedRecapPeriod]);
+  const fetchRecap = useCallback(() => {
+      const url = selectedRecapPeriod 
+        ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}`
+        : `${API_URL}/admin/recap`;
+      fetch(url)
+        .then(r => r.json())
+        .then(data => { if (Array.isArray(data)) setRecap(data); else setRecap([]); })
+        .catch(() => setRecap([]));
+  }, [selectedRecapPeriod]);
+  
+  const fetchReleaseStatus = useCallback(() => {
+      fetch(`${API_URL}/config/release`).then(r=>r.json()).then(d=>setIsReleased(d.is_released));
+  }, []);
 
+  // --- EFFECTS ---
+  useEffect(() => {
+    // Initial Load
+    fetchUsers();
+    
+    if (tab === 'periods') fetchPeriods();
+    if (tab === 'recap') { 
+        fetchPeriods(); 
+        fetchRecap(); 
+        fetchReleaseStatus(); 
+    }
+  }, [tab, fetchPeriods, fetchUsers, fetchRecap, fetchReleaseStatus]);
+
+  useEffect(() => {
+      if (tab === 'recap') fetchRecap();
+  }, [selectedRecapPeriod, fetchRecap]);
+
+  // --- ACTIONS ---
   const handleCreatePeriod = (e) => { 
       e.preventDefault(); 
       if(!newPeriodName.trim()) return alert("Nama periode wajib diisi");
@@ -60,7 +76,7 @@ const AdminDashboard = ({ onLogout }) => {
           headers:{'Content-Type':'application/json'}, 
           body:JSON.stringify({
               name: newPeriodName,
-              allowed_usernames: allowedUsers 
+              allowed_usernames: allowedUsers
           })
       })
       .then(r=>r.json()).then(d=>{
@@ -72,19 +88,69 @@ const AdminDashboard = ({ onLogout }) => {
   };
 
   const togglePeriodActive = (id, s) => fetch(`${API_URL}/admin/periods/${id}/toggle`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active:!s})}).then(()=>fetchPeriods());
-  const togglePeriodSubmit = (id, currentStatus) => { fetch(`${API_URL}/admin/periods/${id}/toggle-submit`, { method: 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active: !currentStatus}) }).then(() => fetchPeriods()); };
-  const handleDeletePeriod = (id) => { if(window.confirm("Hapus Periode?")) fetch(`${API_URL}/admin/periods/${id}`, {method:'DELETE'}).then(()=>fetchPeriods()); };
-  const handleUploadQuestion = (eid, f) => { const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d}).then(r=>r.json()).then(d=>{ alert(d.message); fetchPeriods(); }); };
+  
+  const togglePeriodSubmit = (id, currentStatus) => {
+      fetch(`${API_URL}/admin/periods/${id}/toggle-submit`, {
+          method: 'POST', 
+          headers:{'Content-Type':'application/json'}, 
+          body:JSON.stringify({is_active: !currentStatus}) 
+      }).then(() => fetchPeriods());
+  };
+
+  const handleDeletePeriod = (id) => { 
+      if(window.confirm("Hapus Periode?")) fetch(`${API_URL}/admin/periods/${id}`, {method:'DELETE'}).then(()=>fetchPeriods()); 
+  };
+  
+  const handleUploadQuestion = (eid, f) => { 
+      const d=new FormData(); d.append('file',f); 
+      fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d})
+      .then(r=>r.json()).then(d=>{ alert(d.message); fetchPeriods(); }); 
+  };
+  
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
-  const handlePreviewExam = (examId) => { fetch(`${API_URL}/admin/exams/${examId}/preview`).then(res => { if(!res.ok) throw new Error("Gagal"); return res.json(); }).then(data => { setPreviewData(data); setShowPreview(true); }).catch(err => alert("Belum ada soal.")); };
+
+  const handlePreviewExam = (examId) => {
+      fetch(`${API_URL}/admin/exams/${examId}/preview`)
+        .then(res => { if(!res.ok) throw new Error("Gagal"); return res.json(); })
+        .then(data => { setPreviewData(data); setShowPreview(true); })
+        .catch(err => alert("Belum ada soal."));
+  };
+
   const handleSelectAll = (e) => setSelectedIds(e.target.checked ? users.map(u=>u.id) : []);
   const handleSelectOne = (id) => setSelectedIds(selectedIds.includes(id) ? selectedIds.filter(i=>i!==id) : [...selectedIds, id]);
-  const handleBulkDelete = () => { if(selectedIds.length>0 && window.confirm("Hapus?")) fetch(`${API_URL}/admin/users/delete-bulk`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_ids:selectedIds})}).then(r=>r.json()).then(d=>{alert(d.message); fetchUsers();}); };
-  const handleAddUser = (e) => { e.preventDefault(); fetch(`${API_URL}/admin/users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(newUser)}).then(r=>{if(!r.ok) throw new Error("Gagal"); return r.json()}).then(()=>{alert("Sukses"); fetchUsers(); setNewUser({username:'',password:'',full_name:'', role:'student'})}).catch(e=>alert(e.message)); };
-  const handleBulkUpload = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/users/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchUsers();}) };
-  const toggleRelease = () => { const n=!isReleased; if(window.confirm(n?"Buka Pengumuman?":"Tutup Pengumuman?")) fetch(`${API_URL}/config/release`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({value:n?"true":"false"})}).then(r=>r.json()).then(d=>{setIsReleased(d.is_released); alert(d.message)}); };
-  const handleDownloadExcel = () => { const url = selectedRecapPeriod ? `${API_URL}/admin/recap/download?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap/download`; window.open(url, '_blank'); };
   
+  const handleBulkDelete = () => { 
+      if(selectedIds.length>0 && window.confirm("Hapus?")) 
+      fetch(`${API_URL}/admin/users/delete-bulk`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_ids:selectedIds})})
+      .then(r=>r.json()).then(d=>{alert(d.message); fetchUsers();}); 
+  };
+
+  const handleAddUser = (e) => { 
+      e.preventDefault(); 
+      fetch(`${API_URL}/admin/users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(newUser)})
+      .then(r=>{if(!r.ok) throw new Error("Gagal"); return r.json()}).then(()=>{alert("Sukses"); fetchUsers(); setNewUser({username:'',password:'',full_name:'', role:'student'})}).catch(e=>alert(e.message)); 
+  };
+  
+  const handleBulkUpload = (e) => { 
+      const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); 
+      fetch(`${API_URL}/admin/users/bulk`,{method:'POST',body:d})
+      .then(r=>r.json()).then(d=>{alert(d.message); fetchUsers();}) 
+  };
+  
+  const toggleRelease = () => { 
+      const n=!isReleased; 
+      if(window.confirm(n?"Buka Pengumuman?":"Tutup Pengumuman?")) 
+      fetch(`${API_URL}/config/release`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({value:n?"true":"false"})})
+      .then(r=>r.json()).then(d=>{setIsReleased(d.is_released); alert(d.message)}); 
+  };
+  
+  const handleDownloadExcel = () => {
+      const url = selectedRecapPeriod 
+        ? `${API_URL}/admin/recap/download?period_id=${selectedRecapPeriod}`
+        : `${API_URL}/admin/recap/download`;
+      window.open(url, '_blank');
+  };
+
   const handleResetResult = (userId, examId, subtestCode) => {
       if(window.confirm(`Reset nilai ${subtestCode} untuk siswa ini?\nSiswa harus mengerjakan ulang.`)) {
           fetch(`${API_URL}/admin/reset-result`, {
@@ -106,7 +172,6 @@ const AdminDashboard = ({ onLogout }) => {
       <aside className="w-64 bg-indigo-900 text-white p-6 flex flex-col"><h1 className="text-2xl font-bold mb-8">Admin Panel</h1><nav className="space-y-4 flex-1"><button onClick={()=>setTab('periods')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='periods'?'bg-indigo-700':''}`}><FileText size={18}/> Manajemen Soal</button><button onClick={()=>setTab('users')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='users'?'bg-indigo-700':''}`}><Users size={18}/> User & Siswa</button><button onClick={()=>setTab('recap')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='recap'?'bg-indigo-700':''}`}><FileText size={18}/> Rekap Nilai</button></nav><button onClick={onLogout} className="flex items-center gap-3 p-3 rounded hover:bg-red-600 bg-indigo-800 mt-auto"><LogOut size={18}/> Keluar</button></aside>
       
       <main className="flex-1 p-8 overflow-y-auto relative">
-        {/* MODAL PREVIEW SOAL */}
         {showPreview && previewData && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
@@ -124,22 +189,22 @@ const AdminDashboard = ({ onLogout }) => {
                 <div className="flex justify-end mb-4"><button onClick={handleDownloadTemplate} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-green-700"><Download size={18}/> Download Template Soal</button></div>
                 
                 <div className="bg-white p-6 rounded-xl shadow-sm border mb-8">
-                    <div className="flex gap-4 items-end">
+                    <div className="flex gap-4 items-start">
                         <div className="flex-1">
                             <label className="block text-sm font-bold text-gray-600 mb-1">Nama Periode Baru</label>
                             <input className="w-full p-2 border rounded" placeholder="Contoh: Tryout Akbar 1" value={newPeriodName} onChange={(e)=>setNewPeriodName(e.target.value)}/>
                         </div>
-                        <div className="w-1/3">
-                            <label className="block text-sm font-bold text-gray-600 mb-1">Akses Peserta (Opsional)</label>
+                        <div className="flex-1">
+                            <label className="block text-sm font-bold text-gray-600 mb-1">Whitelist Peserta (Opsional)</label>
                             <input 
                                 className="w-full p-2 border rounded" 
-                                placeholder="Username: siswa1, siswa2..." 
+                                placeholder="Username dipisah koma (contoh: siswa1, siswa2). Kosongkan jika untuk semua." 
                                 value={allowedUsers} 
                                 onChange={(e)=>setAllowedUsers(e.target.value)}
                             />
-                            <p className="text-[10px] text-gray-400 mt-1">*Kosongkan jika untuk semua siswa</p>
+                            <p className="text-xs text-gray-400 mt-1">*Jika diisi, hanya siswa dengan username ini yang bisa melihat ujian.</p>
                         </div>
-                        <button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold hover:bg-indigo-700 h-10">+ Buat</button>
+                        <button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold hover:bg-indigo-700 h-10 mt-6">+ Buat</button>
                     </div>
                 </div>
 
@@ -221,4 +286,5 @@ const AdminDashboard = ({ onLogout }) => {
     </div>
   );
 };
+
 export default AdminDashboard;
