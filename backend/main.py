@@ -53,7 +53,7 @@ class ResetResultSchema(BaseModel):
     user_id: int
     exam_id: str
 
-# UPDATE SCHEMA CREATE PERIOD (Tambah allowed_usernames)
+# UPDATE: Tambah field allowed_usernames
 class PeriodCreateSchema(BaseModel):
     name: str
     allowed_usernames: Optional[str] = None 
@@ -90,21 +90,21 @@ def download_template_soal():
 
 @app.get("/admin/periods")
 def get_admin_periods(db: Session = Depends(get_db)):
-    # Tambahkan allowed_usernames ke response admin
     return db.query(models.ExamPeriod).order_by(models.ExamPeriod.id.desc()).options(joinedload(models.ExamPeriod.exams)).all()
 
 @app.post("/admin/periods")
 def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
-    # Simpan allowed_usernames
+    # SIMPAN WHITELIST
     new_period = models.ExamPeriod(
         name=data.name, 
         is_active=False, 
         allow_submit=True,
-        allowed_usernames=data.allowed_usernames
+        allowed_usernames=data.allowed_usernames # Simpan data
     )
     db.add(new_period)
     db.commit()
     db.refresh(new_period)
+    
     utbk_structure = [("PU", "Penalaran Umum", 30), ("PBM", "Pemahaman Bacaan & Menulis", 25), ("PPU", "Pengetahuan & Pemahaman Umum", 15), ("PK", "Pengetahuan Kuantitatif", 20), ("LBI", "Literasi Bahasa Indonesia", 42.5), ("LBE", "Literasi Bahasa Inggris", 20), ("PM", "Penalaran Matematika", 42.5)]
     for code, title, duration in utbk_structure:
         db.add(models.Exam(id=f"P{new_period.id}_{code}", period_id=new_period.id, code=code, title=title, description="Standar SNBT", duration=duration))
@@ -191,7 +191,7 @@ async def upload_questions(exam_id: str, file: UploadFile = File(...), db: Sessi
                 keys = kunci.upper().split(',')
                 for i, col in enumerate(['Opsia', 'Opsib', 'Opsic', 'Opsid']):
                     if pd.notna(row.get(col)):
-                        db.add(models.Option(question_id=q.id, option_index=str(i+1), label=str(row[col]), is_correct=(i<len(keys) and keys[i].strip()=="B")))
+                        db.add(models.Option(question_id=q.id, option_index=str(i+1), label=str(row[col]), is_correct=is_true))
             else:
                 key_set = set(k.strip() for k in kunci.upper().split(','))
                 for c, col in [('A','Opsia'),('B','Opsib'),('C','Opsic'),('D','Opsid'),('E','Opsie')]:
@@ -203,22 +203,6 @@ async def upload_questions(exam_id: str, file: UploadFile = File(...), db: Sessi
     except Exception as e:
         db.rollback()
         return {"message": f"Error: {str(e)}"}
-
-@app.get("/admin/exams/{exam_id}/preview")
-def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
-    exam = db.query(models.Exam).filter(models.Exam.id == exam_id).first()
-    if not exam: raise HTTPException(404, "Subtes tidak ditemukan")
-    q_data = []
-    for q in exam.questions:
-        opts = [{"id": o.option_index, "label": o.label, "is_correct": o.is_correct} for o in q.options]
-        opts.sort(key=lambda x: x["id"])
-        q_data.append({
-            "id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url,
-            "reading_material": q.reading_material, "difficulty": q.difficulty, "options": opts,
-            "label_true": q.label_true, "label_false": q.label_false,
-            "reading_label": q.reading_label, "citation": q.citation
-        })
-    return {"title": exam.title, "questions": q_data}
 
 # --- FITUR UTAMA: FILTER PERIODE BERDASARKAN WHITELIST USERNAME ---
 @app.get("/student/periods")
@@ -237,7 +221,6 @@ def get_student_active_periods(username: str = None, db: Session = Depends(get_d
         if p.allowed_usernames:
             # Bersihkan spasi dan pisahkan koma
             allowed_list = [u.strip().lower() for u in p.allowed_usernames.split(',')]
-            # Jika username siswa TIDAK ada di daftar, maka SKIP (Sembunyikan)
             if not username or username.lower() not in allowed_list:
                 continue 
 
@@ -248,6 +231,7 @@ def get_student_active_periods(username: str = None, db: Session = Depends(get_d
             if user_id:
                 res = db.query(models.ExamResult).filter_by(user_id=user_id, exam_id=e.id).first()
                 if res: is_done = True
+            
             exams_info.append({
                 "id": e.id, "title": e.title, "duration": e.duration, 
                 "q_count": q_count, "is_done": is_done, 
@@ -279,11 +263,14 @@ def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
 def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.username == data.username).first()
     if not user: raise HTTPException(404, "User not found")
+    
     existing = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first()
     if existing: return {"message": "Sudah dikerjakan"}
+
     questions = db.query(models.Question).filter(models.Question.exam_id == exam_id).all()
     correct, wrong = 0, 0
     total_w, user_w = 0.0, 0.0
+    
     for q in questions:
         if q.total_attempts > 0:
             fail_rate = 1.0 - (q.total_correct / q.total_attempts)

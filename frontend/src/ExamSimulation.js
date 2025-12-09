@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import 'katex/dist/katex.min.css';
-// PERBAIKAN: Menghapus 'BlockMath' dari import karena tidak digunakan
 import { InlineMath } from 'react-katex';
 import { Clock, ChevronLeft, ChevronRight, Save, Lock } from 'lucide-react';
 
@@ -21,36 +20,40 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
 
   const answersRef = useRef(answers);
 
-  // UTILITY: Format Markup (Bold, Italic, Underline) & HTML Text
+  // UTILITY: FORMAT TEKS AMAN (ANTI MELEBAR)
   const formatHtmlText = (text) => {
     if (!text) return '';
-    return text
+    return String(text)
+        .replace(/\n/g, '<br/>') 
         .replace(/\[B\](.*?)\[\/B\]/g, '<strong>$1</strong>')
         .replace(/\[I\](.*?)\[\/I\]/g, '<em>$1</em>')
         .replace(/\[U\](.*?)\[\/U\]/g, '<u>$1</u>')
-        .replace(/\[S\](.*?)\[\/S\]/g, '<span style="font-size: 12px;">$1</span>')
-        .replace(/\[M\](.*?)\[\/M\]/g, '<span style="font-size: 14px;">$1</span>')
-        .replace(/\[L\](.*?)\[\/L\]/g, '<span style="font-size: 18px;">$1</span>')
-        .replace(/\[XL\](.*?)\[\/XL\]/g, '<span style="font-size: 24px; font-weight: bold;">$1</span>')
-        .replace(/\n/g, '<br/>');
+        .replace(/\[S\](.*?)\[\/S\]/g, '<span style="font-size: 85%;">$1</span>')
+        .replace(/\[M\](.*?)\[\/M\]/g, '<span style="font-size: 100%;">$1</span>')
+        .replace(/\[L\](.*?)\[\/L\]/g, '<span style="font-size: 125%;">$1</span>')
+        .replace(/\[XL\](.*?)\[\/XL\]/g, '<span style="font-size: 150%; font-weight: bold;">$1</span>');
   };
 
-  // UTILITY: Render Teks Campuran (HTML + LaTeX)
   const renderMixedContent = (content) => {
     if (!content) return null;
-    const parts = content.split(/(\$.*?\$)/g);
-    return parts.map((part, index) => {
-        if (part.startsWith('$') && part.endsWith('$')) {
-            return <InlineMath key={index} math={part.slice(1, -1)} />;
-        } else {
-            return (
-                <span 
-                    key={index} 
-                    dangerouslySetInnerHTML={{ __html: formatHtmlText(part) }} 
-                />
-            );
-        }
-    });
+    const parts = String(content).split(/(\$.*?\$)/g);
+    return (
+        // CSS PENTING: break-words whitespace-pre-wrap agar teks turun ke bawah
+        <div className="inline-block w-full break-words whitespace-pre-wrap not-italic"> 
+            {parts.map((part, index) => {
+                if (part.startsWith('$') && part.endsWith('$')) {
+                    return <InlineMath key={index} math={part.slice(1, -1)} />;
+                } else {
+                    return (
+                        <span 
+                            key={index} 
+                            dangerouslySetInnerHTML={{ __html: formatHtmlText(part) }} 
+                        />
+                    );
+                }
+            })}
+        </div>
+    );
   };
 
   const handleFinalSubmit = useCallback(() => {
@@ -58,15 +61,9 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
           alert("Tombol Akhiri Ujian dinonaktifkan oleh Admin. Anda harus menunggu hingga waktu habis.");
           return;
       }
-
-      if(!window.confirm("Apakah Anda yakin ingin MENGAKHIRI ujian dan mengirim jawaban? Ujian tidak bisa diulang.")) return;
+      if(!window.confirm("Apakah Anda yakin ingin MENGAKHIRI ujian dan mengirim jawaban?")) return;
       setIsSubmitting(true);
-      
-      const finalAnswers = {
-          answers: answersRef.current,
-          username: userData.username,
-      };
-
+      const finalAnswers = { answers: answersRef.current, username: userData.username };
       onSubmit(finalAnswers);
   }, [onSubmit, userData.username, isSubmitAllowed, timeLeft]);
 
@@ -136,7 +133,6 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
                     SOAL <span className="font-bold text-yellow-400">{currentIdx + 1}</span> / {questions.length}
                 </div>
             </div>
-            
             <div className="flex items-center gap-4 ml-4">
                 {hasReading && (
                     <div className="flex bg-indigo-800 rounded-lg overflow-hidden border border-indigo-600">
@@ -149,7 +145,6 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
                 </div>
             </div>
         </div>
-
         <div className="flex overflow-x-auto gap-2 py-1 w-full md:w-auto md:justify-end">
             {questions.map((q, i) => (
                 <button key={i} onClick={()=>setCurrentIdx(i)} className={`w-8 h-8 rounded-full text-xs font-bold shrink-0 transition-all shadow-sm ${currentIdx===i ? 'bg-yellow-400 text-indigo-900 ring-2 ring-yellow-200': isAnswered(q.id) ? 'bg-indigo-500 text-white border border-indigo-200' : 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'}`}>{i+1}</button>
@@ -160,16 +155,15 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
       <main className="flex flex-1 overflow-hidden relative">
         {isSubmitting && (<div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm"><div className="animate-spin rounded-full h-16 w-16 border-b-4 border-indigo-600 mb-4"></div><h2 className="text-2xl font-bold text-indigo-900">Waktu Habis!</h2><p className="text-gray-600">Sedang mengirim jawaban...</p></div>)}
         
+        {/* WACANA */}
         {hasReading && (
             <div className="w-1/2 p-6 overflow-y-auto border-r bg-white scrollbar-thin">
                 <div className="prose max-w-none text-gray-800 leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
                     <h3 className="font-bold text-gray-500 mb-2 uppercase text-xs border-b pb-2 tracking-wide text-left">{question.reading_label || "Wacana"}</h3>
                     {question.citation && <p className="text-gray-400 text-xs italic mb-4 mt-[-8px] text-right">Sumber: {question.citation}</p>}
-                    
-                    <div className="text-justify font-serif leading-8">
+                    <div className="text-justify font-serif leading-8 text-gray-800">
                         {renderMixedContent(question.reading_material)}
                     </div>
-                    
                     {question.image_url && (<div className="mt-6 mb-4 flex justify-center"><img src={question.image_url} alt="Ilustrasi" className="max-w-full h-auto rounded-lg border shadow-sm object-contain max-h-[400px]" onError={(e) => { e.target.style.display='none'; }} /></div>)}
                 </div>
             </div>
@@ -181,16 +175,14 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
                     <div className="mb-8 text-lg text-gray-800 leading-relaxed text-left">
                         {!hasReading && question.image_url && (<div className="mb-6 flex justify-center"><img src={question.image_url} alt="Soal" className="max-w-full h-auto rounded-lg border shadow-sm object-contain max-h-[400px]" onError={(e) => { e.target.onerror=null; e.target.src="https://via.placeholder.com/400x200?text=Gagal+Muat+Gambar"; }}/></div>)}
                         
-                        <div>
-                            {renderMixedContent(question.text)}
-                        </div>
+                        <div>{renderMixedContent(question.text)}</div>
                     </div>
                     
                     <div className="space-y-3 text-left">
                         {question.type === 'short_answer' ? (
                             <input type="text" className="border-2 border-gray-300 p-4 rounded-lg w-full text-lg uppercase focus:border-indigo-500 outline-none transition" placeholder="Ketik jawaban singkat..." value={answers[question.id] || ''} onChange={(e)=>handleAnswer(e.target.value)}/>
                         ) : question.type === 'table_boolean' ? (
-                            <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden"><thead className="bg-gray-50"><tr><th className="p-3 text-left border-b font-bold text-gray-600">Pernyataan</th><th className="p-3 text-center w-24 border-b font-bold text-green-700 bg-green-50">{question.label_true || "Benar"}</th><th className="p-3 text-center w-24 border-b font-bold text-red-700 bg-red-50">{question.label_false || "Salah"}</th></tr></thead><tbody>{question.options.map(opt => (<tr key={opt.id} className="border-b last:border-0 hover:bg-gray-50"><td className="p-3 border-r">{opt.label}</td><td className="text-center border-r bg-green-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-green-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='B'} onChange={()=>handleAnswer('B',opt.id)}/></td><td className="text-center bg-red-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-red-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='S'} onChange={()=>handleAnswer('S',opt.id)}/></td></tr>))}</tbody></table>
+                            <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden"><thead className="bg-gray-50"><tr><th className="p-3 text-left border-b font-bold text-gray-600">Pernyataan</th><th className="p-3 text-center w-24 border-b font-bold text-green-700 bg-green-50">{question.label_true || "Benar"}</th><th className="p-3 text-center w-24 border-b font-bold text-red-700 bg-red-50">{question.label_false || "Salah"}</th></tr></thead><tbody>{question.options.map(opt => (<tr key={opt.id} className="border-b last:border-0 hover:bg-gray-50"><td className="p-3 border-r">{renderMixedContent(opt.label)}</td><td className="text-center border-r bg-green-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-green-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='B'} onChange={()=>handleAnswer('B',opt.id)}/></td><td className="text-center bg-red-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-red-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='S'} onChange={()=>handleAnswer('S',opt.id)}/></td></tr>))}</tbody></table>
                         ) : (
                             question.options.map(opt => {
                                 const isComplex = question.type === 'complex';
@@ -199,10 +191,7 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
                                 return (
                                     <div key={opt.id} onClick={()=>handleAnswer(opt.id)} className={`p-4 border-2 rounded-xl cursor-pointer flex items-center transition-all duration-200 ${active ? 'bg-indigo-50 border-indigo-500 shadow-md transform scale-[1.01]': 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'}`}>
                                         <div className={`w-8 h-8 flex items-center justify-center mr-4 font-bold text-sm rounded-full transition-colors ${active?'bg-indigo-600 text-white':'bg-gray-200 text-gray-600'}`}>{opt.id}</div>
-                                        <div className="text-sm font-medium text-gray-700 w-full">
-                                            {renderMixedContent(opt.label)}
-                                        </div>
-                                        {isComplex && <div className={`w-5 h-5 border-2 rounded ml-auto flex items-center justify-center ${active ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300'}`}>{active && <span className="text-white text-xs">✓</span>}</div>}
+                                        <div className="text-sm font-medium text-gray-700 w-full">{renderMixedContent(opt.label)}</div>{isComplex && <div className={`w-5 h-5 border-2 rounded ml-auto flex items-center justify-center ${active ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300'}`}>{active && <span className="text-white text-xs">✓</span>}</div>}
                                     </div>
                                 )
                             })
@@ -224,5 +213,4 @@ const ExamSimulation = ({ examData, onSubmit, onBack }) => {
     </div>
   );
 };
-
 export default ExamSimulation;

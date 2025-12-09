@@ -36,7 +36,7 @@ class ExamPeriod(Base):
     is_active = Column(Boolean, default=False)
     allow_submit = Column(Boolean, default=True)
     
-    # FITUR BARU: Whitelist Username (Dipisah koma)
+    # FITUR 3: Whitelist Username (Contoh: "siswa01, siswa02")
     allowed_usernames = Column(Text, nullable=True)
     
     exams = relationship("Exam", back_populates="period", cascade="all, delete")
