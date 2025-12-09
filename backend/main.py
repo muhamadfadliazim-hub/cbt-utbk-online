@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional
 import models, database
 import pandas as pd
 import io
+import time # Tambahan import untuk generate ID unik
 
 models.Base.metadata.create_all(bind=database.engine)
 app = FastAPI()
@@ -53,7 +54,6 @@ class ResetResultSchema(BaseModel):
     user_id: int
     exam_id: str
 
-# UPDATE: Tambah field allowed_usernames
 class PeriodCreateSchema(BaseModel):
     name: str
     allowed_usernames: Optional[str] = None 
@@ -94,12 +94,11 @@ def get_admin_periods(db: Session = Depends(get_db)):
 
 @app.post("/admin/periods")
 def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
-    # SIMPAN WHITELIST
     new_period = models.ExamPeriod(
         name=data.name, 
         is_active=False, 
         allow_submit=True,
-        allowed_usernames=data.allowed_usernames # Simpan data
+        allowed_usernames=data.allowed_usernames
     )
     db.add(new_period)
     db.commit()
@@ -143,6 +142,97 @@ def reset_student_result(data: ResetResultSchema, db: Session = Depends(get_db))
         db.commit()
         return {"message": "Hasil ujian berhasil direset. Siswa bisa mengerjakan ulang."}
     raise HTTPException(404, "Data hasil tidak ditemukan")
+
+# --- ENDPOINT BARU: UNTUK MENGHANDLE UploadExam.js ---
+@app.post("/upload-exam")
+async def upload_exam_manual(
+    title: str = Form(...),
+    duration: float = Form(...),
+    description: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        # 1. Buat Periode Baru Otomatis (Karena Exam harus nempel ke Periode)
+        period_name = f"Paket Manual: {title}"
+        new_period = models.ExamPeriod(
+            name=period_name, 
+            is_active=False, 
+            allow_submit=True
+        )
+        db.add(new_period)
+        db.commit()
+        db.refresh(new_period)
+
+        # 2. Buat Exam (Subtes)
+        # Generate ID unik agar tidak bentrok
+        exam_id = f"MANUAL_{new_period.id}_{int(time.time())}"
+        
+        new_exam = models.Exam(
+            id=exam_id,
+            period_id=new_period.id,
+            code=description,
+            title=title,
+            description="Upload Manual",
+            duration=duration
+        )
+        db.add(new_exam)
+        db.commit()
+
+        # 3. Proses File Excel (Sama seperti logika upload_questions)
+        content = await file.read()
+        df = pd.read_excel(io.BytesIO(content))
+        df.columns = df.columns.str.strip().str.title()
+        
+        if 'Soal' not in df.columns: 
+            return {"message": "Format Excel Salah. Kolom 'Soal' tidak ditemukan."}
+
+        count = 0
+        for _, row in df.iterrows():
+            q_type = 'multiple_choice'
+            if 'KOMPLEKS' in str(row.get('Tipe', '')).upper(): q_type = 'complex'
+            elif 'ISIAN' in str(row.get('Tipe', '')).upper(): q_type = 'short_answer'
+            elif 'TABEL' in str(row.get('Tipe', '')).upper(): q_type = 'table_boolean'
+            
+            label1 = str(row['Label1']) if 'Label1' in df.columns and pd.notna(row['Label1']) else "Benar"
+            label2 = str(row['Label2']) if 'Label2' in df.columns and pd.notna(row['Label2']) else "Salah"
+            judul = str(row['Judul Wacana']) if 'Judul Wacana' in df.columns and pd.notna(row['Judul Wacana']) else "Wacana"
+            sumber = str(row['Sumber Wacana']) if 'Sumber Wacana' in df.columns and pd.notna(row['Sumber Wacana']) else None
+
+            q = models.Question(
+                exam_id=exam_id, type=q_type, text=str(row['Soal']),
+                reading_material=str(row['Bacaan']) if pd.notna(row.get('Bacaan')) else None,
+                image_url=str(row['Gambar']) if pd.notna(row.get('Gambar')) else None,
+                difficulty=float(row.get('Kesulitan', 1.0)),
+                total_attempts=0, total_correct=0,
+                label_true=label1, label_false=label2,
+                reading_label=judul, citation=sumber
+            )
+            db.add(q)
+            db.commit()
+
+            kunci = str(row.get('Kunci', ''))
+            if q_type == 'short_answer':
+                db.add(models.Option(question_id=q.id, option_index="KEY", label=kunci, is_correct=True))
+            elif q_type == 'table_boolean':
+                keys = kunci.upper().split(',')
+                for i, col in enumerate(['Opsia', 'Opsib', 'Opsic', 'Opsid']):
+                    if pd.notna(row.get(col)):
+                        db.add(models.Option(question_id=q.id, option_index=str(i+1), label=str(row[col]), is_correct=(i<len(keys) and keys[i].strip()=="B")))
+            else:
+                key_set = set(k.strip() for k in kunci.upper().split(','))
+                for c, col in [('A','Opsia'),('B','Opsib'),('C','Opsic'),('D','Opsid'),('E','Opsie')]:
+                    if pd.notna(row.get(col)):
+                        db.add(models.Option(question_id=q.id, option_index=c, label=str(row[col]), is_correct=(c in key_set)))
+            count += 1
+            
+        db.commit()
+        return {"message": f"Berhasil! Paket '{title}' dibuat dengan {count} soal."}
+
+    except Exception as e:
+        db.rollback()
+        # Berikan pesan error detail agar tahu salahnya dimana
+        return {"detail": str(e), "message": "Gagal Upload"}
 
 @app.post("/admin/upload-questions/{exam_id}")
 async def upload_questions(exam_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
@@ -191,7 +281,7 @@ async def upload_questions(exam_id: str, file: UploadFile = File(...), db: Sessi
                 keys = kunci.upper().split(',')
                 for i, col in enumerate(['Opsia', 'Opsib', 'Opsic', 'Opsid']):
                     if pd.notna(row.get(col)):
-                        db.add(models.Option(question_id=q.id, option_index=str(i+1), label=str(row[col]), is_correct=is_true))
+                        db.add(models.Option(question_id=q.id, option_index=str(i+1), label=str(row[col]), is_correct=(i<len(keys) and keys[i].strip()=="B")))
             else:
                 key_set = set(k.strip() for k in kunci.upper().split(','))
                 for c, col in [('A','Opsia'),('B','Opsib'),('C','Opsic'),('D','Opsid'),('E','Opsie')]:
@@ -203,6 +293,22 @@ async def upload_questions(exam_id: str, file: UploadFile = File(...), db: Sessi
     except Exception as e:
         db.rollback()
         return {"message": f"Error: {str(e)}"}
+
+@app.get("/admin/exams/{exam_id}/preview")
+def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
+    exam = db.query(models.Exam).filter(models.Exam.id == exam_id).first()
+    if not exam: raise HTTPException(404, "Subtes tidak ditemukan")
+    q_data = []
+    for q in exam.questions:
+        opts = [{"id": o.option_index, "label": o.label, "is_correct": o.is_correct} for o in q.options]
+        opts.sort(key=lambda x: x["id"])
+        q_data.append({
+            "id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url,
+            "reading_material": q.reading_material, "difficulty": q.difficulty, "options": opts,
+            "label_true": q.label_true, "label_false": q.label_false,
+            "reading_label": q.reading_label, "citation": q.citation
+        })
+    return {"title": exam.title, "questions": q_data}
 
 # --- FITUR UTAMA: FILTER PERIODE BERDASARKAN WHITELIST USERNAME ---
 @app.get("/student/periods")
