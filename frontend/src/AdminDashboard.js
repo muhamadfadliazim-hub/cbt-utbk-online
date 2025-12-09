@@ -1,21 +1,77 @@
-import React, { useState, useEffect, useCallback } from 'react';
-// Removed unused imports: RefreshCcw
-import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, RefreshCcw } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
+
+// KOMPONEN MENU RESET
+const ResetMenu = ({ resultId, completedExams, onReset }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const menuRef = useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (menuRef.current && !menuRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    return (
+        <div className="relative" ref={menuRef}>
+            <button 
+                onClick={() => setIsOpen(!isOpen)} 
+                className={`p-2 rounded transition ${isOpen ? 'bg-red-100 text-red-600' : 'text-gray-400 hover:text-red-600'}`}
+                title="Reset Nilai"
+            >
+                <RefreshCcw size={18}/>
+            </button>
+            
+            {isOpen && (
+                <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 shadow-xl rounded-lg z-50 overflow-hidden">
+                    <div className="bg-gray-50 px-3 py-2 text-xs font-bold text-gray-500 border-b">
+                        PILIH UJIAN UNTUK DI-RESET:
+                    </div>
+                    {(!completedExams || completedExams.length === 0) ? (
+                        <div className="px-3 py-2 text-xs text-gray-400">Belum ada ujian selesai.</div>
+                    ) : (
+                        completedExams.map((exam) => (
+                            <button 
+                                key={exam.exam_id} 
+                                onClick={() => { 
+                                    if(window.confirm(`Reset nilai ${exam.code}?`)) {
+                                        onReset(resultId, exam.exam_id); 
+                                        setIsOpen(false); 
+                                    }
+                                }} 
+                                className="w-full text-left px-3 py-3 text-sm hover:bg-red-50 text-gray-700 hover:text-red-700 flex justify-between items-center border-b last:border-0 transition"
+                            >
+                                <span className="font-medium">{exam.code}</span>
+                                <Trash2 size={14}/>
+                            </button>
+                        ))
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
   const [periods, setPeriods] = useState([]);
   const [newPeriodName, setNewPeriodName] = useState('');
-  const [allowedUsers, setAllowedUsers] = useState(''); 
+  
+  // STATE BARU: Whitelist Peserta
+  const [allowedUsersInput, setAllowedUsersInput] = useState(''); 
   
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewData, setPreviewData] = useState(null); 
   const [showPreview, setShowPreview] = useState(false);
 
-  // New state for user modal
+  // Modal Checklist User
   const [showUserModal, setShowUserModal] = useState(false);
   const [selectedWhitelist, setSelectedWhitelist] = useState([]);
 
@@ -26,6 +82,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
+  // --- API CALLS (UseCallback untuk menghindari warning useEffect) ---
   const fetchPeriods = useCallback(() => {
     fetch(`${API_URL}/admin/periods`)
       .then(r => r.json())
@@ -54,14 +111,24 @@ const AdminDashboard = ({ onLogout }) => {
       fetch(`${API_URL}/config/release`).then(r=>r.json()).then(d=>setIsReleased(d.is_released));
   }, []);
 
-  useEffect(() => { 
-      fetchUsers();
-      if (tab === 'periods') fetchPeriods(); 
-      if (tab === 'recap') { fetchPeriods(); fetchRecap(); fetchReleaseStatus(); } 
+  // --- EFFECTS ---
+  useEffect(() => {
+    // Selalu ambil user agar fitur whitelist siap
+    fetchUsers(); 
+    
+    if (tab === 'periods') fetchPeriods();
+    if (tab === 'recap') { 
+        fetchPeriods(); 
+        fetchRecap(); 
+        fetchReleaseStatus(); 
+    }
   }, [tab, fetchPeriods, fetchUsers, fetchRecap, fetchReleaseStatus]);
-  
-  useEffect(() => { if (tab === 'recap') fetchRecap(); }, [selectedRecapPeriod, fetchRecap]);
 
+  useEffect(() => { 
+      if (tab === 'recap') fetchRecap(); 
+  }, [selectedRecapPeriod, fetchRecap, tab]);
+
+  // --- HELPER WHITELIST ---
   const toggleUserWhitelist = (username) => {
       if (selectedWhitelist.includes(username)) {
           setSelectedWhitelist(selectedWhitelist.filter(u => u !== username));
@@ -70,25 +137,33 @@ const AdminDashboard = ({ onLogout }) => {
       }
   };
 
+  // --- ACTIONS ---
   const handleCreatePeriod = (e) => { 
       e.preventDefault(); 
       if(!newPeriodName.trim()) return alert("Nama periode wajib diisi");
       
-      const allowedString = selectedWhitelist.length > 0 ? selectedWhitelist.join(',') : null;
+      // Gunakan allowedUsersInput atau selectedWhitelist
+      // Prioritaskan checklist jika ada yang dipilih
+      let finalAllowed = allowedUsersInput;
+      if (selectedWhitelist.length > 0) {
+          finalAllowed = selectedWhitelist.join(',');
+      } else if (allowedUsersInput.trim() === '') {
+          finalAllowed = null; // Public
+      }
 
       fetch(`${API_URL}/admin/periods`, {
           method:'POST', 
           headers:{'Content-Type':'application/json'}, 
           body:JSON.stringify({
               name: newPeriodName,
-              allowed_usernames: allowedString
+              allowed_usernames: finalAllowed
           })
       })
       .then(r=>r.json()).then(d=>{
           alert(d.message); 
           setNewPeriodName(''); 
-          setSelectedWhitelist([]); 
-          setAllowedUsers('');
+          setAllowedUsersInput(''); 
+          setSelectedWhitelist([]);
           fetchPeriods();
       }); 
   };
@@ -107,20 +182,18 @@ const AdminDashboard = ({ onLogout }) => {
   const toggleRelease = () => { const n=!isReleased; if(window.confirm(n?"Buka Pengumuman?":"Tutup Pengumuman?")) fetch(`${API_URL}/config/release`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({value:n?"true":"false"})}).then(r=>r.json()).then(d=>{setIsReleased(d.is_released); alert(d.message)}); };
   const handleDownloadExcel = () => { const url = selectedRecapPeriod ? `${API_URL}/admin/recap/download?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap/download`; window.open(url, '_blank'); };
   
-  const handleResetResult = (userId, examId, subtestCode) => {
-      if(window.confirm(`Reset nilai ${subtestCode} untuk siswa ini?\nSiswa harus mengerjakan ulang.`)) {
-          fetch(`${API_URL}/admin/reset-result`, {
-              method: 'POST',
-              headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({ user_id: userId, exam_id: examId })
-          })
-          .then(r => r.json())
-          .then(d => { 
-              // alert(d.message); 
-              fetchRecap(); 
-          })
-          .catch(() => alert("Gagal reset."));
-      }
+  const handleResetResult = (userId, examId) => {
+     // Logic ini dipanggil oleh ResetMenu
+      fetch(`${API_URL}/admin/reset-result`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ user_id: userId, exam_id: examId })
+      })
+      .then(r => r.json())
+      .then(d => { 
+          fetchRecap(); 
+      })
+      .catch(() => alert("Gagal reset."));
   };
 
   return (
@@ -128,6 +201,7 @@ const AdminDashboard = ({ onLogout }) => {
       <aside className="w-64 bg-indigo-900 text-white p-6 flex flex-col"><h1 className="text-2xl font-bold mb-8">Admin Panel</h1><nav className="space-y-4 flex-1"><button onClick={()=>setTab('periods')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='periods'?'bg-indigo-700':''}`}><FileText size={18}/> Manajemen Soal</button><button onClick={()=>setTab('users')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='users'?'bg-indigo-700':''}`}><Users size={18}/> User & Siswa</button><button onClick={()=>setTab('recap')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='recap'?'bg-indigo-700':''}`}><FileText size={18}/> Rekap Nilai</button></nav><button onClick={onLogout} className="flex items-center gap-3 p-3 rounded hover:bg-red-600 bg-indigo-800 mt-auto"><LogOut size={18}/> Keluar</button></aside>
       
       <main className="flex-1 p-8 overflow-y-auto relative">
+        {/* MODAL PREVIEW SOAL */}
         {showPreview && previewData && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
@@ -140,7 +214,7 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
-        {/* MODAL PILIH USER (WHITELIST) - FITUR BARU */}
+        {/* MODAL PILIH USER (WHITELIST) */}
         {showUserModal && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">
@@ -187,17 +261,24 @@ const AdminDashboard = ({ onLogout }) => {
                         </div>
                         <div className="w-1/3">
                             <label className="block text-sm font-bold text-gray-600 mb-1">Akses Peserta (Opsional)</label>
+                            {/* TOMBOL BUKA MODAL */}
                             <div 
                                 onClick={() => setShowUserModal(true)}
                                 className="w-full p-2 border rounded bg-gray-50 cursor-pointer flex justify-between items-center hover:bg-gray-100"
                             >
-                                <span className="text-sm text-gray-600">
-                                    {selectedWhitelist.length > 0 ? `${selectedWhitelist.length} Peserta Terpilih` : "Semua Peserta (Public)"}
+                                <span className="text-sm text-gray-600 truncate">
+                                    {selectedWhitelist.length > 0 ? `${selectedWhitelist.length} Peserta` : (allowedUsersInput || "Semua (Public)")}
                                 </span>
                                 <Users size={16} className="text-gray-400"/>
                             </div>
+                            {/* FALLBACK INPUT MANUAL JIKA PERLU */}
+                            <input 
+                                className="hidden" 
+                                value={allowedUsersInput} 
+                                onChange={(e)=>setAllowedUsersInput(e.target.value)}
+                            />
                         </div>
-                        <button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold hover:bg-indigo-700 h-10 mt-6">+ Buat</button>
+                        <button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold hover:bg-indigo-700 h-10">+ Buat</button>
                     </div>
                 </div>
 
@@ -243,7 +324,7 @@ const AdminDashboard = ({ onLogout }) => {
                 </div>
                 <div className="bg-white shadow-lg rounded-xl overflow-hidden border border-gray-200">
                     <table className="min-w-full text-sm text-left border-collapse">
-                        <thead className="bg-indigo-900 text-white"><tr><th className="p-4 border-r border-indigo-800 w-64" rowSpan="2">Nama Siswa</th><th className="p-2 text-center border-b border-indigo-800 bg-indigo-800" colSpan="7">Skor 7 Subtes (IRT)</th><th className="p-4 text-center border-l border-indigo-800 bg-blue-900 w-24" rowSpan="2">Skor Akhir</th><th className="p-4 border-l border-indigo-800 bg-indigo-800" rowSpan="2">Keterangan</th><th className="p-4 border-l border-indigo-800 w-32 bg-red-900" rowSpan="2">Reset Nilai</th></tr><tr>{["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"].map(sub => (<th key={sub} className="p-2 text-center border-r border-indigo-700 bg-indigo-700 text-xs font-bold w-16">{sub}</th>))}</tr></thead>
+                        <thead className="bg-indigo-900 text-white"><tr><th className="p-4 border-r border-indigo-800 w-64" rowSpan="2">Nama Siswa</th><th className="p-2 text-center border-b border-indigo-800 bg-indigo-800" colSpan="7">Skor 7 Subtes (IRT)</th><th className="p-4 text-center border-l border-indigo-800 bg-blue-900 w-24" rowSpan="2">Skor Akhir</th><th className="p-4 border-l border-indigo-800 bg-indigo-800" rowSpan="2">Keterangan</th><th className="p-4 border-l border-indigo-800 w-24 bg-red-900" rowSpan="2">Reset</th></tr><tr>{["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"].map(sub => (<th key={sub} className="p-2 text-center border-r border-indigo-700 bg-indigo-700 text-xs font-bold w-16">{sub}</th>))}</tr></thead>
                         <tbody className="divide-y divide-gray-100">
                             {Array.isArray(recap) && recap.map((r, i) => (
                                 <tr key={i} className={`hover:bg-gray-50 transition-colors ${r.status.startsWith('LULUS') ? 'bg-green-50/30' : ''}`}>
@@ -252,21 +333,13 @@ const AdminDashboard = ({ onLogout }) => {
                                     <td className="p-4 text-center border-l border-gray-100 font-extrabold text-blue-700 text-lg bg-blue-50/50">{r.average}</td>
                                     <td className="p-4 border-l border-gray-100 align-middle">{r.status.startsWith('LULUS') ? (<div><span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-green-100 text-green-700 mb-1"><CheckCircle size={12}/> LULUS</span></div>) : (<span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-red-100 text-red-600"><XCircle size={12}/> TIDAK LULUS</span>)}</td>
                                     
-                                    <td className="p-4 border-l border-gray-100 text-center align-middle bg-gray-50">
-                                        <div className="flex flex-wrap gap-1 justify-center">
-                                            {r.completed_exams && r.completed_exams.length > 0 ? (
-                                                r.completed_exams.map(exam => (
-                                                    <button 
-                                                        key={exam.exam_id}
-                                                        onClick={() => handleResetResult(r.id, exam.exam_id, exam.code)}
-                                                        className="px-2 py-1 bg-red-100 text-red-600 text-[10px] font-bold rounded border border-red-200 hover:bg-red-600 hover:text-white transition"
-                                                        title={`Klik untuk menghapus nilai ${exam.code} siswa ini`}
-                                                    >
-                                                        {exam.code} ×
-                                                    </button>
-                                                ))
-                                            ) : <span className="text-gray-300 text-xs italic">Belum ada</span>}
-                                        </div>
+                                    {/* MENGGUNAKAN KOMPONEN ResetMenu YANG STABIL */}
+                                    <td className="p-4 border-l border-gray-100 text-center align-middle">
+                                        <ResetMenu 
+                                            resultId={r.id} 
+                                            completedExams={r.completed_exams} 
+                                            onReset={handleResetResult} 
+                                        />
                                     </td>
                                 </tr>
                             ))}
@@ -280,4 +353,5 @@ const AdminDashboard = ({ onLogout }) => {
     </div>
   );
 };
+
 export default AdminDashboard;
