@@ -34,9 +34,10 @@ class ExamPeriod(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String) 
     is_active = Column(Boolean, default=False)
+    allow_submit = Column(Boolean, default=True)
     
-    # FITUR BARU: Mengontrol apakah tombol submit muncul/aktif
-    allow_submit = Column(Boolean, default=True) 
+    # FITUR BARU: Whitelist Username (Dipisah koma)
+    allowed_usernames = Column(Text, nullable=True)
     
     exams = relationship("Exam", back_populates="period", cascade="all, delete")
 

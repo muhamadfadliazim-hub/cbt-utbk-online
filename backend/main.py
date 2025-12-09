@@ -29,9 +29,11 @@ def get_db():
 class LoginSchema(BaseModel):
     username: str
     password: str
+
 class AnswerSchema(BaseModel):
     answers: Dict[str, Any] 
     username: str
+
 class UserCreateSchema(BaseModel):
     username: str
     full_name: str
@@ -45,13 +47,16 @@ class MajorSelectionSchema(BaseModel):
     choice2_id: Optional[int] = None
 class ConfigSchema(BaseModel):
     value: str
-class PeriodCreateSchema(BaseModel):
-    name: str
 class TogglePeriodSchema(BaseModel):
     is_active: bool
 class ResetResultSchema(BaseModel):
     user_id: int
     exam_id: str
+
+# UPDATE SCHEMA CREATE PERIOD (Tambah allowed_usernames)
+class PeriodCreateSchema(BaseModel):
+    name: str
+    allowed_usernames: Optional[str] = None 
 
 # --- ENDPOINTS ---
 
@@ -85,12 +90,18 @@ def download_template_soal():
 
 @app.get("/admin/periods")
 def get_admin_periods(db: Session = Depends(get_db)):
-    # Tambahkan allow_submit ke response
+    # Tambahkan allowed_usernames ke response admin
     return db.query(models.ExamPeriod).order_by(models.ExamPeriod.id.desc()).options(joinedload(models.ExamPeriod.exams)).all()
 
 @app.post("/admin/periods")
 def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
-    new_period = models.ExamPeriod(name=data.name, is_active=False, allow_submit=True)
+    # Simpan allowed_usernames
+    new_period = models.ExamPeriod(
+        name=data.name, 
+        is_active=False, 
+        allow_submit=True,
+        allowed_usernames=data.allowed_usernames
+    )
     db.add(new_period)
     db.commit()
     db.refresh(new_period)
@@ -108,12 +119,11 @@ def toggle_period(period_id: int, data: TogglePeriodSchema, db: Session = Depend
         db.commit()
     return {"message": "Status diubah"}
 
-# FITUR BARU: TOGGLE TOMBOL SUBMIT
 @app.post("/admin/periods/{period_id}/toggle-submit")
 def toggle_period_submit(period_id: int, data: TogglePeriodSchema, db: Session = Depends(get_db)):
     period = db.query(models.ExamPeriod).filter(models.ExamPeriod.id == period_id).first()
     if period:
-        period.allow_submit = data.is_active # Kita reuse schema, is_active disini maksudnya allow_submit
+        period.allow_submit = data.is_active 
         db.commit()
     return {"message": "Setting Tombol Submit Diubah"}
 
@@ -125,7 +135,6 @@ def delete_period(period_id: int, db: Session = Depends(get_db)):
         db.commit()
     return {"message": "Periode dihapus"}
 
-# FITUR BARU: RESET HASIL SISWA
 @app.post("/admin/reset-result")
 def reset_student_result(data: ResetResultSchema, db: Session = Depends(get_db)):
     result = db.query(models.ExamResult).filter_by(user_id=data.user_id, exam_id=data.exam_id).first()
@@ -211,6 +220,7 @@ def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
         })
     return {"title": exam.title, "questions": q_data}
 
+# --- FITUR UTAMA: FILTER PERIODE BERDASARKAN WHITELIST USERNAME ---
 @app.get("/student/periods")
 def get_student_active_periods(username: str = None, db: Session = Depends(get_db)):
     periods = db.query(models.ExamPeriod).filter(models.ExamPeriod.is_active == True).order_by(models.ExamPeriod.id.desc()).all()
@@ -222,6 +232,15 @@ def get_student_active_periods(username: str = None, db: Session = Depends(get_d
     data = []
     order_map = {"PU":1, "PBM":2, "PPU":3, "PK":4, "LBI":5, "LBE":6, "PM":7}
     for p in periods:
+        # LOGIKA FILTER:
+        # Jika p.allowed_usernames ada isinya, cek apakah username siswa ada di situ.
+        if p.allowed_usernames:
+            # Bersihkan spasi dan pisahkan koma
+            allowed_list = [u.strip().lower() for u in p.allowed_usernames.split(',')]
+            # Jika username siswa TIDAK ada di daftar, maka SKIP (Sembunyikan)
+            if not username or username.lower() not in allowed_list:
+                continue 
+
         exams_info = []
         for e in p.exams:
             q_count = db.query(models.Question).filter(models.Question.exam_id == e.id).count()
@@ -229,29 +248,20 @@ def get_student_active_periods(username: str = None, db: Session = Depends(get_d
             if user_id:
                 res = db.query(models.ExamResult).filter_by(user_id=user_id, exam_id=e.id).first()
                 if res: is_done = True
-            
-            # KIRIM STATUS allow_submit KE FRONTEND
             exams_info.append({
                 "id": e.id, "title": e.title, "duration": e.duration, 
                 "q_count": q_count, "is_done": is_done, 
-                "allow_submit": p.allow_submit # INFO PENTING
+                "allow_submit": p.allow_submit
             })
         exams_info.sort(key=lambda x: order_map.get(x['id'].split('_')[-1], 99))
         data.append({"id": p.id, "name": p.name, "exams": exams_info})
     return data
 
-# --- UPDATE DI backend/main.py ---
-
 @app.get("/exams/{exam_id}")
 def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
-    # Load Exam beserta Period-nya untuk cek allow_submit
     exam = db.query(models.Exam).options(joinedload(models.Exam.period)).filter(models.Exam.id == exam_id).first()
-    
     if not exam: raise HTTPException(404, "Ujian tidak ditemukan")
-    
-    # Ambil status allow_submit dari periode (Default True jika tidak ada periode)
     allow_submit = exam.period.allow_submit if exam.period else True
-
     q_data = []
     for q in exam.questions:
         opts = [{"id": o.option_index, "label": o.label, "is_math": o.is_math} for o in q.options]
@@ -263,39 +273,26 @@ def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
             "reading_label": q.reading_label, "citation": q.citation
         })
     q_data.sort(key=lambda x: x["id"]) 
-    
-    return {
-        "id": exam.id, 
-        "title": exam.title, 
-        "duration": exam.duration, 
-        "questions": q_data,
-        "allow_submit": allow_submit # <--- INI KUNCI PENTINGNYA
-    }
+    return {"id": exam.id, "title": exam.title, "duration": exam.duration, "questions": q_data, "allow_submit": allow_submit}
 
 @app.post("/exams/{exam_id}/submit")
 def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.username == data.username).first()
     if not user: raise HTTPException(404, "User not found")
-    
     existing = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first()
     if existing: return {"message": "Sudah dikerjakan"}
-
     questions = db.query(models.Question).filter(models.Question.exam_id == exam_id).all()
     correct, wrong = 0, 0
     total_w, user_w = 0.0, 0.0
-    
     for q in questions:
         if q.total_attempts > 0:
             fail_rate = 1.0 - (q.total_correct / q.total_attempts)
             current_difficulty = 1.0 + (fail_rate * 2.0)
             q.difficulty = current_difficulty 
-        else:
-            current_difficulty = q.difficulty
-
+        else: current_difficulty = q.difficulty
         total_w += current_difficulty
         user_ans = data.answers.get(str(q.id))
         is_correct = False
-        
         if user_ans:
             if q.type == 'table_boolean' and isinstance(user_ans, dict):
                 is_correct = all(user_ans.get(str(o.option_index)) == ("B" if o.is_correct else "S") for o in q.options)
@@ -309,17 +306,13 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
             else:
                 key = next((o for o in q.options if o.is_correct), None)
                 is_correct = key and user_ans == key.option_index
-        
         q.total_attempts += 1
         if is_correct: 
             correct += 1
             q.total_correct += 1
             user_w += current_difficulty
-        else: 
-            wrong += 1
-            
+        else: wrong += 1
     final_irt = (user_w / total_w) * 1000 if total_w > 0 else 0
-    
     db.add(models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct, wrong_count=wrong, irt_score=final_irt))
     db.commit()
     return {"message": "Tersimpan", "correct": correct, "wrong": wrong}
@@ -367,9 +360,10 @@ async def bulk_upload(file: UploadFile = File(...), db: Session = Depends(get_db
         df.columns = df.columns.str.lower().str.strip()
         count = 0
         for _, row in df.iterrows():
-            if not db.query(models.User).filter_by(username=str(row['username'])).first():
+            uname = str(row['username']).strip()
+            if not db.query(models.User).filter_by(username=uname).first():
                 role = str(row.get('role', 'student')).strip().lower()
-                db.add(models.User(username=str(row['username']), password=str(row['password']), full_name=str(row['full_name']), role=role))
+                db.add(models.User(username=uname, password=str(row['password']), full_name=str(row['full_name']), role=role))
                 count += 1
         db.commit()
         return {"message": f"{count} user"}
@@ -380,33 +374,19 @@ def get_score_recap(period_id: Optional[int] = None, db: Session = Depends(get_d
     users = db.query(models.User).filter(models.User.role == 'student').options(joinedload(models.User.results), joinedload(models.User.choice1), joinedload(models.User.choice2)).all()
     data = []
     for user in users:
-        # PENTING: Sertakan user.id agar admin bisa mereset nilai berdasarkan ID ini
         user_results = [r for r in user.results if r.exam_id.startswith(f"P{period_id}_")] if period_id else user.results
         if period_id and not user_results: continue
-        
         scores = {}
-        # Buat daftar ID subtes yang sudah dikerjakan untuk dropdown reset
         completed_exams = []
-        
         for res in user_results:
             suffix = res.exam_id.split('_')[-1]
             scores[suffix] = res.irt_score 
             completed_exams.append({"code": suffix, "exam_id": res.exam_id})
-
         avg = sum(scores.values()) / 7 if len(scores) > 0 else 0
         status, major = "TIDAK LULUS", "-"
         if user.choice1 and avg >= user.choice1.passing_grade: status, major = "LULUS PILIHAN 1", f"{user.choice1.university} - {user.choice1.name}"
         elif user.choice2 and avg >= user.choice2.passing_grade: status, major = "LULUS PILIHAN 2", f"{user.choice2.university} - {user.choice2.name}"
-        
-        row = {
-            "id": user.id, # USER ID UNTUK API RESET
-            "full_name": user.full_name, 
-            "username": user.username, 
-            "average": round(avg, 2), 
-            "status": status, 
-            "accepted_major": major,
-            "completed_exams": completed_exams # Daftar ujian yang bisa direset
-        }
+        row = {"id": user.id, "full_name": user.full_name, "username": user.username, "average": round(avg, 2), "status": status, "accepted_major": major, "completed_exams": completed_exams}
         for c in ["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"]: row[c] = round(scores.get(c, 0), 2)
         data.append(row)
     return data
@@ -414,14 +394,11 @@ def get_score_recap(period_id: Optional[int] = None, db: Session = Depends(get_d
 @app.get("/admin/recap/download")
 def download_recap_excel(period_id: Optional[int] = None, db: Session = Depends(get_db)):
     data = get_score_recap(period_id, db)
-    # Flatten data for Excel (remove nested objects)
     flat_data = []
     for d in data:
         row = d.copy()
-        del row['completed_exams'] # Hapus kolom teknis ini dari Excel
-        del row['id']
+        del row['completed_exams']; del row['id']
         flat_data.append(row)
-
     df = pd.DataFrame(flat_data)
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer: df.to_excel(writer, index=False)
@@ -459,8 +436,4 @@ def get_student_recap_list(username: str, db: Session = Depends(get_db)):
     choice2_lbl = f"{user.choice2.university} - {user.choice2.name}" if user.choice2 else "-"
     pg1 = user.choice1.passing_grade if user.choice1 else 0
     pg2 = user.choice2.passing_grade if user.choice2 else 0
-    return {
-        "is_released": is_released, "full_name": user.full_name, 
-        "choice1_label": choice1_lbl, "choice1_pg": pg1, "choice2_label": choice2_lbl, "choice2_pg": pg2,
-        "reports": reports
-    }
+    return {"is_released": is_released, "full_name": user.full_name, "choice1_label": choice1_lbl, "choice1_pg": pg1, "choice2_label": choice2_lbl, "choice2_pg": pg2, "reports": reports}
