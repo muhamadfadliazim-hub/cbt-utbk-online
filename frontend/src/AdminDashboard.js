@@ -202,7 +202,7 @@ const AdminDashboard = ({ onLogout }) => {
                             <input className="w-full p-2 border rounded" placeholder="Contoh: Tryout Akbar 1" value={newPeriodName} onChange={(e)=>setNewPeriodName(e.target.value)}/>
                         </div>
                         <div className="w-1/3">
-                            <label className="block text-sm font-bold text-gray-600 mb-1">Akses Peserta (Opsional)</label>
+                            <label className="block text-sm font-bold text-gray-600 mb-1">Akses Peserta</label>
                             <div 
                                 onClick={() => setShowUserModal(true)}
                                 className="w-full p-2 border rounded bg-gray-50 cursor-pointer flex justify-between items-center hover:bg-gray-100"
@@ -267,6 +267,7 @@ const AdminDashboard = ({ onLogout }) => {
                                     <td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PU}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PPU}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PBM}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PK}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.LBI}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.LBE}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PM}</td>
                                     <td className="p-4 text-center border-l border-gray-100 font-extrabold text-blue-700 text-lg bg-blue-50/50">{r.average}</td>
                                     <td className="p-4 border-l border-gray-100 align-middle">{r.status.startsWith('LULUS') ? (<div><span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-green-100 text-green-700 mb-1"><CheckCircle size={12}/> LULUS</span></div>) : (<span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-red-100 text-red-600"><XCircle size={12}/> TIDAK LULUS</span>)}</td>
+                                    
                                     <td className="p-4 border-l border-gray-100 text-center align-middle">
                                         <div className="flex flex-wrap gap-1 justify-center">
                                             {r.completed_exams && r.completed_exams.length > 0 ? (
@@ -295,5 +296,4 @@ const AdminDashboard = ({ onLogout }) => {
     </div>
   );
 };
-
 export default AdminDashboard;
