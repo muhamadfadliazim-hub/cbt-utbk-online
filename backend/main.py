@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional
 import models, database
 import pandas as pd
 import io
-import time # Tambahan import untuk generate ID unik
+import time
 
 models.Base.metadata.create_all(bind=database.engine)
 app = FastAPI()
@@ -30,11 +30,9 @@ def get_db():
 class LoginSchema(BaseModel):
     username: str
     password: str
-
 class AnswerSchema(BaseModel):
     answers: Dict[str, Any] 
     username: str
-
 class UserCreateSchema(BaseModel):
     username: str
     full_name: str
@@ -53,10 +51,44 @@ class TogglePeriodSchema(BaseModel):
 class ResetResultSchema(BaseModel):
     user_id: int
     exam_id: str
-
 class PeriodCreateSchema(BaseModel):
     name: str
     allowed_usernames: Optional[str] = None 
+
+# --- HELPER FUNCTION: CEK JAWABAN ---
+def check_answer_correctness(question, user_ans):
+    if not user_ans: return False
+    
+    # 1. Tipe Tabel Benar/Salah (Dictionary)
+    if question.type == 'table_boolean' and isinstance(user_ans, dict):
+        # Harus benar SEMUA baris baru dianggap benar (Strict scoring)
+        # Atau bisa dibuat parsial, tapi UTBK biasanya strict per nomor
+        for opt in question.options:
+            student_choice = user_ans.get(str(opt.option_index)) # "B" atau "S"
+            correct_choice = "B" if opt.is_correct else "S"
+            if student_choice != correct_choice:
+                return False
+        return True
+
+    # 2. Tipe Isian Singkat
+    elif question.type == 'short_answer':
+        key_opt = next((o for o in question.options if o.is_correct), None)
+        if key_opt:
+            return str(user_ans).strip().lower() == key_opt.label.strip().lower()
+    
+    # 3. Tipe Pilihan Ganda Kompleks (Checkbox)
+    elif question.type == 'complex':
+        correct_ids = {o.option_index for o in question.options if o.is_correct}
+        user_ids = set(user_ans) if isinstance(user_ans, list) else {user_ans}
+        return user_ids == correct_ids # Harus sama persis
+        
+    # 4. Tipe Pilihan Ganda Biasa
+    else:
+        key_opt = next((o for o in question.options if o.is_correct), None)
+        if key_opt:
+            return user_ans == key_opt.option_index
+            
+    return False
 
 # --- ENDPOINTS ---
 
@@ -94,16 +126,10 @@ def get_admin_periods(db: Session = Depends(get_db)):
 
 @app.post("/admin/periods")
 def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
-    new_period = models.ExamPeriod(
-        name=data.name, 
-        is_active=False, 
-        allow_submit=True,
-        allowed_usernames=data.allowed_usernames
-    )
+    new_period = models.ExamPeriod(name=data.name, is_active=False, allow_submit=True, allowed_usernames=data.allowed_usernames)
     db.add(new_period)
     db.commit()
     db.refresh(new_period)
-    
     utbk_structure = [("PU", "Penalaran Umum", 30), ("PBM", "Pemahaman Bacaan & Menulis", 25), ("PPU", "Pengetahuan & Pemahaman Umum", 15), ("PK", "Pengetahuan Kuantitatif", 20), ("LBI", "Literasi Bahasa Indonesia", 42.5), ("LBE", "Literasi Bahasa Inggris", 20), ("PM", "Penalaran Matematika", 42.5)]
     for code, title, duration in utbk_structure:
         db.add(models.Exam(id=f"P{new_period.id}_{code}", period_id=new_period.id, code=code, title=title, description="Standar SNBT", duration=duration))
@@ -113,79 +139,129 @@ def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
 @app.post("/admin/periods/{period_id}/toggle")
 def toggle_period(period_id: int, data: TogglePeriodSchema, db: Session = Depends(get_db)):
     period = db.query(models.ExamPeriod).filter(models.ExamPeriod.id == period_id).first()
-    if period:
-        period.is_active = data.is_active
-        db.commit()
+    if period: period.is_active = data.is_active; db.commit()
     return {"message": "Status diubah"}
 
 @app.post("/admin/periods/{period_id}/toggle-submit")
 def toggle_period_submit(period_id: int, data: TogglePeriodSchema, db: Session = Depends(get_db)):
     period = db.query(models.ExamPeriod).filter(models.ExamPeriod.id == period_id).first()
-    if period:
-        period.allow_submit = data.is_active 
-        db.commit()
+    if period: period.allow_submit = data.is_active; db.commit()
     return {"message": "Setting Tombol Submit Diubah"}
 
 @app.delete("/admin/periods/{period_id}")
 def delete_period(period_id: int, db: Session = Depends(get_db)):
     period = db.query(models.ExamPeriod).filter(models.ExamPeriod.id == period_id).first()
-    if period:
-        db.delete(period)
-        db.commit()
+    if period: db.delete(period); db.commit()
     return {"message": "Periode dihapus"}
 
 @app.post("/admin/reset-result")
 def reset_student_result(data: ResetResultSchema, db: Session = Depends(get_db)):
     result = db.query(models.ExamResult).filter_by(user_id=data.user_id, exam_id=data.exam_id).first()
-    if result:
-        db.delete(result)
-        db.commit()
-        return {"message": "Hasil ujian berhasil direset. Siswa bisa mengerjakan ulang."}
+    if result: db.delete(result); db.commit(); return {"message": "Hasil ujian berhasil direset."}
     raise HTTPException(404, "Data hasil tidak ditemukan")
 
-# --- ENDPOINT BARU: UNTUK MENGHANDLE UploadExam.js ---
-@app.post("/upload-exam")
-async def upload_exam_manual(
-    title: str = Form(...),
-    duration: float = Form(...),
-    description: str = Form(...),
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db)
-):
-    try:
-        # 1. Buat Periode Baru Otomatis (Karena Exam harus nempel ke Periode)
-        period_name = f"Paket Manual: {title}"
-        new_period = models.ExamPeriod(
-            name=period_name, 
-            is_active=False, 
-            allow_submit=True
-        )
-        db.add(new_period)
-        db.commit()
-        db.refresh(new_period)
+# --- CORE IRT LOGIC DI SINI ---
+@app.post("/exams/{exam_id}/submit")
+def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.username == data.username).first()
+    if not user: raise HTTPException(404, "User not found")
+    
+    existing = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first()
+    if existing: return {"message": "Sudah dikerjakan"}
 
-        # 2. Buat Exam (Subtes)
-        # Generate ID unik agar tidak bentrok
-        exam_id = f"MANUAL_{new_period.id}_{int(time.time())}"
+    questions = db.query(models.Question).filter(models.Question.exam_id == exam_id).all()
+    
+    # 1. UPDATE STATISTIK SOAL (IRT LEARNING PHASE)
+    # Langkah ini menghitung ulang tingkat kesulitan soal berdasarkan jawaban siswa ini
+    for q in questions:
+        user_ans = data.answers.get(str(q.id))
+        is_correct = check_answer_correctness(q, user_ans)
         
-        new_exam = models.Exam(
-            id=exam_id,
-            period_id=new_period.id,
-            code=description,
-            title=title,
-            description="Upload Manual",
-            duration=duration
-        )
-        db.add(new_exam)
-        db.commit()
+        # Update Total Percobaan & Kebenaran
+        q.total_attempts += 1
+        if is_correct:
+            q.total_correct += 1
+        
+        # UPDATE Difficulty (Bobot Soal)
+        # Jika soal baru (<5 penjawab), bobot default 1.0
+        # Jika sudah banyak penjawab, hitung fail_rate
+        min_attempts = 5
+        if q.total_attempts >= min_attempts:
+            # Rasio Benar (P)
+            p_value = q.total_correct / q.total_attempts
+            
+            # RUMUS PEMBOBOTAN IRT SEDERHANA:
+            # Soal Sulit (P kecil) -> Bobot Tinggi
+            # Soal Mudah (P besar) -> Bobot Rendah
+            # Base Difficulty = 1.0
+            # Max Added Difficulty = 3.0 (Jadi Max Bobot = 4.0)
+            
+            difficulty_factor = 1.0 - p_value # 0 (semua benar) s.d 1 (semua salah)
+            q.difficulty = 1.0 + (difficulty_factor * 3.0) 
+        else:
+            q.difficulty = 1.0
+            
+    # Simpan perubahan bobot soal ke database AGAR BERDAMPAK KE SISWA LAIN NANTI
+    db.commit()
+    
+    # 2. HITUNG SKOR SISWA (SCORING PHASE)
+    # Skor dihitung berdasarkan bobot soal yang SUDAH diupdate barusan
+    total_weight_earned = 0.0
+    total_weight_max = 0.0
+    correct_cnt = 0
+    wrong_cnt = 0
+    
+    for q in questions:
+        # Ambil bobot terbaru
+        weight = q.difficulty 
+        total_weight_max += weight
+        
+        user_ans = data.answers.get(str(q.id))
+        is_correct = check_answer_correctness(q, user_ans)
+        
+        if is_correct:
+            total_weight_earned += weight
+            correct_cnt += 1
+        else:
+            wrong_cnt += 1
+            
+    # Normalisasi ke Skala 1000
+    final_score = 0
+    if total_weight_max > 0:
+        final_score = (total_weight_earned / total_weight_max) * 1000
+    
+    # Simpan Hasil Siswa
+    new_result = models.ExamResult(
+        user_id=user.id, 
+        exam_id=exam_id, 
+        correct_count=correct_cnt, 
+        wrong_count=wrong_cnt, 
+        irt_score=final_score
+    )
+    db.add(new_result)
+    db.commit()
+    
+    return {
+        "message": "Tersimpan", 
+        "correct": correct_cnt, 
+        "wrong": wrong_cnt, 
+        "score": round(final_score, 2)
+    }
 
-        # 3. Proses File Excel (Sama seperti logika upload_questions)
+@app.post("/upload-exam")
+async def upload_exam_manual(title: str = Form(...), duration: float = Form(...), description: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
+    try:
+        period_name = f"Paket Manual: {title}"
+        new_period = models.ExamPeriod(name=period_name, is_active=False, allow_submit=True)
+        db.add(new_period); db.commit(); db.refresh(new_period)
+        exam_id = f"MANUAL_{new_period.id}_{int(time.time())}"
+        db.add(models.Exam(id=exam_id, period_id=new_period.id, code=description, title=title, description="Upload Manual", duration=duration))
+        db.commit()
+        
         content = await file.read()
         df = pd.read_excel(io.BytesIO(content))
         df.columns = df.columns.str.strip().str.title()
-        
-        if 'Soal' not in df.columns: 
-            return {"message": "Format Excel Salah. Kolom 'Soal' tidak ditemukan."}
+        if 'Soal' not in df.columns: return {"message": "Format Excel Salah. Kolom 'Soal' tidak ditemukan."}
 
         count = 0
         for _, row in df.iterrows():
@@ -199,17 +275,8 @@ async def upload_exam_manual(
             judul = str(row['Judul Wacana']) if 'Judul Wacana' in df.columns and pd.notna(row['Judul Wacana']) else "Wacana"
             sumber = str(row['Sumber Wacana']) if 'Sumber Wacana' in df.columns and pd.notna(row['Sumber Wacana']) else None
 
-            q = models.Question(
-                exam_id=exam_id, type=q_type, text=str(row['Soal']),
-                reading_material=str(row['Bacaan']) if pd.notna(row.get('Bacaan')) else None,
-                image_url=str(row['Gambar']) if pd.notna(row.get('Gambar')) else None,
-                difficulty=float(row.get('Kesulitan', 1.0)),
-                total_attempts=0, total_correct=0,
-                label_true=label1, label_false=label2,
-                reading_label=judul, citation=sumber
-            )
-            db.add(q)
-            db.commit()
+            q = models.Question(exam_id=exam_id, type=q_type, text=str(row['Soal']), reading_material=str(row['Bacaan']) if pd.notna(row.get('Bacaan')) else None, image_url=str(row['Gambar']) if pd.notna(row.get('Gambar')) else None, difficulty=float(row.get('Kesulitan', 1.0)), total_attempts=0, total_correct=0, label_true=label1, label_false=label2, reading_label=judul, citation=sumber)
+            db.add(q); db.commit()
 
             kunci = str(row.get('Kunci', ''))
             if q_type == 'short_answer':
@@ -217,22 +284,15 @@ async def upload_exam_manual(
             elif q_type == 'table_boolean':
                 keys = kunci.upper().split(',')
                 for i, col in enumerate(['Opsia', 'Opsib', 'Opsic', 'Opsid']):
-                    if pd.notna(row.get(col)):
-                        db.add(models.Option(question_id=q.id, option_index=str(i+1), label=str(row[col]), is_correct=(i<len(keys) and keys[i].strip()=="B")))
+                    if pd.notna(row.get(col)): db.add(models.Option(question_id=q.id, option_index=str(i+1), label=str(row[col]), is_correct=(i<len(keys) and keys[i].strip()=="B")))
             else:
                 key_set = set(k.strip() for k in kunci.upper().split(','))
                 for c, col in [('A','Opsia'),('B','Opsib'),('C','Opsic'),('D','Opsid'),('E','Opsie')]:
-                    if pd.notna(row.get(col)):
-                        db.add(models.Option(question_id=q.id, option_index=c, label=str(row[col]), is_correct=(c in key_set)))
+                    if pd.notna(row.get(col)): db.add(models.Option(question_id=q.id, option_index=c, label=str(row[col]), is_correct=(c in key_set)))
             count += 1
-            
         db.commit()
         return {"message": f"Berhasil! Paket '{title}' dibuat dengan {count} soal."}
-
-    except Exception as e:
-        db.rollback()
-        # Berikan pesan error detail agar tahu salahnya dimana
-        return {"detail": str(e), "message": "Gagal Upload"}
+    except Exception as e: db.rollback(); return {"detail": str(e), "message": "Gagal Upload"}
 
 @app.post("/admin/upload-questions/{exam_id}")
 async def upload_questions(exam_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
@@ -249,103 +309,32 @@ async def upload_questions(exam_id: str, file: UploadFile = File(...), db: Sessi
         df = pd.read_excel(io.BytesIO(content))
         df.columns = df.columns.str.strip().str.title()
         if 'Soal' not in df.columns: return {"message": "Format Excel Salah"}
-
         count = 0
         for _, row in df.iterrows():
             q_type = 'multiple_choice'
             if 'KOMPLEKS' in str(row.get('Tipe', '')).upper(): q_type = 'complex'
             elif 'ISIAN' in str(row.get('Tipe', '')).upper(): q_type = 'short_answer'
             elif 'TABEL' in str(row.get('Tipe', '')).upper(): q_type = 'table_boolean'
-            
             label1 = str(row['Label1']) if 'Label1' in df.columns and pd.notna(row['Label1']) else "Benar"
             label2 = str(row['Label2']) if 'Label2' in df.columns and pd.notna(row['Label2']) else "Salah"
             judul = str(row['Judul Wacana']) if 'Judul Wacana' in df.columns and pd.notna(row['Judul Wacana']) else "Wacana"
             sumber = str(row['Sumber Wacana']) if 'Sumber Wacana' in df.columns and pd.notna(row['Sumber Wacana']) else None
-
-            q = models.Question(
-                exam_id=exam_id, type=q_type, text=str(row['Soal']),
-                reading_material=str(row['Bacaan']) if pd.notna(row.get('Bacaan')) else None,
-                image_url=str(row['Gambar']) if pd.notna(row.get('Gambar')) else None,
-                difficulty=float(row.get('Kesulitan', 1.0)),
-                total_attempts=0, total_correct=0,
-                label_true=label1, label_false=label2,
-                reading_label=judul, citation=sumber
-            )
-            db.add(q)
-            db.commit()
-
+            q = models.Question(exam_id=exam_id, type=q_type, text=str(row['Soal']), reading_material=str(row['Bacaan']) if pd.notna(row.get('Bacaan')) else None, image_url=str(row['Gambar']) if pd.notna(row.get('Gambar')) else None, difficulty=float(row.get('Kesulitan', 1.0)), total_attempts=0, total_correct=0, label_true=label1, label_false=label2, reading_label=judul, citation=sumber)
+            db.add(q); db.commit()
             kunci = str(row.get('Kunci', ''))
-            if q_type == 'short_answer':
-                db.add(models.Option(question_id=q.id, option_index="KEY", label=kunci, is_correct=True))
+            if q_type == 'short_answer': db.add(models.Option(question_id=q.id, option_index="KEY", label=kunci, is_correct=True))
             elif q_type == 'table_boolean':
                 keys = kunci.upper().split(',')
                 for i, col in enumerate(['Opsia', 'Opsib', 'Opsic', 'Opsid']):
-                    if pd.notna(row.get(col)):
-                        db.add(models.Option(question_id=q.id, option_index=str(i+1), label=str(row[col]), is_correct=(i<len(keys) and keys[i].strip()=="B")))
+                    if pd.notna(row.get(col)): db.add(models.Option(question_id=q.id, option_index=str(i+1), label=str(row[col]), is_correct=(i<len(keys) and keys[i].strip()=="B")))
             else:
                 key_set = set(k.strip() for k in kunci.upper().split(','))
                 for c, col in [('A','Opsia'),('B','Opsib'),('C','Opsic'),('D','Opsid'),('E','Opsie')]:
-                    if pd.notna(row.get(col)):
-                        db.add(models.Option(question_id=q.id, option_index=c, label=str(row[col]), is_correct=(c in key_set)))
+                    if pd.notna(row.get(col)): db.add(models.Option(question_id=q.id, option_index=c, label=str(row[col]), is_correct=(c in key_set)))
             count += 1
         db.commit()
         return {"message": f"Sukses! {count} soal."}
-    except Exception as e:
-        db.rollback()
-        return {"message": f"Error: {str(e)}"}
-
-@app.get("/admin/exams/{exam_id}/preview")
-def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
-    exam = db.query(models.Exam).filter(models.Exam.id == exam_id).first()
-    if not exam: raise HTTPException(404, "Subtes tidak ditemukan")
-    q_data = []
-    for q in exam.questions:
-        opts = [{"id": o.option_index, "label": o.label, "is_correct": o.is_correct} for o in q.options]
-        opts.sort(key=lambda x: x["id"])
-        q_data.append({
-            "id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url,
-            "reading_material": q.reading_material, "difficulty": q.difficulty, "options": opts,
-            "label_true": q.label_true, "label_false": q.label_false,
-            "reading_label": q.reading_label, "citation": q.citation
-        })
-    return {"title": exam.title, "questions": q_data}
-
-# --- FITUR UTAMA: FILTER PERIODE BERDASARKAN WHITELIST USERNAME ---
-@app.get("/student/periods")
-def get_student_active_periods(username: str = None, db: Session = Depends(get_db)):
-    periods = db.query(models.ExamPeriod).filter(models.ExamPeriod.is_active == True).order_by(models.ExamPeriod.id.desc()).all()
-    user_id = None
-    if username:
-        u = db.query(models.User).filter(models.User.username == username).first()
-        if u: user_id = u.id
-
-    data = []
-    order_map = {"PU":1, "PBM":2, "PPU":3, "PK":4, "LBI":5, "LBE":6, "PM":7}
-    for p in periods:
-        # LOGIKA FILTER:
-        # Jika p.allowed_usernames ada isinya, cek apakah username siswa ada di situ.
-        if p.allowed_usernames:
-            # Bersihkan spasi dan pisahkan koma
-            allowed_list = [u.strip().lower() for u in p.allowed_usernames.split(',')]
-            if not username or username.lower() not in allowed_list:
-                continue 
-
-        exams_info = []
-        for e in p.exams:
-            q_count = db.query(models.Question).filter(models.Question.exam_id == e.id).count()
-            is_done = False
-            if user_id:
-                res = db.query(models.ExamResult).filter_by(user_id=user_id, exam_id=e.id).first()
-                if res: is_done = True
-            
-            exams_info.append({
-                "id": e.id, "title": e.title, "duration": e.duration, 
-                "q_count": q_count, "is_done": is_done, 
-                "allow_submit": p.allow_submit
-            })
-        exams_info.sort(key=lambda x: order_map.get(x['id'].split('_')[-1], 99))
-        data.append({"id": p.id, "name": p.name, "exams": exams_info})
-    return data
+    except Exception as e: db.rollback(); return {"message": f"Error: {str(e)}"}
 
 @app.get("/exams/{exam_id}")
 def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
@@ -356,59 +345,9 @@ def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
     for q in exam.questions:
         opts = [{"id": o.option_index, "label": o.label, "is_math": o.is_math} for o in q.options]
         opts.sort(key=lambda x: x["id"])
-        q_data.append({
-            "id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url, 
-            "reading_material": q.reading_material, "options": opts,
-            "label_true": q.label_true, "label_false": q.label_false,
-            "reading_label": q.reading_label, "citation": q.citation
-        })
+        q_data.append({"id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url, "reading_material": q.reading_material, "options": opts, "label_true": q.label_true, "label_false": q.label_false, "reading_label": q.reading_label, "citation": q.citation})
     q_data.sort(key=lambda x: x["id"]) 
     return {"id": exam.id, "title": exam.title, "duration": exam.duration, "questions": q_data, "allow_submit": allow_submit}
-
-@app.post("/exams/{exam_id}/submit")
-def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.username == data.username).first()
-    if not user: raise HTTPException(404, "User not found")
-    
-    existing = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first()
-    if existing: return {"message": "Sudah dikerjakan"}
-
-    questions = db.query(models.Question).filter(models.Question.exam_id == exam_id).all()
-    correct, wrong = 0, 0
-    total_w, user_w = 0.0, 0.0
-    
-    for q in questions:
-        if q.total_attempts > 0:
-            fail_rate = 1.0 - (q.total_correct / q.total_attempts)
-            current_difficulty = 1.0 + (fail_rate * 2.0)
-            q.difficulty = current_difficulty 
-        else: current_difficulty = q.difficulty
-        total_w += current_difficulty
-        user_ans = data.answers.get(str(q.id))
-        is_correct = False
-        if user_ans:
-            if q.type == 'table_boolean' and isinstance(user_ans, dict):
-                is_correct = all(user_ans.get(str(o.option_index)) == ("B" if o.is_correct else "S") for o in q.options)
-            elif q.type == 'short_answer':
-                key = next((o for o in q.options if o.is_correct), None)
-                is_correct = key and str(user_ans).strip().lower() == key.label.strip().lower()
-            elif q.type == 'complex':
-                correct_set = {o.option_index for o in q.options if o.is_correct}
-                user_set = set(user_ans) if isinstance(user_ans, list) else {user_ans}
-                is_correct = user_set == correct_set
-            else:
-                key = next((o for o in q.options if o.is_correct), None)
-                is_correct = key and user_ans == key.option_index
-        q.total_attempts += 1
-        if is_correct: 
-            correct += 1
-            q.total_correct += 1
-            user_w += current_difficulty
-        else: wrong += 1
-    final_irt = (user_w / total_w) * 1000 if total_w > 0 else 0
-    db.add(models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct, wrong_count=wrong, irt_score=final_irt))
-    db.commit()
-    return {"message": "Tersimpan", "correct": correct, "wrong": wrong}
 
 @app.post("/login")
 def login(data: LoginSchema, db: Session = Depends(get_db)):
@@ -489,9 +428,7 @@ def download_recap_excel(period_id: Optional[int] = None, db: Session = Depends(
     data = get_score_recap(period_id, db)
     flat_data = []
     for d in data:
-        row = d.copy()
-        del row['completed_exams']; del row['id']
-        flat_data.append(row)
+        row = d.copy(); del row['completed_exams']; del row['id']; flat_data.append(row)
     df = pd.DataFrame(flat_data)
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer: df.to_excel(writer, index=False)
