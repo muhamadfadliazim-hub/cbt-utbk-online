@@ -37,9 +37,7 @@ class UserCreateSchema(BaseModel):
     username: str
     full_name: str
     password: str
-    role: str = "student" # Default student, tapi bisa diisi 'admin'
-class UserPasswordUpdateSchema(BaseModel):
-    new_password: str
+    role: str = "student" 
 class BulkDeleteSchema(BaseModel):
     user_ids: List[int]
 class MajorSelectionSchema(BaseModel):
@@ -83,7 +81,6 @@ def check_answer_correctness(question, user_ans):
 @app.get("/config/{key}")
 def get_config(key: str, db: Session = Depends(get_db)):
     cfg = db.query(models.SystemConfig).filter_by(key=key).first()
-    # Default enable_major_selection = true
     default = "true" if key == "enable_major_selection" else "false"
     return {"value": cfg.value if cfg else default}
 
@@ -93,7 +90,8 @@ def set_config(key: str, data: ConfigSchema, db: Session = Depends(get_db)):
     if not cfg: db.add(models.SystemConfig(key=key, value=data.value))
     else: cfg.value = data.value
     db.commit()
-    return {"message": "Updated"}
+    # PENTING: Return nilai terbaru
+    return {"message": "Updated", "value": cfg.value}
 
 @app.get("/admin/download-template")
 def download_template_soal():
@@ -322,18 +320,9 @@ def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
     return {"message": "Saved"}
 @app.get("/admin/users")
 def get_users(db: Session = Depends(get_db)): return db.query(models.User).all()
-
-# --- UPDATE FITUR USER ---
 @app.post("/admin/users")
 def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
     db.add(models.User(username=u.username, password=u.password, full_name=u.full_name, role=u.role)); db.commit(); return {"message": "OK"}
-
-@app.put("/admin/users/{uid}/password")
-def update_user_password(uid: int, d: UserPasswordUpdateSchema, db: Session = Depends(get_db)):
-    u = db.query(models.User).filter_by(id=uid).first()
-    if u: u.password = d.new_password; db.commit()
-    return {"message": "Password updated"}
-
 @app.delete("/admin/users/{uid}")
 def del_user(uid: int, db: Session = Depends(get_db)):
     db.query(models.User).filter_by(id=uid).delete(); db.commit(); return {"message": "OK"}
