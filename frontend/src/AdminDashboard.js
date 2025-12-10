@@ -28,16 +28,16 @@ const AdminDashboard = ({ onLogout }) => {
   // --- API CALLS ---
   const fetchPeriods = useCallback(() => {
     fetch(`${API_URL}/admin/periods`)
-      .then(res => res.json())
+      .then(r => r.json())
       .then(data => { if (Array.isArray(data)) setPeriods(data); else setPeriods([]); })
-      .catch(err => console.error("Gagal load periode:", err));
+      .catch(() => setPeriods([]));
   }, []);
 
   const fetchUsers = useCallback(() => {
     fetch(`${API_URL}/admin/users`)
-        .then(res => res.json())
+        .then(r => r.json())
         .then(data => { if (Array.isArray(data)) { setUsers(data); setSelectedIds([]); } else setUsers([]); })
-        .catch(err => console.error("Gagal load user:", err));
+        .catch(() => setUsers([]));
   }, []);
   
   const fetchRecap = useCallback(() => {
@@ -45,9 +45,9 @@ const AdminDashboard = ({ onLogout }) => {
         ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}`
         : `${API_URL}/admin/recap`;
       fetch(url)
-        .then(res => res.json())
+        .then(r => r.json())
         .then(data => { if (Array.isArray(data)) setRecap(data); else setRecap([]); })
-        .catch(err => console.error("Gagal load rekap:", err));
+        .catch(() => setRecap([]));
   }, [selectedRecapPeriod]);
   
   const fetchReleaseStatus = useCallback(() => {
@@ -108,11 +108,8 @@ const AdminDashboard = ({ onLogout }) => {
   const togglePeriodSubmit = (id, currentStatus) => { fetch(`${API_URL}/admin/periods/${id}/toggle-submit`, { method: 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active: !currentStatus}) }).then(() => fetchPeriods()); };
   const handleDeletePeriod = (id) => { if(window.confirm("Hapus Periode?")) fetch(`${API_URL}/admin/periods/${id}`, {method:'DELETE'}).then(()=>fetchPeriods()); };
   
-  // PERBAIKAN: HANDLING ERROR UPLOAD SOAL
   const handleUploadQuestion = (eid, f) => { 
       const d=new FormData(); d.append('file',f); 
-      
-      // Tampilkan loading indikator sederhana (optional)
       const btn = document.getElementById(`btn-upload-${eid}`);
       if(btn) btn.innerText = "Uploading...";
 
@@ -124,14 +121,11 @@ const AdminDashboard = ({ onLogout }) => {
           fetchPeriods(); 
       })
       .catch(err => alert("UPLOAD GAGAL: " + err.message))
-      .finally(() => {
-          if(btn) btn.innerText = "Upload";
-      });
+      .finally(() => { if(btn) btn.innerText = "Upload"; });
   };
   
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
   
-  // PERBAIKAN: HANDLING PREVIEW
   const handlePreviewExam = (examId) => { 
       fetch(`${API_URL}/admin/exams/${examId}/preview`)
       .then(async res => { 
