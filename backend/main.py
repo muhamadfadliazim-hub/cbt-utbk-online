@@ -59,30 +59,21 @@ class PeriodCreateSchema(BaseModel):
 def check_answer_correctness(question, user_ans):
     if not user_ans: return False
     
-    # 1. Tipe Tabel Benar/Salah (Dictionary)
     if question.type == 'table_boolean' and isinstance(user_ans, dict):
-        # Harus benar SEMUA baris baru dianggap benar (Strict scoring)
-        # Atau bisa dibuat parsial, tapi UTBK biasanya strict per nomor
         for opt in question.options:
-            student_choice = user_ans.get(str(opt.option_index)) # "B" atau "S"
+            student_choice = user_ans.get(str(opt.option_index)) 
             correct_choice = "B" if opt.is_correct else "S"
             if student_choice != correct_choice:
                 return False
         return True
-
-    # 2. Tipe Isian Singkat
     elif question.type == 'short_answer':
         key_opt = next((o for o in question.options if o.is_correct), None)
         if key_opt:
             return str(user_ans).strip().lower() == key_opt.label.strip().lower()
-    
-    # 3. Tipe Pilihan Ganda Kompleks (Checkbox)
     elif question.type == 'complex':
         correct_ids = {o.option_index for o in question.options if o.is_correct}
         user_ids = set(user_ans) if isinstance(user_ans, list) else {user_ans}
-        return user_ids == correct_ids # Harus sama persis
-        
-    # 4. Tipe Pilihan Ganda Biasa
+        return user_ids == correct_ids 
     else:
         key_opt = next((o for o in question.options if o.is_correct), None)
         if key_opt:
@@ -120,9 +111,13 @@ def download_template_soal():
     output.seek(0)
     return StreamingResponse(output, headers={'Content-Disposition': 'attachment; filename="template_soal_utbk_lengkap.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
+# --- PERBAIKAN UTAMA DI SINI ---
 @app.get("/admin/periods")
 def get_admin_periods(db: Session = Depends(get_db)):
-    return db.query(models.ExamPeriod).order_by(models.ExamPeriod.id.desc()).options(joinedload(models.ExamPeriod.exams)).all()
+    # Tambahkan .joinedload(models.Exam.questions) agar soal ikut terambil
+    return db.query(models.ExamPeriod).order_by(models.ExamPeriod.id.desc()).options(
+        joinedload(models.ExamPeriod.exams).joinedload(models.Exam.questions)
+    ).all()
 
 @app.post("/admin/periods")
 def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
@@ -171,48 +166,30 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
 
     questions = db.query(models.Question).filter(models.Question.exam_id == exam_id).all()
     
-    # 1. UPDATE STATISTIK SOAL (IRT LEARNING PHASE)
-    # Langkah ini menghitung ulang tingkat kesulitan soal berdasarkan jawaban siswa ini
     for q in questions:
         user_ans = data.answers.get(str(q.id))
         is_correct = check_answer_correctness(q, user_ans)
         
-        # Update Total Percobaan & Kebenaran
         q.total_attempts += 1
         if is_correct:
             q.total_correct += 1
         
-        # UPDATE Difficulty (Bobot Soal)
-        # Jika soal baru (<5 penjawab), bobot default 1.0
-        # Jika sudah banyak penjawab, hitung fail_rate
         min_attempts = 5
         if q.total_attempts >= min_attempts:
-            # Rasio Benar (P)
             p_value = q.total_correct / q.total_attempts
-            
-            # RUMUS PEMBOBOTAN IRT SEDERHANA:
-            # Soal Sulit (P kecil) -> Bobot Tinggi
-            # Soal Mudah (P besar) -> Bobot Rendah
-            # Base Difficulty = 1.0
-            # Max Added Difficulty = 3.0 (Jadi Max Bobot = 4.0)
-            
-            difficulty_factor = 1.0 - p_value # 0 (semua benar) s.d 1 (semua salah)
+            difficulty_factor = 1.0 - p_value 
             q.difficulty = 1.0 + (difficulty_factor * 3.0) 
         else:
             q.difficulty = 1.0
             
-    # Simpan perubahan bobot soal ke database AGAR BERDAMPAK KE SISWA LAIN NANTI
     db.commit()
     
-    # 2. HITUNG SKOR SISWA (SCORING PHASE)
-    # Skor dihitung berdasarkan bobot soal yang SUDAH diupdate barusan
     total_weight_earned = 0.0
     total_weight_max = 0.0
     correct_cnt = 0
     wrong_cnt = 0
     
     for q in questions:
-        # Ambil bobot terbaru
         weight = q.difficulty 
         total_weight_max += weight
         
@@ -225,12 +202,10 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
         else:
             wrong_cnt += 1
             
-    # Normalisasi ke Skala 1000
     final_score = 0
     if total_weight_max > 0:
         final_score = (total_weight_earned / total_weight_max) * 1000
     
-    # Simpan Hasil Siswa
     new_result = models.ExamResult(
         user_id=user.id, 
         exam_id=exam_id, 
@@ -335,6 +310,46 @@ async def upload_questions(exam_id: str, file: UploadFile = File(...), db: Sessi
         db.commit()
         return {"message": f"Sukses! {count} soal."}
     except Exception as e: db.rollback(); return {"message": f"Error: {str(e)}"}
+
+@app.get("/admin/exams/{exam_id}/preview")
+def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
+    exam = db.query(models.Exam).filter(models.Exam.id == exam_id).first()
+    if not exam: raise HTTPException(404, "Subtes tidak ditemukan")
+    q_data = []
+    for q in exam.questions:
+        opts = [{"id": o.option_index, "label": o.label, "is_correct": o.is_correct} for o in q.options]
+        opts.sort(key=lambda x: x["id"])
+        q_data.append({"id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url, "reading_material": q.reading_material, "difficulty": q.difficulty, "options": opts, "label_true": q.label_true, "label_false": q.label_false, "reading_label": q.reading_label, "citation": q.citation})
+    return {"title": exam.title, "questions": q_data}
+
+@app.get("/student/periods")
+def get_student_active_periods(username: str = None, db: Session = Depends(get_db)):
+    periods = db.query(models.ExamPeriod).filter(models.ExamPeriod.is_active == True).order_by(models.ExamPeriod.id.desc()).all()
+    user_id = None
+    if username:
+        u = db.query(models.User).filter(models.User.username == username).first()
+        if u: user_id = u.id
+
+    data = []
+    order_map = {"PU":1, "PBM":2, "PPU":3, "PK":4, "LBI":5, "LBE":6, "PM":7}
+    for p in periods:
+        if p.allowed_usernames:
+            allowed_list = [u.strip().lower() for u in p.allowed_usernames.split(',')]
+            if not username or username.lower() not in allowed_list:
+                continue 
+
+        exams_info = []
+        for e in p.exams:
+            q_count = db.query(models.Question).filter(models.Question.exam_id == e.id).count()
+            is_done = False
+            if user_id:
+                res = db.query(models.ExamResult).filter_by(user_id=user_id, exam_id=e.id).first()
+                if res: is_done = True
+            
+            exams_info.append({"id": e.id, "title": e.title, "duration": e.duration, "q_count": q_count, "is_done": is_done, "allow_submit": p.allow_submit})
+        exams_info.sort(key=lambda x: order_map.get(x['id'].split('_')[-1], 99))
+        data.append({"id": p.id, "name": p.name, "exams": exams_info})
+    return data
 
 @app.get("/exams/{exam_id}")
 def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
