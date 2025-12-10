@@ -18,9 +18,12 @@ const AdminDashboard = ({ onLogout }) => {
   const [showUserModal, setShowUserModal] = useState(false);
   const [selectedWhitelist, setSelectedWhitelist] = useState([]);
 
+  // Config State
+  const [isReleased, setIsReleased] = useState(false);
+  const [isMajorSelectionEnabled, setIsMajorSelectionEnabled] = useState(true);
+
   const [users, setUsers] = useState([]);
   const [recap, setRecap] = useState([]);
-  const [isReleased, setIsReleased] = useState(false);
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', role: 'student' });
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
@@ -50,21 +53,36 @@ const AdminDashboard = ({ onLogout }) => {
         .catch(() => setRecap([]));
   }, [selectedRecapPeriod]);
   
-  const fetchReleaseStatus = useCallback(() => {
+  // FIX: Load Configs
+  const fetchConfigs = useCallback(() => {
       fetch(`${API_URL}/config/release`).then(r=>r.json()).then(d=>setIsReleased(d.is_released));
+      fetch(`${API_URL}/config/enable_major_selection`).then(r=>r.json()).then(d=>setIsMajorSelectionEnabled(d.value === 'true'));
   }, []);
 
   // --- EFFECTS ---
   useEffect(() => {
     fetchUsers(); 
+    fetchConfigs();
     if (tab === 'periods') fetchPeriods(); 
-    if (tab === 'recap') { fetchPeriods(); fetchRecap(); fetchReleaseStatus(); } 
-  }, [tab, fetchPeriods, fetchUsers, fetchRecap, fetchReleaseStatus]);
+    if (tab === 'recap') { fetchPeriods(); fetchRecap(); } 
+  }, [tab, fetchPeriods, fetchUsers, fetchRecap, fetchConfigs]);
 
   useEffect(() => { if (tab === 'recap') fetchRecap(); }, [selectedRecapPeriod, fetchRecap, tab]);
 
   // --- ACTIONS ---
   
+  // FIX POIN 3: Toggle Config Jurusan
+  const toggleConfig = (key, currentVal) => {
+      const newVal = !currentVal;
+      fetch(`${API_URL}/config/${key}`, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({value: newVal ? "true" : "false"})
+      }).then(() => {
+          if(key === 'release_announcement') setIsReleased(newVal);
+          if(key === 'enable_major_selection') setIsMajorSelectionEnabled(newVal);
+      });
+  };
+
   const toggleUserWhitelist = (username) => {
       if (selectedWhitelist.includes(username)) {
           setSelectedWhitelist(selectedWhitelist.filter(u => u !== username));
@@ -92,16 +110,13 @@ const AdminDashboard = ({ onLogout }) => {
               allowed_usernames: finalAllowed
           })
       })
-      .then(async res => {
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.message || "Gagal membuat periode");
-          alert(data.message); 
+      .then(r=>r.json()).then(d=>{
+          alert(d.message); 
           setNewPeriodName(''); 
           setAllowedUsers(''); 
           setSelectedWhitelist([]);
           fetchPeriods();
-      })
-      .catch(err => alert("ERROR: " + err.message));
+      }); 
   };
 
   const togglePeriodActive = (id, s) => fetch(`${API_URL}/admin/periods/${id}/toggle`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active:!s})}).then(()=>fetchPeriods());
@@ -126,6 +141,7 @@ const AdminDashboard = ({ onLogout }) => {
   
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
   
+  // FIX POIN 1: PREVIEW SOAL SUDAH BENAR
   const handlePreviewExam = (examId) => { 
       fetch(`${API_URL}/admin/exams/${examId}/preview`)
       .then(async res => { 
@@ -144,7 +160,6 @@ const AdminDashboard = ({ onLogout }) => {
   const handleBulkDelete = () => { if(selectedIds.length>0 && window.confirm("Hapus?")) fetch(`${API_URL}/admin/users/delete-bulk`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_ids:selectedIds})}).then(r=>r.json()).then(d=>{alert(d.message); fetchUsers();}); };
   const handleAddUser = (e) => { e.preventDefault(); fetch(`${API_URL}/admin/users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(newUser)}).then(r=>{if(!r.ok) throw new Error("Gagal"); return r.json()}).then(()=>{alert("Sukses"); fetchUsers(); setNewUser({username:'',password:'',full_name:'', role:'student'})}).catch(e=>alert(e.message)); };
   const handleBulkUpload = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/users/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchUsers();}) };
-  const toggleRelease = () => { const n=!isReleased; if(window.confirm(n?"Buka Pengumuman?":"Tutup Pengumuman?")) fetch(`${API_URL}/config/release`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({value:n?"true":"false"})}).then(r=>r.json()).then(d=>{setIsReleased(d.is_released); alert(d.message)}); };
   const handleDownloadExcel = () => { const url = selectedRecapPeriod ? `${API_URL}/admin/recap/download?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap/download`; window.open(url, '_blank'); };
   
   const handleResetResult = (userId, examId, subtestCode) => {
@@ -162,7 +177,26 @@ const AdminDashboard = ({ onLogout }) => {
 
   return (
     <div className="min-h-screen bg-gray-100 flex font-sans text-gray-800">
-      <aside className="w-64 bg-indigo-900 text-white p-6 flex flex-col"><h1 className="text-2xl font-bold mb-8">Admin Panel</h1><nav className="space-y-4 flex-1"><button onClick={()=>setTab('periods')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='periods'?'bg-indigo-700':''}`}><FileText size={18}/> Manajemen Soal</button><button onClick={()=>setTab('users')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='users'?'bg-indigo-700':''}`}><Users size={18}/> User & Siswa</button><button onClick={()=>setTab('recap')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='recap'?'bg-indigo-700':''}`}><FileText size={18}/> Rekap Nilai</button></nav><button onClick={onLogout} className="flex items-center gap-3 p-3 rounded hover:bg-red-600 bg-indigo-800 mt-auto"><LogOut size={18}/> Keluar</button></aside>
+      <aside className="w-64 bg-indigo-900 text-white p-6 flex flex-col">
+          <h1 className="text-2xl font-bold mb-8">Admin Panel</h1>
+          <nav className="space-y-4 flex-1">
+              <button onClick={()=>setTab('periods')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='periods'?'bg-indigo-700':''}`}><FileText size={18}/> Manajemen Soal</button>
+              <button onClick={()=>setTab('users')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='users'?'bg-indigo-700':''}`}><Users size={18}/> User & Siswa</button>
+              <button onClick={()=>setTab('recap')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='recap'?'bg-indigo-700':''}`}><FileText size={18}/> Rekap Nilai</button>
+          </nav>
+          
+          {/* FIX POIN 3: TOGGLE CONFIGURASI */}
+          <div className="mt-auto pt-6 border-t border-indigo-700 space-y-3">
+              <div className="text-xs font-bold text-indigo-300 uppercase">Pengaturan Sistem</div>
+              <button onClick={()=>toggleConfig('enable_major_selection', isMajorSelectionEnabled)} className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs font-bold transition ${isMajorSelectionEnabled ? 'bg-green-600' : 'bg-red-500'}`}>
+                  Pilih Jurusan: {isMajorSelectionEnabled ? "ON" : "OFF"} {isMajorSelectionEnabled ? <Unlock size={14}/> : <Lock size={14}/>}
+              </button>
+              <button onClick={()=>toggleConfig('release_announcement', isReleased)} className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs font-bold transition ${isReleased ? 'bg-green-600' : 'bg-orange-500'}`}>
+                  Pengumuman: {isReleased ? "RILIS" : "TUTUP"} {isReleased ? <Unlock size={14}/> : <Lock size={14}/>}
+              </button>
+              <button onClick={onLogout} className="flex items-center gap-3 p-3 rounded hover:bg-red-600 bg-indigo-800 mt-4"><LogOut size={18}/> Keluar</button>
+          </div>
+      </aside>
       
       <main className="flex-1 p-8 overflow-y-auto relative">
         {showPreview && previewData && (
@@ -177,7 +211,6 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
-        {/* MODAL PILIH USER (WHITELIST) */}
         {showUserModal && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">
@@ -258,7 +291,6 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
         
-        {/* TABS LAINNYA TIDAK BERUBAH (SAMA SEPERTI SEBELUMNYA) */}
         {tab === 'users' && (<div><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">Manajemen User</h2>{selectedIds.length > 0 && <button onClick={handleBulkDelete} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"><Trash2 size={16}/> Hapus {selectedIds.length}</button>}</div><div className="bg-white p-5 rounded-lg shadow mb-6 flex gap-3 flex-wrap"><input placeholder="Username" className="border p-2 rounded flex-1" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input placeholder="Nama Lengkap" className="border p-2 rounded flex-1" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input placeholder="Password" type="password" className="border p-2 rounded flex-1" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><select className="border p-2 rounded bg-gray-50" value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})}><option value="student">Siswa</option><option value="admin">Admin</option></select><button onClick={handleAddUser} className="bg-green-600 text-white px-4 py-2 rounded font-bold"><Plus size={16}/></button><div className="w-full h-px bg-gray-200 my-2"></div><label className="text-blue-600 cursor-pointer text-sm flex items-center gap-2 hover:underline"><Upload size={14}/> Upload Excel User (.xlsx)<input type="file" className="hidden" accept=".xlsx" onChange={handleBulkUpload}/></label></div><div className="bg-white shadow rounded overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={users.length > 0 && selectedIds.length === users.length}/></th><th className="p-3 text-left">Nama</th><th className="p-3 text-left">Username</th><th className="p-3 text-left">Role</th></tr></thead><tbody>{Array.isArray(users) && users.map(u => (<tr key={u.id} className="border-b hover:bg-gray-50"><td className="p-3 text-center"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={() => handleSelectOne(u.id)}/></td><td className="p-3">{u.full_name}</td><td className="p-3 font-mono">{u.username}</td><td className="p-3"><span className={`px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-green-100 text-green-700'}`}>{u.role.toUpperCase()}</span></td></tr>))}</tbody></table></div></div>)}
         
         {tab === 'recap' && (
