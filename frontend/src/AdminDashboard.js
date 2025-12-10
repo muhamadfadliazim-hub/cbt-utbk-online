@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock, Key } from 'lucide-react';
+import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock, Key, Building2 } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
@@ -13,6 +13,7 @@ const AdminDashboard = ({ onLogout }) => {
   // Data State
   const [users, setUsers] = useState([]);
   const [recap, setRecap] = useState([]);
+  const [majors, setMajors] = useState([]); // State untuk Jurusan
   
   // Config State
   const [isReleased, setIsReleased] = useState(false);
@@ -27,10 +28,11 @@ const AdminDashboard = ({ onLogout }) => {
 
   // Forms
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', role: 'student' });
+  const [newMajor, setNewMajor] = useState({ university: '', name: '', passing_grade: '' }); // Form Jurusan
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
-  // Helper Render Math
+  // --- HELPER: Render Matematika ---
   const renderText = (text) => {
     if (!text) return null;
     return text.split(/(\$.*?\$)/).map((part, index) => {
@@ -43,17 +45,16 @@ const AdminDashboard = ({ onLogout }) => {
 
   // --- API CALLS ---
   const fetchPeriods = useCallback(() => {
-    fetch(`${API_URL}/admin/periods`)
-      .then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setPeriods(data); else setPeriods([]); })
-      .catch(() => setPeriods([]));
+    fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(d=>setPeriods(Array.isArray(d)?d:[]));
   }, []);
 
   const fetchUsers = useCallback(() => {
-    fetch(`${API_URL}/admin/users`)
-        .then(r => r.json())
-        .then(data => { if (Array.isArray(data)) { setUsers(data); setSelectedIds([]); } else setUsers([]); })
-        .catch(() => setUsers([]));
+    fetch(`${API_URL}/admin/users`).then(r=>r.json()).then(d=>setUsers(Array.isArray(d)?d:[]));
+  }, []);
+
+  // FITUR: Fetch Jurusan
+  const fetchMajors = useCallback(() => {
+    fetch(`${API_URL}/majors`).then(r=>r.json()).then(d=>setMajors(Array.isArray(d)?d:[]));
   }, []);
 
   const fetchConfigs = useCallback(() => {
@@ -62,13 +63,8 @@ const AdminDashboard = ({ onLogout }) => {
   }, []);
 
   const fetchRecap = useCallback(() => {
-      const url = selectedRecapPeriod 
-        ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}`
-        : `${API_URL}/admin/recap`;
-      fetch(url)
-        .then(r => r.json())
-        .then(data => { if (Array.isArray(data)) setRecap(data); else setRecap([]); })
-        .catch(() => setRecap([]));
+      const url = selectedRecapPeriod ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap`;
+      fetch(url).then(r=>r.json()).then(d=>setRecap(Array.isArray(d)?d:[]));
   }, [selectedRecapPeriod]);
 
   // --- EFFECTS ---
@@ -76,16 +72,42 @@ const AdminDashboard = ({ onLogout }) => {
     fetchUsers(); 
     fetchConfigs();
     if (tab === 'periods') fetchPeriods(); 
-    if (tab === 'recap') { fetchPeriods(); fetchRecap(); } 
-  }, [tab, fetchPeriods, fetchUsers, fetchRecap, fetchConfigs]);
+    if (tab === 'recap') { fetchPeriods(); fetchRecap(); }
+    if (tab === 'majors') fetchMajors(); // Load jurusan saat tab dibuka
+  }, [tab, fetchPeriods, fetchUsers, fetchRecap, fetchConfigs, fetchMajors]);
 
   useEffect(() => { if (tab === 'recap') fetchRecap(); }, [selectedRecapPeriod, fetchRecap, tab]);
 
   // --- ACTIONS ---
   
+  // FITUR: Tambah Jurusan Manual
+  const handleAddMajor = (e) => {
+      e.preventDefault();
+      if (!newMajor.university || !newMajor.name || !newMajor.passing_grade) return alert("Semua kolom harus diisi!");
+      
+      fetch(`${API_URL}/majors`, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+              university: newMajor.university,
+              name: newMajor.name,
+              passing_grade: parseFloat(newMajor.passing_grade)
+          })
+      }).then(r=>r.json()).then(d=>{
+          alert(d.message);
+          setNewMajor({ university: '', name: '', passing_grade: '' });
+          fetchMajors();
+      });
+  };
+
+  // FITUR: Hapus Jurusan
+  const handleDeleteMajor = (id) => {
+      if(window.confirm("Hapus jurusan ini?")) {
+          fetch(`${API_URL}/majors/${id}`, {method:'DELETE'}).then(()=>fetchMajors());
+      }
+  };
+
   const toggleConfig = (key, currentVal) => {
       const newVal = !currentVal;
-      // Update UI Dulu (Optimistic)
       if(key === 'release_announcement') setIsReleased(newVal);
       if(key === 'enable_major_selection') setIsMajorSelectionEnabled(newVal);
 
@@ -93,7 +115,6 @@ const AdminDashboard = ({ onLogout }) => {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({value: newVal ? "true" : "false"})
       }).then(r => r.json()).then(d => {
-           // Pastikan state sesuai server
            if(key === 'release_announcement') setIsReleased(d.value === 'true');
            if(key === 'enable_major_selection') setIsMajorSelectionEnabled(d.value === 'true');
       });
@@ -138,14 +159,13 @@ const AdminDashboard = ({ onLogout }) => {
   const handleSelectAll = (e) => setSelectedIds(e.target.checked ? users.map(u=>u.id) : []);
   const handleSelectOne = (id) => setSelectedIds(selectedIds.includes(id) ? selectedIds.filter(i=>i!==id) : [...selectedIds, id]);
 
-  // FITUR: Ganti Password Siswa
   const handleChangePassword = (uid) => {
-      const newPass = prompt("Masukkan password baru untuk user ini:");
+      const newPass = prompt("Masukkan password baru:");
       if (newPass) {
           fetch(`${API_URL}/admin/users/${uid}/password`, {
               method: 'PUT', headers: {'Content-Type': 'application/json'},
               body: JSON.stringify({new_password: newPass})
-          }).then(r=>r.json()).then(d=>alert(d.message)).catch(()=>alert("Gagal ganti password"));
+          }).then(r=>r.json()).then(d=>alert(d.message));
       }
   };
 
@@ -162,6 +182,8 @@ const AdminDashboard = ({ onLogout }) => {
           <h1 className="text-2xl font-bold mb-8">Admin Panel</h1>
           <nav className="space-y-4 flex-1">
               <button onClick={()=>setTab('periods')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='periods'?'bg-indigo-700':''}`}><FileText size={18}/> Soal & Ujian</button>
+              {/* BUTTON TAB MAJORS DITAMBAHKAN KEMBALI */}
+              <button onClick={()=>setTab('majors')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='majors'?'bg-indigo-700':''}`}><Building2 size={18}/> Manajemen Jurusan</button>
               <button onClick={()=>setTab('users')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='users'?'bg-indigo-700':''}`}><Users size={18}/> User & Siswa</button>
               <button onClick={()=>setTab('recap')} className={`w-full flex items-center gap-3 p-3 rounded ${tab==='recap'?'bg-indigo-700':''}`}><FileText size={18}/> Rekap Nilai</button>
           </nav>
@@ -213,6 +235,48 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
+        {/* TAB MANAJEMEN JURUSAN DIHIDUPKAN KEMBALI */}
+        {tab === 'majors' && (
+            <div>
+                <h2 className="text-2xl font-bold mb-6">Manajemen Jurusan (Passing Grade)</h2>
+                <div className="bg-white p-6 rounded shadow mb-6 border-l-4 border-indigo-500">
+                    <h3 className="font-bold text-gray-700 mb-4">Tambah / Edit Manual</h3>
+                    <div className="flex gap-2 items-end">
+                        <div className="flex-1">
+                            <label className="text-xs font-bold text-gray-500">Universitas</label>
+                            <input className="w-full p-2 border rounded" placeholder="Contoh: UI" value={newMajor.university} onChange={e=>setNewMajor({...newMajor, university:e.target.value})}/>
+                        </div>
+                        <div className="flex-[2]">
+                            <label className="text-xs font-bold text-gray-500">Nama Jurusan</label>
+                            <input className="w-full p-2 border rounded" placeholder="Contoh: Pendidikan Dokter" value={newMajor.name} onChange={e=>setNewMajor({...newMajor, name:e.target.value})}/>
+                        </div>
+                        <div className="w-32">
+                            <label className="text-xs font-bold text-gray-500">Passing Grade</label>
+                            <input type="number" step="0.01" className="w-full p-2 border rounded" placeholder="650.00" value={newMajor.passing_grade} onChange={e=>setNewMajor({...newMajor, passing_grade:e.target.value})}/>
+                        </div>
+                        <button onClick={handleAddMajor} className="bg-green-600 text-white px-6 py-2 rounded font-bold h-[42px] hover:bg-green-700">Simpan</button>
+                    </div>
+                </div>
+                <div className="bg-white shadow rounded overflow-hidden">
+                    <div className="max-h-[600px] overflow-y-auto">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-indigo-50 text-indigo-900 sticky top-0"><tr><th className="p-4">Universitas</th><th className="p-4">Jurusan</th><th className="p-4">Passing Grade</th><th className="p-4 text-center">Aksi</th></tr></thead>
+                            <tbody className="divide-y">
+                                {majors.map(m => (
+                                    <tr key={m.id} className="hover:bg-gray-50">
+                                        <td className="p-4 font-bold text-gray-700">{m.university}</td>
+                                        <td className="p-4">{m.name}</td>
+                                        <td className="p-4"><span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-bold">{m.passing_grade}</span></td>
+                                        <td className="p-4 text-center"><button onClick={()=>handleDeleteMajor(m.id)} className="text-red-500 hover:text-red-700 bg-red-50 p-2 rounded"><Trash2 size={16}/></button></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        )}
+
         {tab === 'periods' && (
             <div><h2 className="text-2xl font-bold mb-6">Manajemen Soal</h2>
             <div className="flex justify-end mb-4"><button onClick={handleDownloadTemplate} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded font-bold shadow"><Download size={18}/> Download Template</button></div>
@@ -227,7 +291,6 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
-        {/* User Tab dengan Tombol Ganti Password */}
         {tab === 'users' && (<div><div className="flex justify-between mb-6"><h2 className="text-2xl font-bold">User Management</h2>{selectedIds.length>0&&<button onClick={handleBulkDelete} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"><Trash2 size={16}/> Hapus {selectedIds.length}</button>}</div><div className="bg-white p-4 rounded shadow mb-6 flex gap-2"><input className="border p-2 rounded flex-1" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input className="border p-2 rounded flex-1" placeholder="Nama" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input className="border p-2 rounded flex-1" placeholder="Pass" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><select className="border p-2 rounded bg-gray-50" value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})}><option value="student">Siswa</option><option value="admin">Admin</option></select><button onClick={handleAddUser} className="bg-green-600 text-white px-4 rounded font-bold"><Plus size={16}/></button></div><div className="mb-4"><label className="text-blue-600 cursor-pointer text-sm hover:underline"><Upload size={14} className="inline mr-1"/>Upload Excel User<input type="file" hidden accept=".xlsx" onChange={handleBulkUpload}/></label></div><div className="bg-white shadow rounded overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={users.length>0&&selectedIds.length===users.length}/></th><th className="p-3 text-left">Nama</th><th className="p-3 text-left">Username</th><th className="p-3 text-left">Role</th><th className="p-3 text-center">Aksi</th></tr></thead><tbody>{users.map(u=>(<tr key={u.id} className="border-b"><td className="p-3 text-center"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={()=>handleSelectOne(u.id)}/></td><td className="p-3">{u.full_name}</td><td className="p-3">{u.username}</td><td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>{u.role.toUpperCase()}</span></td><td className="p-3 text-center"><button onClick={()=>handleChangePassword(u.id)} className="text-gray-500 hover:text-indigo-600" title="Ganti Password"><Key size={16}/></button></td></tr>))}</tbody></table></div></div>)}
         
         {tab === 'recap' && (
