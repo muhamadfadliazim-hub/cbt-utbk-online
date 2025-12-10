@@ -9,6 +9,7 @@ import models, database
 import pandas as pd
 import io
 import time
+import math
 
 models.Base.metadata.create_all(bind=database.engine)
 app = FastAPI()
@@ -38,6 +39,8 @@ class UserCreateSchema(BaseModel):
     full_name: str
     password: str
     role: str = "student" 
+class UserPasswordUpdateSchema(BaseModel):
+    new_password: str
 class BulkDeleteSchema(BaseModel):
     user_ids: List[int]
 class MajorSelectionSchema(BaseModel):
@@ -90,7 +93,6 @@ def set_config(key: str, data: ConfigSchema, db: Session = Depends(get_db)):
     if not cfg: db.add(models.SystemConfig(key=key, value=data.value))
     else: cfg.value = data.value
     db.commit()
-    # PENTING: Return nilai terbaru
     return {"message": "Updated", "value": cfg.value}
 
 @app.get("/admin/download-template")
@@ -218,13 +220,25 @@ async def upload_questions(exam_id: str, file: UploadFile = File(...), db: Sessi
 
 @app.get("/admin/exams/{exam_id}/preview")
 def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
-    exam = db.query(models.Exam).filter_by(id=exam_id).first()
+    exam = db.query(models.Exam).filter_by(id=exam_id).options(joinedload(models.Exam.questions).joinedload(models.Question.options)).first()
     if not exam: raise HTTPException(404, "Exam not found")
     q_data = []
     for q in exam.questions:
         opts = [{"id": o.option_index, "label": o.label, "is_correct": o.is_correct} for o in q.options]
         opts.sort(key=lambda x: x["id"])
-        q_data.append({"id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url, "reading_material": q.reading_material, "difficulty": q.difficulty, "options": opts, "label_true": q.label_true, "label_false": q.label_false, "reading_label": q.reading_label, "citation": q.citation})
+        
+        # SANITASI DATA (FIX: NetworkError jika difficulty NaN)
+        safe_difficulty = 1.0
+        try:
+            if not math.isnan(q.difficulty): safe_difficulty = q.difficulty
+        except: pass
+
+        q_data.append({
+            "id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url,
+            "reading_material": q.reading_material, "difficulty": safe_difficulty, 
+            "options": opts, "label_true": q.label_true, "label_false": q.label_false, 
+            "reading_label": q.reading_label, "citation": q.citation
+        })
     q_data.sort(key=lambda x: x["id"])
     return {"title": exam.title, "questions": q_data}
 
@@ -272,7 +286,8 @@ def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
 def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
     if not user: raise HTTPException(404)
-    if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first(): return {"message": "Done", "correct": 0, "wrong": 0}
+    if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first(): 
+        return {"message": "Done", "correct": 0, "wrong": 0}
     
     questions = db.query(models.Question).filter_by(exam_id=exam_id).all()
     correct, total_w, earned_w = 0, 0.0, 0.0
@@ -323,6 +338,14 @@ def get_users(db: Session = Depends(get_db)): return db.query(models.User).all()
 @app.post("/admin/users")
 def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
     db.add(models.User(username=u.username, password=u.password, full_name=u.full_name, role=u.role)); db.commit(); return {"message": "OK"}
+
+# FITUR: GANTI PASSWORD
+@app.put("/admin/users/{uid}/password")
+def update_user_password(uid: int, d: UserPasswordUpdateSchema, db: Session = Depends(get_db)):
+    u = db.query(models.User).filter_by(id=uid).first()
+    if u: u.password = d.new_password; db.commit()
+    return {"message": "Password updated"}
+
 @app.delete("/admin/users/{uid}")
 def del_user(uid: int, db: Session = Depends(get_db)):
     db.query(models.User).filter_by(id=uid).delete(); db.commit(); return {"message": "OK"}
