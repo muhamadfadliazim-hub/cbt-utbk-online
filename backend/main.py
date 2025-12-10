@@ -121,7 +121,7 @@ def get_admin_periods(db: Session = Depends(get_db)):
 def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
     new_period = models.ExamPeriod(name=data.name, is_active=False, allow_submit=True, allowed_usernames=data.allowed_usernames)
     db.add(new_period); db.commit(); db.refresh(new_period)
-    structure = [("PU", "Penalaran Umum", 30), ("PBM", "Pemahaman Bacaan & Menulis", 25), ("PPU", "Pengetahuan & Pemahaman Umum", 15), ("PK", "Pengetahuan Kuantitatif", 20), ("LBI", "Literasi Bahasa Indonesia", 45), ("LBE", "Literasi Bahasa Inggris", 20), ("PM", "Penalaran Matematika", 45)]
+    structure = [("PU", "Penalaran Umum", 30), ("PBM", "Pemahaman Bacaan & Menulis", 25), ("PPU", "Pengetahuan & Pemahaman Umum", 15), ("PK", "Pengetahuan Kuantitatif", 20), ("LBI", "Literasi Bahasa Indonesia", 42.5), ("LBE", "Literasi Bahasa Inggris", 20), ("PM", "Penalaran Matematika", 42.5)]
     for c, t, d in structure:
         db.add(models.Exam(id=f"P{new_period.id}_{c}", period_id=new_period.id, code=c, title=t, description="Standard", duration=d))
     db.commit()
