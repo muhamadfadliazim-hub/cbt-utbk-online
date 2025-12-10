@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock } from 'lucide-react';
+import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock, Key } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
@@ -30,7 +30,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
-  // --- HELPER: Render Matematika (Fix Preview) ---
+  // Helper Render Math
   const renderText = (text) => {
     if (!text) return null;
     return text.split(/(\$.*?\$)/).map((part, index) => {
@@ -43,17 +43,11 @@ const AdminDashboard = ({ onLogout }) => {
 
   // --- API CALLS ---
   const fetchPeriods = useCallback(() => {
-    fetch(`${API_URL}/admin/periods`)
-      .then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setPeriods(data); else setPeriods([]); })
-      .catch(() => setPeriods([]));
+    fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(d=>setPeriods(Array.isArray(d)?d:[]));
   }, []);
 
   const fetchUsers = useCallback(() => {
-    fetch(`${API_URL}/admin/users`)
-        .then(r => r.json())
-        .then(data => { if (Array.isArray(data)) { setUsers(data); setSelectedIds([]); } else setUsers([]); })
-        .catch(() => setUsers([]));
+    fetch(`${API_URL}/admin/users`).then(r=>r.json()).then(d=>setUsers(Array.isArray(d)?d:[]));
   }, []);
 
   const fetchConfigs = useCallback(() => {
@@ -62,13 +56,8 @@ const AdminDashboard = ({ onLogout }) => {
   }, []);
 
   const fetchRecap = useCallback(() => {
-      const url = selectedRecapPeriod 
-        ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}`
-        : `${API_URL}/admin/recap`;
-      fetch(url)
-        .then(r => r.json())
-        .then(data => { if (Array.isArray(data)) setRecap(data); else setRecap([]); })
-        .catch(() => setRecap([]));
+      const url = selectedRecapPeriod ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap`;
+      fetch(url).then(r=>r.json()).then(d=>setRecap(Array.isArray(d)?d:[]));
   }, [selectedRecapPeriod]);
 
   // --- EFFECTS ---
@@ -79,10 +68,7 @@ const AdminDashboard = ({ onLogout }) => {
     if (tab === 'recap') { fetchPeriods(); fetchRecap(); } 
   }, [tab, fetchPeriods, fetchUsers, fetchRecap, fetchConfigs]);
 
-  // FIX: Menambahkan 'tab' ke dependency array di sini
-  useEffect(() => { 
-      if (tab === 'recap') fetchRecap(); 
-  }, [selectedRecapPeriod, fetchRecap, tab]);
+  useEffect(() => { if (tab === 'recap') fetchRecap(); }, [selectedRecapPeriod, fetchRecap, tab]);
 
   // --- ACTIONS ---
   
@@ -126,14 +112,8 @@ const AdminDashboard = ({ onLogout }) => {
   
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
   
-  const handlePreviewExam = (eid) => { 
-      fetch(`${API_URL}/admin/exams/${eid}/preview`)
-      .then(r=>r.json())
-      .then(d=>{
-          setPreviewData(d); 
-          setShowPreview(true);
-      }); 
-  };
+  // FIX: Preview Soal dengan Opsi
+  const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}); };
   
   const handleResetResult = (uid, eid) => { if(window.confirm("Reset?")) fetch(`${API_URL}/admin/reset-result`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_id:uid, exam_id:eid})}).then(()=>fetchRecap()); };
   const handleAddUser = (e) => { e.preventDefault(); fetch(`${API_URL}/admin/users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(newUser)}).then(()=>fetchUsers()); };
@@ -142,6 +122,16 @@ const AdminDashboard = ({ onLogout }) => {
   const handleDownloadExcel = () => { const url = selectedRecapPeriod ? `${API_URL}/admin/recap/download?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap/download`; window.open(url, '_blank'); };
   const handleSelectAll = (e) => setSelectedIds(e.target.checked ? users.map(u=>u.id) : []);
   const handleSelectOne = (id) => setSelectedIds(selectedIds.includes(id) ? selectedIds.filter(i=>i!==id) : [...selectedIds, id]);
+
+  const handleChangePassword = (uid) => {
+      const newPass = prompt("Masukkan password baru:");
+      if (newPass) {
+          fetch(`${API_URL}/admin/users/${uid}/password`, {
+              method: 'PUT', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({new_password: newPass})
+          }).then(r=>r.json()).then(d=>alert(d.message));
+      }
+  };
 
   return (
     <div className="min-h-screen bg-gray-100 flex font-sans text-gray-800">
@@ -169,8 +159,22 @@ const AdminDashboard = ({ onLogout }) => {
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
                     <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-xl font-bold">Preview: {previewData.title}</h3></div><button onClick={()=>setShowPreview(false)}><X/></button></div>
-                    {/* FIX: Gunakan renderText untuk preview soal matematika */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-8">{previewData.questions.map((q,i)=>(<div key={q.id} className="border p-4 rounded bg-gray-50"><div className="font-bold mb-2">No. {i+1}</div><div>{renderText(q.text)}</div></div>))}</div>
+                    {/* FIX: Tampilkan Opsi */}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                        {previewData.questions.map((q,i)=>(
+                            <div key={q.id} className="border p-4 rounded bg-gray-50">
+                                <div className="font-bold mb-2 text-indigo-700">No. {i+1} <span className="text-xs text-gray-500 font-normal ml-2">Bobot: {q.difficulty}</span></div>
+                                <div className="mb-4">{renderText(q.text)}</div>
+                                <div className="space-y-1 ml-4 border-l-2 pl-3 border-gray-200">
+                                    {q.options.map(opt => (
+                                        <div key={opt.id} className={`text-sm ${opt.is_correct ? 'text-green-700 font-bold bg-green-50 px-2 py-1 rounded inline-block' : 'text-gray-600'}`}>
+                                            {opt.id}. {renderText(opt.label)} {opt.is_correct && "✔"}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
         )}
@@ -201,7 +205,8 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
-        {tab === 'users' && (<div><div className="flex justify-between mb-6"><h2 className="text-2xl font-bold">User Management</h2>{selectedIds.length>0&&<button onClick={handleBulkDelete} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"><Trash2 size={16}/> Hapus {selectedIds.length}</button>}</div><div className="bg-white p-4 rounded shadow mb-6 flex gap-2"><input className="border p-2 rounded flex-1" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input className="border p-2 rounded flex-1" placeholder="Nama" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input className="border p-2 rounded flex-1" placeholder="Pass" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><button onClick={handleAddUser} className="bg-green-600 text-white px-4 rounded font-bold"><Plus size={16}/></button></div><div className="mb-4"><label className="text-blue-600 cursor-pointer text-sm hover:underline"><Upload size={14} className="inline mr-1"/>Upload Excel User<input type="file" hidden accept=".xlsx" onChange={handleBulkUpload}/></label></div><div className="bg-white shadow rounded overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={users.length>0&&selectedIds.length===users.length}/></th><th className="p-3 text-left">Nama</th><th className="p-3 text-left">Username</th></tr></thead><tbody>{users.map(u=>(<tr key={u.id} className="border-b"><td className="p-3 text-center"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={()=>handleSelectOne(u.id)}/></td><td className="p-3">{u.full_name}</td><td className="p-3">{u.username}</td></tr>))}</tbody></table></div></div>)}
+        {/* FIX: Tab Users dengan Role Selection & Ganti Password */}
+        {tab === 'users' && (<div><div className="flex justify-between mb-6"><h2 className="text-2xl font-bold">User Management</h2>{selectedIds.length>0&&<button onClick={handleBulkDelete} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"><Trash2 size={16}/> Hapus {selectedIds.length}</button>}</div><div className="bg-white p-4 rounded shadow mb-6 flex gap-2"><input className="border p-2 rounded flex-1" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input className="border p-2 rounded flex-1" placeholder="Nama" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input className="border p-2 rounded flex-1" placeholder="Pass" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><select className="border p-2 rounded bg-gray-50" value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})}><option value="student">Siswa</option><option value="admin">Admin</option></select><button onClick={handleAddUser} className="bg-green-600 text-white px-4 rounded font-bold"><Plus size={16}/></button></div><div className="mb-4"><label className="text-blue-600 cursor-pointer text-sm hover:underline"><Upload size={14} className="inline mr-1"/>Upload Excel User<input type="file" hidden accept=".xlsx" onChange={handleBulkUpload}/></label></div><div className="bg-white shadow rounded overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={users.length>0&&selectedIds.length===users.length}/></th><th className="p-3 text-left">Nama</th><th className="p-3 text-left">Username</th><th className="p-3 text-left">Role</th><th className="p-3 text-center">Aksi</th></tr></thead><tbody>{users.map(u=>(<tr key={u.id} className="border-b"><td className="p-3 text-center"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={()=>handleSelectOne(u.id)}/></td><td className="p-3">{u.full_name}</td><td className="p-3">{u.username}</td><td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>{u.role.toUpperCase()}</span></td><td className="p-3 text-center"><button onClick={()=>handleChangePassword(u.id)} className="text-gray-500 hover:text-indigo-600" title="Ganti Password"><Key size={16}/></button></td></tr>))}</tbody></table></div></div>)}
         
         {tab === 'recap' && (
             <div className="overflow-x-auto pb-20">

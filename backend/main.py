@@ -37,7 +37,9 @@ class UserCreateSchema(BaseModel):
     username: str
     full_name: str
     password: str
-    role: str = "student" 
+    role: str = "student" # Default student, tapi bisa diisi 'admin'
+class UserPasswordUpdateSchema(BaseModel):
+    new_password: str
 class BulkDeleteSchema(BaseModel):
     user_ids: List[int]
 class MajorSelectionSchema(BaseModel):
@@ -81,6 +83,7 @@ def check_answer_correctness(question, user_ans):
 @app.get("/config/{key}")
 def get_config(key: str, db: Session = Depends(get_db)):
     cfg = db.query(models.SystemConfig).filter_by(key=key).first()
+    # Default enable_major_selection = true
     default = "true" if key == "enable_major_selection" else "false"
     return {"value": cfg.value if cfg else default}
 
@@ -118,7 +121,6 @@ def get_admin_periods(db: Session = Depends(get_db)):
 def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
     new_period = models.ExamPeriod(name=data.name, is_active=False, allow_submit=True, allowed_usernames=data.allowed_usernames)
     db.add(new_period); db.commit(); db.refresh(new_period)
-    # FIX: Nama Panjang untuk mencegah error Preview PK
     structure = [("PU", "Penalaran Umum", 30), ("PBM", "Pemahaman Bacaan & Menulis", 25), ("PPU", "Pengetahuan & Pemahaman Umum", 15), ("PK", "Pengetahuan Kuantitatif", 20), ("LBI", "Literasi Bahasa Indonesia", 45), ("LBE", "Literasi Bahasa Inggris", 20), ("PM", "Penalaran Matematika", 45)]
     for c, t, d in structure:
         db.add(models.Exam(id=f"P{new_period.id}_{c}", period_id=new_period.id, code=c, title=t, description="Standard", duration=d))
@@ -294,8 +296,6 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
     
     db.add(models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct, wrong_count=wrong, irt_score=final_score))
     db.commit()
-    
-    # FIX POIN 2: Kembalikan correct/wrong
     return {"message": "Saved", "score": round(final_score, 2), "correct": correct, "wrong": wrong}
 
 @app.post("/login")
@@ -322,9 +322,18 @@ def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
     return {"message": "Saved"}
 @app.get("/admin/users")
 def get_users(db: Session = Depends(get_db)): return db.query(models.User).all()
+
+# --- UPDATE FITUR USER ---
 @app.post("/admin/users")
 def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
     db.add(models.User(username=u.username, password=u.password, full_name=u.full_name, role=u.role)); db.commit(); return {"message": "OK"}
+
+@app.put("/admin/users/{uid}/password")
+def update_user_password(uid: int, d: UserPasswordUpdateSchema, db: Session = Depends(get_db)):
+    u = db.query(models.User).filter_by(id=uid).first()
+    if u: u.password = d.new_password; db.commit()
+    return {"message": "Password updated"}
+
 @app.delete("/admin/users/{uid}")
 def del_user(uid: int, db: Session = Depends(get_db)):
     db.query(models.User).filter_by(id=uid).delete(); db.commit(); return {"message": "OK"}
