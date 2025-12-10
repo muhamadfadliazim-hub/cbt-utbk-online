@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock, Building2 } from 'lucide-react';
+// Hapus Building2 karena tab jurusan dihapus (data dari Excel)
+import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
@@ -13,7 +14,6 @@ const AdminDashboard = ({ onLogout }) => {
   // Data State
   const [users, setUsers] = useState([]);
   const [recap, setRecap] = useState([]);
-  const [majors, setMajors] = useState([]);
   
   // Config State
   const [isReleased, setIsReleased] = useState(false);
@@ -30,6 +30,17 @@ const AdminDashboard = ({ onLogout }) => {
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', role: 'student' });
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
+
+  // --- HELPER: Render Matematika (Fix Preview) ---
+  const renderText = (text) => {
+    if (!text) return null;
+    return text.split(/(\$.*?\$)/).map((part, index) => {
+      if (part.startsWith('$') && part.endsWith('$')) {
+        return <InlineMath key={index} math={part.slice(1, -1)} />;
+      }
+      return <span key={index}>{part}</span>;
+    });
+  };
 
   // --- API CALLS ---
   const fetchPeriods = useCallback(() => {
@@ -61,6 +72,7 @@ const AdminDashboard = ({ onLogout }) => {
   useEffect(() => { if (tab === 'recap') fetchRecap(); }, [selectedRecapPeriod, fetchRecap]);
 
   // --- ACTIONS ---
+  
   const toggleConfig = (key, currentVal) => {
       const newVal = !currentVal;
       fetch(`${API_URL}/config/${key}`, {
@@ -100,7 +112,10 @@ const AdminDashboard = ({ onLogout }) => {
   };
   
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
+  
+  // FIX: Preview Soal menggunakan renderText (InlineMath)
   const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}); };
+  
   const handleResetResult = (uid, eid) => { if(window.confirm("Reset?")) fetch(`${API_URL}/admin/reset-result`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_id:uid, exam_id:eid})}).then(()=>fetchRecap()); };
   const handleAddUser = (e) => { e.preventDefault(); fetch(`${API_URL}/admin/users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(newUser)}).then(()=>fetchUsers()); };
   const handleBulkDelete = () => { if(selectedIds.length>0 && window.confirm("Hapus?")) fetch(`${API_URL}/admin/users/delete-bulk`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_ids:selectedIds})}).then(()=>fetchUsers()); };
@@ -135,7 +150,8 @@ const AdminDashboard = ({ onLogout }) => {
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
                     <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-xl font-bold">Preview: {previewData.title}</h3></div><button onClick={()=>setShowPreview(false)}><X/></button></div>
-                    <div className="flex-1 overflow-y-auto p-6 space-y-8">{previewData.questions.map((q,i)=>(<div key={q.id} className="border p-4 rounded bg-gray-50"><div className="font-bold mb-2">No. {i+1}</div><div>{q.text}</div></div>))}</div>
+                    {/* FIX: Gunakan renderText untuk preview soal matematika */}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-8">{previewData.questions.map((q,i)=>(<div key={q.id} className="border p-4 rounded bg-gray-50"><div className="font-bold mb-2">No. {i+1}</div><div>{renderText(q.text)}</div></div>))}</div>
                 </div>
             </div>
         )}
@@ -162,19 +178,19 @@ const AdminDashboard = ({ onLogout }) => {
                     <button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold">Buat</button>
                 </div>
             </div>
-            <div className="space-y-4">{periods.map(p=>(<div key={p.id} className="bg-white rounded shadow border overflow-hidden"><div className="p-4 bg-gray-50 flex justify-between items-center"><div className="flex gap-4"><button onClick={()=>setExpandedPeriod(expandedPeriod===p.id?null:p.id)}>{expandedPeriod===p.id?<ChevronUp/>:<ChevronDown/>}</button><div><h3 className="font-bold">{p.name}</h3><div className="flex gap-2 text-xs"><span className={`px-2 py-0.5 rounded font-bold ${p.is_active?'bg-green-100 text-green-700':'bg-gray-200'}`}>{p.is_active?'PUBLIK':'DRAFT'}</span></div></div></div><div className="flex gap-2"><button onClick={()=>togglePeriodSubmit(p.id, p.allow_submit)} className={`px-3 py-1 rounded text-sm font-bold ${p.allow_submit?'bg-blue-100 text-blue-700':'bg-red-100 text-red-700'}`}>{p.allow_submit?'Submit: ON':'Submit: OFF'}</button><button onClick={()=>togglePeriodActive(p.id, p.is_active)} className="px-3 py-1 bg-orange-100 text-orange-700 rounded text-sm font-bold">{p.is_active?'Sembunyikan':'Tampilkan'}</button><button onClick={()=>handleDeletePeriod(p.id)} className="p-2 bg-red-50 text-red-600 rounded border border-red-200"><Trash2 size={16}/></button></div></div>{expandedPeriod===p.id && <div className="p-4 grid gap-3">{p.exams.map(e=>(<div key={e.id} className="border p-3 rounded flex justify-between items-center"><div><div className="font-bold">{e.title}</div><div className="text-xs text-gray-500">{e.questions.length} Soal</div></div><div className="flex gap-2"><button onClick={()=>handlePreviewExam(e.id)} className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded text-xs font-bold">Lihat</button><label id={`btn-upload-${e.id}`} className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-bold cursor-pointer hover:bg-blue-700">Upload<input type="file" hidden accept=".xlsx" onChange={ev=>handleUploadQuestion(e.id,ev.target.files[0])}/></label></div></div>))}</div>}</div>))}</div>
+            {/* FIX: Menggunakan Ikon Eye/EyeOff/Search/Upload/Clock di sini */}
+            <div className="space-y-4">{periods.map(p=>(<div key={p.id} className="bg-white rounded shadow border overflow-hidden"><div className="p-4 bg-gray-50 flex justify-between items-center"><div className="flex gap-4"><button onClick={()=>setExpandedPeriod(expandedPeriod===p.id?null:p.id)}>{expandedPeriod===p.id?<ChevronUp/>:<ChevronDown/>}</button><div><h3 className="font-bold">{p.name}</h3><div className="flex gap-2 text-xs"><span className={`px-2 py-0.5 rounded font-bold ${p.is_active?'bg-green-100 text-green-700':'bg-gray-200'}`}>{p.is_active?'PUBLIK':'DRAFT'}</span></div></div></div><div className="flex gap-2"><button onClick={()=>togglePeriodSubmit(p.id, p.allow_submit)} className={`px-3 py-1 rounded text-sm font-bold flex items-center gap-2 ${p.allow_submit?'bg-blue-100 text-blue-700':'bg-red-100 text-red-700'}`}>{p.allow_submit ? <Unlock size={14}/> : <Lock size={14}/>} Submit</button><button onClick={()=>togglePeriodActive(p.id, p.is_active)} className="px-3 py-1 bg-orange-100 text-orange-700 rounded text-sm font-bold flex items-center gap-2">{p.is_active ? <EyeOff size={14}/> : <Eye size={14}/>} {p.is_active?'Sembunyi':'Tampil'}</button><button onClick={()=>handleDeletePeriod(p.id)} className="p-2 bg-red-50 text-red-600 rounded border border-red-200"><Trash2 size={16}/></button></div></div>{expandedPeriod===p.id && <div className="p-4 grid gap-3">{p.exams.map(e=>(<div key={e.id} className="border p-3 rounded flex justify-between items-center"><div><div className="font-bold">{e.title}</div><div className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12}/> {e.duration}m | {e.questions.length} Soal</div></div><div className="flex gap-2"><button onClick={()=>handlePreviewExam(e.id)} className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded text-xs font-bold flex items-center gap-1"><Search size={12}/> Lihat</button><label id={`btn-upload-${e.id}`} className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-bold cursor-pointer hover:bg-blue-700 flex items-center gap-1"><Upload size={12}/> Upload<input type="file" hidden accept=".xlsx" onChange={ev=>handleUploadQuestion(e.id,ev.target.files[0])}/></label></div></div>))}</div>}</div>))}</div>
             </div>
         )}
 
-        {tab === 'users' && (<div><div className="flex justify-between mb-6"><h2 className="text-2xl font-bold">User Management</h2>{selectedIds.length>0&&<button onClick={handleBulkDelete} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"><Trash2 size={16}/> Hapus {selectedIds.length}</button>}</div><div className="bg-white p-4 rounded shadow mb-6 flex gap-2"><input className="border p-2 rounded flex-1" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input className="border p-2 rounded flex-1" placeholder="Nama" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input className="border p-2 rounded flex-1" placeholder="Pass" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><button onClick={handleAddUser} className="bg-green-600 text-white px-4 rounded font-bold">+</button></div><div className="mb-4"><label className="text-blue-600 cursor-pointer text-sm hover:underline"><Upload size={14} className="inline mr-1"/>Upload Excel User<input type="file" hidden accept=".xlsx" onChange={handleBulkUpload}/></label></div><div className="bg-white shadow rounded overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={users.length>0&&selectedIds.length===users.length}/></th><th className="p-3 text-left">Nama</th><th className="p-3 text-left">Username</th></tr></thead><tbody>{users.map(u=>(<tr key={u.id} className="border-b"><td className="p-3 text-center"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={()=>handleSelectOne(u.id)}/></td><td className="p-3">{u.full_name}</td><td className="p-3">{u.username}</td></tr>))}</tbody></table></div></div>)}
+        {tab === 'users' && (<div><div className="flex justify-between mb-6"><h2 className="text-2xl font-bold">User Management</h2>{selectedIds.length>0&&<button onClick={handleBulkDelete} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"><Trash2 size={16}/> Hapus {selectedIds.length}</button>}</div><div className="bg-white p-4 rounded shadow mb-6 flex gap-2"><input className="border p-2 rounded flex-1" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input className="border p-2 rounded flex-1" placeholder="Nama" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input className="border p-2 rounded flex-1" placeholder="Pass" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><button onClick={handleAddUser} className="bg-green-600 text-white px-4 rounded font-bold"><Plus size={16}/></button></div><div className="mb-4"><label className="text-blue-600 cursor-pointer text-sm hover:underline"><Upload size={14} className="inline mr-1"/>Upload Excel User<input type="file" hidden accept=".xlsx" onChange={handleBulkUpload}/></label></div><div className="bg-white shadow rounded overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={users.length>0&&selectedIds.length===users.length}/></th><th className="p-3 text-left">Nama</th><th className="p-3 text-left">Username</th></tr></thead><tbody>{users.map(u=>(<tr key={u.id} className="border-b"><td className="p-3 text-center"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={()=>handleSelectOne(u.id)}/></td><td className="p-3">{u.full_name}</td><td className="p-3">{u.username}</td></tr>))}</tbody></table></div></div>)}
         
         {tab === 'recap' && (
             <div className="overflow-x-auto pb-20">
                 <div className="flex justify-between items-end mb-6">
-                    <div><h2 className="text-2xl font-bold">Rekap Nilai</h2><select className="p-2 border rounded mt-2" value={selectedRecapPeriod} onChange={e=>setSelectedRecapPeriod(e.target.value)}><option value="">-- Semua Periode --</option>{periods.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+                    <div><h2 className="text-2xl font-bold">Rekap Nilai</h2><div className="flex items-center gap-2 mt-2"><Filter size={16} className="text-gray-500"/><select className="p-2 border rounded" value={selectedRecapPeriod} onChange={e=>setSelectedRecapPeriod(e.target.value)}><option value="">-- Semua Periode --</option>{periods.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div></div>
                     <div className="flex gap-2">
                         <button onClick={handleDownloadExcel} className="flex items-center gap-2 px-4 py-2 bg-white border rounded shadow text-sm font-bold"><Download size={16}/> Excel</button>
-                        {/* FIX: GUNAKAN toggleConfig DI SINI */}
                         <button onClick={()=>toggleConfig('release_announcement', isReleased)} className={`flex items-center gap-2 px-4 py-2 text-white rounded shadow text-sm font-bold ${isReleased?'bg-green-600':'bg-orange-500'}`}>{isReleased?<Unlock size={16}/>:<Lock size={16}/>} {isReleased?'Tutup Pengumuman':'Rilis Pengumuman'}</button>
                     </div>
                 </div>
