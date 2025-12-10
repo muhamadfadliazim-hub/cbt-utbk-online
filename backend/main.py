@@ -108,9 +108,7 @@ def get_admin_periods(db: Session = Depends(get_db)):
     for p in periods:
         p_data = {"id": p.id, "name": p.name, "is_active": p.is_active, "allow_submit": p.allow_submit, "allowed_usernames": p.allowed_usernames, "exams": []}
         for e in p.exams:
-            # Pastikan logic count aman
             q_count = len(e.questions) if e.questions else 0
-            # Gunakan dummy array agar frontend mendeteksi length > 0
             dummy_qs = [{"id": i} for i in range(q_count)]
             p_data["exams"].append({"id": e.id, "title": e.title, "code": e.code, "duration": e.duration, "questions": dummy_qs})
         result.append(p_data)
@@ -120,7 +118,7 @@ def get_admin_periods(db: Session = Depends(get_db)):
 def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
     new_period = models.ExamPeriod(name=data.name, is_active=False, allow_submit=True, allowed_usernames=data.allowed_usernames)
     db.add(new_period); db.commit(); db.refresh(new_period)
-    # Gunakan Nama Panjang agar sesuai standar UTBK
+    # FIX: Nama Panjang untuk mencegah error Preview PK
     structure = [("PU", "Penalaran Umum", 30), ("PBM", "Pemahaman Bacaan & Menulis", 25), ("PPU", "Pengetahuan & Pemahaman Umum", 15), ("PK", "Pengetahuan Kuantitatif", 20), ("LBI", "Literasi Bahasa Indonesia", 45), ("LBE", "Literasi Bahasa Inggris", 20), ("PM", "Penalaran Matematika", 45)]
     for c, t, d in structure:
         db.add(models.Exam(id=f"P{new_period.id}_{c}", period_id=new_period.id, code=c, title=t, description="Standard", duration=d))
@@ -188,12 +186,10 @@ async def upload_exam_manual(title: str = Form(...), duration: float = Form(...)
 @app.post("/admin/upload-questions/{exam_id}")
 async def upload_questions(exam_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
-        # Bersihkan soal lama
         q_ids = [q[0] for q in db.query(models.Question.id).filter_by(exam_id=exam_id).all()]
         if q_ids: db.query(models.Option).filter(models.Option.question_id.in_(q_ids)).delete(synchronize_session=False)
         db.query(models.Question).filter_by(exam_id=exam_id).delete(synchronize_session=False)
         db.commit()
-        # Upload baru
         content = await file.read()
         df = pd.read_excel(io.BytesIO(content))
         df.columns = df.columns.str.strip().str.title()
@@ -248,7 +244,6 @@ def get_student_periods(username: str = None, db: Session = Depends(get_db)):
         exams = []
         for e in p.exams:
             q_count = db.query(models.Question).filter_by(exam_id=e.id).count()
-            # FIX: Cek is_done berdasarkan user_id dan exam_id
             is_done = False
             if user_id:
                 if db.query(models.ExamResult).filter_by(user_id=user_id, exam_id=e.id).first():
@@ -277,9 +272,7 @@ def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
 def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
     if not user: raise HTTPException(404)
-    # Cek double submit
-    if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first():
-        return {"message": "Done", "correct": 0, "wrong": 0, "score": 0} # Prevent crash
+    if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first(): return {"message": "Done", "correct": 0, "wrong": 0}
     
     questions = db.query(models.Question).filter_by(exam_id=exam_id).all()
     correct, total_w, earned_w = 0, 0.0, 0.0
@@ -288,7 +281,6 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
         is_correct = check_answer_correctness(q, user_ans)
         q.total_attempts += 1
         if is_correct: q.total_correct += 1
-        # IRT Update
         if q.total_attempts >= 5:
             q.difficulty = 1.0 + ((1.0 - (q.total_correct/q.total_attempts)) * 3.0)
         total_w += q.difficulty
@@ -303,18 +295,16 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
     db.add(models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct, wrong_count=wrong, irt_score=final_score))
     db.commit()
     
-    # FIX: KEMBALIKAN DATA CORRECT & WRONG AGAR FRONTEND BISA BACA
+    # FIX POIN 2: Kembalikan correct/wrong
     return {"message": "Saved", "score": round(final_score, 2), "correct": correct, "wrong": wrong}
 
 @app.post("/login")
 def login(data: LoginSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
     if user and user.password == data.password:
-        p1 = f"{user.choice1.university} - {user.choice1.name}" if user.choice1 else ""
-        p2 = f"{user.choice2.university} - {user.choice2.name}" if user.choice2 else ""
-        pg1 = user.choice1.passing_grade if user.choice1 else 0
-        pg2 = user.choice2.passing_grade if user.choice2 else 0
-        return {"message": "OK", "username": user.username, "name": user.full_name, "role": user.role, "pilihan1": p1, "pilihan2": p2, "pg1": pg1, "pg2": pg2}
+        return {"message": "OK", "username": user.username, "name": user.full_name, "role": user.role, 
+                "pilihan1": f"{user.choice1.university} - {user.choice1.name}" if user.choice1 else "",
+                "pg1": user.choice1.passing_grade if user.choice1 else 0}
     raise HTTPException(400, "Login Gagal")
 
 @app.get("/majors")
