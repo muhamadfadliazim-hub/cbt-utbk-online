@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-// Hapus Building2 karena tab jurusan dihapus (data dari Excel)
 import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
@@ -44,11 +43,17 @@ const AdminDashboard = ({ onLogout }) => {
 
   // --- API CALLS ---
   const fetchPeriods = useCallback(() => {
-    fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(d=>setPeriods(Array.isArray(d)?d:[]));
+    fetch(`${API_URL}/admin/periods`)
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setPeriods(data); else setPeriods([]); })
+      .catch(() => setPeriods([]));
   }, []);
 
   const fetchUsers = useCallback(() => {
-    fetch(`${API_URL}/admin/users`).then(r=>r.json()).then(d=>setUsers(Array.isArray(d)?d:[]));
+    fetch(`${API_URL}/admin/users`)
+        .then(r => r.json())
+        .then(data => { if (Array.isArray(data)) { setUsers(data); setSelectedIds([]); } else setUsers([]); })
+        .catch(() => setUsers([]));
   }, []);
 
   const fetchConfigs = useCallback(() => {
@@ -57,8 +62,13 @@ const AdminDashboard = ({ onLogout }) => {
   }, []);
 
   const fetchRecap = useCallback(() => {
-      const url = selectedRecapPeriod ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap`;
-      fetch(url).then(r=>r.json()).then(d=>setRecap(Array.isArray(d)?d:[]));
+      const url = selectedRecapPeriod 
+        ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}`
+        : `${API_URL}/admin/recap`;
+      fetch(url)
+        .then(r => r.json())
+        .then(data => { if (Array.isArray(data)) setRecap(data); else setRecap([]); })
+        .catch(() => setRecap([]));
   }, [selectedRecapPeriod]);
 
   // --- EFFECTS ---
@@ -69,7 +79,10 @@ const AdminDashboard = ({ onLogout }) => {
     if (tab === 'recap') { fetchPeriods(); fetchRecap(); } 
   }, [tab, fetchPeriods, fetchUsers, fetchRecap, fetchConfigs]);
 
-  useEffect(() => { if (tab === 'recap') fetchRecap(); }, [selectedRecapPeriod, fetchRecap]);
+  // FIX: Menambahkan 'tab' ke dependency array di sini
+  useEffect(() => { 
+      if (tab === 'recap') fetchRecap(); 
+  }, [selectedRecapPeriod, fetchRecap, tab]);
 
   // --- ACTIONS ---
   
@@ -113,8 +126,14 @@ const AdminDashboard = ({ onLogout }) => {
   
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
   
-  // FIX: Preview Soal menggunakan renderText (InlineMath)
-  const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}); };
+  const handlePreviewExam = (eid) => { 
+      fetch(`${API_URL}/admin/exams/${eid}/preview`)
+      .then(r=>r.json())
+      .then(d=>{
+          setPreviewData(d); 
+          setShowPreview(true);
+      }); 
+  };
   
   const handleResetResult = (uid, eid) => { if(window.confirm("Reset?")) fetch(`${API_URL}/admin/reset-result`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_id:uid, exam_id:eid})}).then(()=>fetchRecap()); };
   const handleAddUser = (e) => { e.preventDefault(); fetch(`${API_URL}/admin/users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(newUser)}).then(()=>fetchUsers()); };
@@ -178,7 +197,6 @@ const AdminDashboard = ({ onLogout }) => {
                     <button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold">Buat</button>
                 </div>
             </div>
-            {/* FIX: Menggunakan Ikon Eye/EyeOff/Search/Upload/Clock di sini */}
             <div className="space-y-4">{periods.map(p=>(<div key={p.id} className="bg-white rounded shadow border overflow-hidden"><div className="p-4 bg-gray-50 flex justify-between items-center"><div className="flex gap-4"><button onClick={()=>setExpandedPeriod(expandedPeriod===p.id?null:p.id)}>{expandedPeriod===p.id?<ChevronUp/>:<ChevronDown/>}</button><div><h3 className="font-bold">{p.name}</h3><div className="flex gap-2 text-xs"><span className={`px-2 py-0.5 rounded font-bold ${p.is_active?'bg-green-100 text-green-700':'bg-gray-200'}`}>{p.is_active?'PUBLIK':'DRAFT'}</span></div></div></div><div className="flex gap-2"><button onClick={()=>togglePeriodSubmit(p.id, p.allow_submit)} className={`px-3 py-1 rounded text-sm font-bold flex items-center gap-2 ${p.allow_submit?'bg-blue-100 text-blue-700':'bg-red-100 text-red-700'}`}>{p.allow_submit ? <Unlock size={14}/> : <Lock size={14}/>} Submit</button><button onClick={()=>togglePeriodActive(p.id, p.is_active)} className="px-3 py-1 bg-orange-100 text-orange-700 rounded text-sm font-bold flex items-center gap-2">{p.is_active ? <EyeOff size={14}/> : <Eye size={14}/>} {p.is_active?'Sembunyi':'Tampil'}</button><button onClick={()=>handleDeletePeriod(p.id)} className="p-2 bg-red-50 text-red-600 rounded border border-red-200"><Trash2 size={16}/></button></div></div>{expandedPeriod===p.id && <div className="p-4 grid gap-3">{p.exams.map(e=>(<div key={e.id} className="border p-3 rounded flex justify-between items-center"><div><div className="font-bold">{e.title}</div><div className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12}/> {e.duration}m | {e.questions.length} Soal</div></div><div className="flex gap-2"><button onClick={()=>handlePreviewExam(e.id)} className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded text-xs font-bold flex items-center gap-1"><Search size={12}/> Lihat</button><label id={`btn-upload-${e.id}`} className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-bold cursor-pointer hover:bg-blue-700 flex items-center gap-1"><Upload size={12}/> Upload<input type="file" hidden accept=".xlsx" onChange={ev=>handleUploadQuestion(e.id,ev.target.files[0])}/></label></div></div>))}</div>}</div>))}</div>
             </div>
         )}
