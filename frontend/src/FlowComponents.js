@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Building2, ArrowRight, FileText, CheckCircle, XCircle, LogOut } from 'lucide-react';
 import { API_URL } from './config';
 
-// --- 1. KOMPONEN PILIH JURUSAN ---
 export const MajorSelection = ({ onNext, onLogout }) => {
-  const [majors, setMajors] = useState([]); // Default array kosong
+  const [majors, setMajors] = useState([]); 
   const [universities, setUniversities] = useState([]);
   const [univ1, setUniv1] = useState('');
   const [majorId1, setMajorId1] = useState('');
@@ -13,28 +12,15 @@ export const MajorSelection = ({ onNext, onLogout }) => {
 
   useEffect(() => {
     fetch(`${API_URL}/majors`)
-      .then(res => {
-        if (!res.ok) throw new Error("Gagal mengambil data");
-        return res.json();
-      })
+      .then(res => res.json())
       .then(data => {
-        // PERBAIKAN: Cek apakah data benar-benar Array sebelum di-set
         if (Array.isArray(data)) {
             setMajors(data);
-            const univs = [...new Set(data.map(m => m.university))].sort();
-            setUniversities(univs);
-        } else {
-            console.error("Data jurusan bukan array:", data);
-            setMajors([]); // Fallback ke array kosong agar tidak error
+            setUniversities([...new Set(data.map(m => m.university))].sort());
         }
-      })
-      .catch((err) => {
-          console.error(err);
-          setMajors([]); // Fallback jika fetch gagal total
-      });
+      }).catch(console.error);
   }, []);
 
-  // PERBAIKAN: Tambahkan pengaman (Array.isArray) di sini juga
   const getMajorsByUniv = (univName) => {
     if (!Array.isArray(majors)) return [];
     return majors.filter(m => m.university === univName).sort((a,b) => a.name.localeCompare(b.name));
@@ -43,12 +29,9 @@ export const MajorSelection = ({ onNext, onLogout }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!majorId1) { alert("Pilihan 1 Wajib!"); return; }
-    
-    // Pastikan majors ada isinya sebelum di-find
     const safeMajors = Array.isArray(majors) ? majors : [];
     const c1 = safeMajors.find(m => m.id === parseInt(majorId1));
     const c2 = safeMajors.find(m => m.id === parseInt(majorId2));
-    
     onNext({
       choice1_id: parseInt(majorId1), choice2_id: majorId2 ? parseInt(majorId2) : null,
       display1: c1 ? `${c1.university} - ${c1.name}` : '', pg1: c1 ? c1.passing_grade : '',
@@ -59,44 +42,22 @@ export const MajorSelection = ({ onNext, onLogout }) => {
   return (
     <div className="min-h-screen bg-blue-50 flex items-center justify-center p-4 font-sans">
       <div className="bg-white p-8 rounded-xl shadow-lg max-w-2xl w-full">
-        
         <div className="flex justify-between items-start mb-6 border-b pb-4">
-            <div className="flex items-center gap-3">
-                <Building2 className="text-blue-600" size={32} />
-                <div>
-                    <h2 className="text-xl font-bold text-gray-800">Pilih Jurusan & PTN</h2>
-                    <p className="text-sm text-gray-500">Tentukan target masa depanmu</p>
-                </div>
-            </div>
-            <button 
-                onClick={onLogout}
-                className="flex items-center gap-2 px-3 py-1.5 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition text-xs font-bold"
-            >
-                <LogOut size={14}/> Keluar
-            </button>
+            <div className="flex items-center gap-3"><Building2 className="text-blue-600" size={32} /><div><h2 className="text-xl font-bold text-gray-800">Pilih Jurusan & PTN</h2><p className="text-sm text-gray-500">Tentukan target masa depanmu</p></div></div>
+            <button onClick={onLogout} className="flex items-center gap-2 px-3 py-1.5 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition text-xs font-bold"><LogOut size={14}/> Keluar</button>
         </div>
-
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
             <h3 className="font-bold text-blue-800 mb-3 text-sm">Pilihan 1 (Prioritas)</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <select className="w-full p-2 border rounded text-sm" value={univ1} onChange={(e) => { setUniv1(e.target.value); setMajorId1(''); }}>
-                <option value="">-- Pilih PTN --</option>
-                {universities.map((univ) => <option key={univ} value={univ}>{univ}</option>)}
-              </select>
-              <select className="w-full p-2 border rounded text-sm" value={majorId1} onChange={(e) => setMajorId1(e.target.value)} disabled={!univ1}>
-                <option value="">-- Pilih Jurusan --</option>
-                {getMajorsByUniv(univ1).map((m) => <option key={m.id} value={m.id}>{m.name} (PG: {m.passing_grade})</option>)}
-              </select>
+              <select className="w-full p-2 border rounded text-sm" value={univ1} onChange={(e) => { setUniv1(e.target.value); setMajorId1(''); }}><option value="">-- Pilih PTN --</option>{universities.map((univ) => <option key={univ} value={univ}>{univ}</option>)}</select>
+              <select className="w-full p-2 border rounded text-sm" value={majorId1} onChange={(e) => setMajorId1(e.target.value)} disabled={!univ1}><option value="">-- Pilih Jurusan --</option>{getMajorsByUniv(univ1).map((m) => <option key={m.id} value={m.id}>{m.name} (PG: {m.passing_grade})</option>)}</select>
             </div>
           </div>
           <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
             <h3 className="font-bold text-gray-600 mb-3 text-sm">Pilihan 2 (Opsional)</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <select className="w-full p-2 border rounded text-sm" value={univ2} onChange={(e) => { setUniv2(e.target.value); setMajorId2(''); }}>
-                <option value="">-- Pilih PTN --</option>
-                {universities.map((univ) => <option key={univ} value={univ}>{univ}</option>)}
-              </select>
+              <select className="w-full p-2 border rounded text-sm" value={univ2} onChange={(e) => { setUniv2(e.target.value); setMajorId2(''); }}><option value="">-- Pilih PTN --</option>{universities.map((univ) => <option key={univ} value={univ}>{univ}</option>)}</select>
               <select className="w-full p-2 border rounded text-sm" value={majorId2} onChange={(e) => setMajorId2(e.target.value)} disabled={!univ2}><option value="">-- Pilih Jurusan --</option>{getMajorsByUniv(univ2).map((m) => <option key={m.id} value={m.id}>{m.name} (PG: {m.passing_grade})</option>)}</select>
             </div>
           </div>
@@ -107,7 +68,6 @@ export const MajorSelection = ({ onNext, onLogout }) => {
   );
 };
 
-// --- 2. KOMPONEN KONFIRMASI (TATA TERTIB) ---
 export const Confirmation = ({ userData, onStart, onBack }) => {
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6 font-sans">
@@ -135,9 +95,7 @@ export const Confirmation = ({ userData, onStart, onBack }) => {
   );
 };
 
-// --- 3. KOMPONEN HASIL UJIAN ---
 export const ResultSummary = ({ result, onBack }) => {
-  // Pengaman Data
   if (!result) return <div className="p-10 text-center">Menunggu data hasil...</div>;
 
   return (
@@ -151,13 +109,15 @@ export const ResultSummary = ({ result, onBack }) => {
         <div className="grid grid-cols-2 gap-6 mb-8">
           <div className="bg-green-50 p-6 rounded-2xl border border-green-100 shadow-sm flex flex-col items-center">
             <CheckCircle className="text-green-500 mb-2" size={40} />
-            <div className="text-4xl font-extrabold text-green-700">{result.correct || 0}</div>
+            {/* FIX: Menggunakan data.correct dari backend */}
+            <div className="text-4xl font-extrabold text-green-700">{result.correct}</div>
             <div className="text-sm font-bold text-green-600 uppercase tracking-wide">Jawaban Benar</div>
           </div>
 
           <div className="bg-red-50 p-6 rounded-2xl border border-red-100 shadow-sm flex flex-col items-center">
             <XCircle className="text-red-500 mb-2" size={40} />
-            <div className="text-4xl font-extrabold text-red-700">{result.wrong || 0}</div>
+            {/* FIX: Menggunakan data.wrong dari backend */}
+            <div className="text-4xl font-extrabold text-red-700">{result.wrong}</div>
             <div className="text-sm font-bold text-red-600 uppercase tracking-wide">Jawaban Salah</div>
           </div>
         </div>
@@ -166,12 +126,7 @@ export const ResultSummary = ({ result, onBack }) => {
             *Nilai IRT lengkap dapat dilihat di menu "Rekap Hasil" setelah semua sesi berakhir.
         </div>
 
-        <button 
-            onClick={onBack} 
-            className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-lg hover:bg-indigo-700 transition shadow-lg hover:shadow-xl transform hover:-translate-y-1"
-        >
-            Kembali ke Dashboard
-        </button>
+        <button onClick={onBack} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-lg hover:bg-indigo-700 transition shadow-lg hover:shadow-xl transform hover:-translate-y-1">Kembali ke Dashboard</button>
       </div>
     </div>
   );
