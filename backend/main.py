@@ -241,6 +241,37 @@ def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
     q_data.sort(key=lambda x: x["id"])
     return {"title": exam.title, "questions": q_data}
 
+# FITUR BARU: ANALISIS BUTIR SOAL
+@app.get("/admin/exams/{exam_id}/analysis")
+def get_exam_analysis(exam_id: str, db: Session = Depends(get_db)):
+    exam = db.query(models.Exam).filter_by(id=exam_id).options(joinedload(models.Exam.questions)).first()
+    if not exam: raise HTTPException(404, "Exam not found")
+    
+    stats = []
+    for q in exam.questions:
+        attempts = q.total_attempts
+        correct = q.total_correct
+        percentage = 0
+        if attempts > 0:
+            percentage = round((correct / attempts) * 100, 2)
+        
+        safe_difficulty = 1.0
+        try:
+            if not math.isnan(q.difficulty): safe_difficulty = q.difficulty
+        except: pass
+
+        stats.append({
+            "id": q.id,
+            "text": q.text[:50] + "..." if len(q.text) > 50 else q.text,
+            "difficulty": round(safe_difficulty, 2),
+            "attempts": attempts,
+            "correct": correct,
+            "percentage": percentage
+        })
+    # Urutkan berdasarkan ID soal
+    stats.sort(key=lambda x: x["id"])
+    return {"title": exam.title, "stats": stats}
+
 @app.get("/student/periods")
 def get_student_periods(username: str = None, db: Session = Depends(get_db)):
     periods = db.query(models.ExamPeriod).filter_by(is_active=True).order_by(models.ExamPeriod.id.desc()).all()
@@ -335,16 +366,19 @@ async def bulk_upload_majors(file: UploadFile = File(...), db: Session = Depends
         content = await file.read()
         df = pd.read_excel(io.BytesIO(content))
         df.columns = df.columns.str.lower().str.strip().str.replace(' ', '_')
+        
         count = 0
         for _, row in df.iterrows():
             col_univ = next((c for c in df.columns if 'univ' in c), None)
             col_prodi = next((c for c in df.columns if 'prodi' in c or 'jurusan' in c), None)
             col_pg = next((c for c in df.columns if 'pass' in c or 'grade' in c), None)
+            
             if col_univ and col_prodi and col_pg:
                 univ = str(row[col_univ]).strip()
                 name = str(row[col_prodi]).strip()
                 try: pg = float(row[col_pg])
                 except: pg = 0.0
+                
                 existing = db.query(models.Major).filter_by(university=univ, name=name).first()
                 if existing: existing.passing_grade = pg
                 else: db.add(models.Major(university=univ, name=name, passing_grade=pg))
