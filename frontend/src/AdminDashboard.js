@@ -28,16 +28,16 @@ const AdminDashboard = ({ onLogout }) => {
   // --- API CALLS ---
   const fetchPeriods = useCallback(() => {
     fetch(`${API_URL}/admin/periods`)
-      .then(r => r.json())
+      .then(res => res.json())
       .then(data => { if (Array.isArray(data)) setPeriods(data); else setPeriods([]); })
-      .catch(() => setPeriods([]));
+      .catch(err => console.error("Gagal load periode:", err));
   }, []);
 
   const fetchUsers = useCallback(() => {
     fetch(`${API_URL}/admin/users`)
-        .then(r => r.json())
+        .then(res => res.json())
         .then(data => { if (Array.isArray(data)) { setUsers(data); setSelectedIds([]); } else setUsers([]); })
-        .catch(() => setUsers([]));
+        .catch(err => console.error("Gagal load user:", err));
   }, []);
   
   const fetchRecap = useCallback(() => {
@@ -45,9 +45,9 @@ const AdminDashboard = ({ onLogout }) => {
         ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}`
         : `${API_URL}/admin/recap`;
       fetch(url)
-        .then(r => r.json())
+        .then(res => res.json())
         .then(data => { if (Array.isArray(data)) setRecap(data); else setRecap([]); })
-        .catch(() => setRecap([]));
+        .catch(err => console.error("Gagal load rekap:", err));
   }, [selectedRecapPeriod]);
   
   const fetchReleaseStatus = useCallback(() => {
@@ -92,21 +92,59 @@ const AdminDashboard = ({ onLogout }) => {
               allowed_usernames: finalAllowed
           })
       })
-      .then(r=>r.json()).then(d=>{
-          alert(d.message); 
+      .then(async res => {
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.message || "Gagal membuat periode");
+          alert(data.message); 
           setNewPeriodName(''); 
           setAllowedUsers(''); 
           setSelectedWhitelist([]);
           fetchPeriods();
-      }); 
+      })
+      .catch(err => alert("ERROR: " + err.message));
   };
 
   const togglePeriodActive = (id, s) => fetch(`${API_URL}/admin/periods/${id}/toggle`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active:!s})}).then(()=>fetchPeriods());
   const togglePeriodSubmit = (id, currentStatus) => { fetch(`${API_URL}/admin/periods/${id}/toggle-submit`, { method: 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active: !currentStatus}) }).then(() => fetchPeriods()); };
   const handleDeletePeriod = (id) => { if(window.confirm("Hapus Periode?")) fetch(`${API_URL}/admin/periods/${id}`, {method:'DELETE'}).then(()=>fetchPeriods()); };
-  const handleUploadQuestion = (eid, f) => { const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d}).then(r=>r.json()).then(d=>{ alert(d.message); fetchPeriods(); }); };
+  
+  // PERBAIKAN: HANDLING ERROR UPLOAD SOAL
+  const handleUploadQuestion = (eid, f) => { 
+      const d=new FormData(); d.append('file',f); 
+      
+      // Tampilkan loading indikator sederhana (optional)
+      const btn = document.getElementById(`btn-upload-${eid}`);
+      if(btn) btn.innerText = "Uploading...";
+
+      fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d})
+      .then(async res => {
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.message || "Gagal Upload");
+          alert(data.message); 
+          fetchPeriods(); 
+      })
+      .catch(err => alert("UPLOAD GAGAL: " + err.message))
+      .finally(() => {
+          if(btn) btn.innerText = "Upload";
+      });
+  };
+  
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
-  const handlePreviewExam = (examId) => { fetch(`${API_URL}/admin/exams/${examId}/preview`).then(res => { if(!res.ok) throw new Error("Gagal"); return res.json(); }).then(data => { setPreviewData(data); setShowPreview(true); }).catch(err => alert("Belum ada soal.")); };
+  
+  // PERBAIKAN: HANDLING PREVIEW
+  const handlePreviewExam = (examId) => { 
+      fetch(`${API_URL}/admin/exams/${examId}/preview`)
+      .then(async res => { 
+          if(!res.ok) throw new Error("Gagal mengambil soal"); 
+          return res.json(); 
+      })
+      .then(data => { 
+          setPreviewData(data); 
+          setShowPreview(true); 
+      })
+      .catch(err => alert("Preview Gagal: " + err.message)); 
+  };
+
   const handleSelectAll = (e) => setSelectedIds(e.target.checked ? users.map(u=>u.id) : []);
   const handleSelectOne = (id) => setSelectedIds(selectedIds.includes(id) ? selectedIds.filter(i=>i!==id) : [...selectedIds, id]);
   const handleBulkDelete = () => { if(selectedIds.length>0 && window.confirm("Hapus?")) fetch(`${API_URL}/admin/users/delete-bulk`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_ids:selectedIds})}).then(r=>r.json()).then(d=>{alert(d.message); fetchUsers();}); };
@@ -123,9 +161,7 @@ const AdminDashboard = ({ onLogout }) => {
               body: JSON.stringify({ user_id: userId, exam_id: examId })
           })
           .then(r => r.json())
-          .then(d => { 
-              fetchRecap(); 
-          })
+          .then(d => { fetchRecap(); })
           .catch(() => alert("Gagal reset."));
       }
   };
@@ -159,16 +195,8 @@ const AdminDashboard = ({ onLogout }) => {
                         <div className="space-y-2">
                             {users.filter(u => u.role === 'student').map(u => (
                                 <label key={u.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 border rounded cursor-pointer">
-                                    <input 
-                                        type="checkbox" 
-                                        className="w-5 h-5 accent-indigo-600"
-                                        checked={selectedWhitelist.includes(u.username)} 
-                                        onChange={() => toggleUserWhitelist(u.username)}
-                                    />
-                                    <div>
-                                        <div className="font-bold text-sm">{u.full_name}</div>
-                                        <div className="text-xs text-gray-400">{u.username}</div>
-                                    </div>
+                                    <input type="checkbox" className="w-5 h-5 accent-indigo-600" checked={selectedWhitelist.includes(u.username)} onChange={() => toggleUserWhitelist(u.username)} />
+                                    <div><div className="font-bold text-sm">{u.full_name}</div><div className="text-xs text-gray-400">{u.username}</div></div>
                                 </label>
                             ))}
                             {users.length === 0 && <p className="text-center text-gray-400">Belum ada user siswa.</p>}
@@ -194,17 +222,13 @@ const AdminDashboard = ({ onLogout }) => {
                         </div>
                         <div className="w-1/3">
                             <label className="block text-sm font-bold text-gray-600 mb-1">Akses Peserta (Opsional)</label>
-                            <div 
-                                onClick={() => setShowUserModal(true)}
-                                className="w-full p-2 border rounded bg-gray-50 cursor-pointer flex justify-between items-center hover:bg-gray-100"
-                            >
-                                <span className="text-sm text-gray-600">
-                                    {selectedWhitelist.length > 0 ? `${selectedWhitelist.length} Peserta Terpilih` : "Semua Peserta (Public)"}
-                                </span>
+                            <div onClick={() => setShowUserModal(true)} className="w-full p-2 border rounded bg-gray-50 cursor-pointer flex justify-between items-center hover:bg-gray-100">
+                                <span className="text-sm text-gray-600">{selectedWhitelist.length > 0 ? `${selectedWhitelist.length} Peserta Terpilih` : (allowedUsers || "Semua Peserta (Public)")}</span>
                                 <Users size={16} className="text-gray-400"/>
                             </div>
+                            <input className="hidden" value={allowedUsers} onChange={(e)=>setAllowedUsers(e.target.value)} />
                         </div>
-                        <button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold hover:bg-indigo-700 h-10 mt-6">+ Buat</button>
+                        <button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold hover:bg-indigo-700 h-10">+ Buat</button>
                     </div>
                 </div>
 
@@ -231,7 +255,7 @@ const AdminDashboard = ({ onLogout }) => {
                             {expandedPeriod === period.id && (
                                 <div className="p-6 bg-white"><h4 className="font-bold text-gray-700 mb-4 border-b pb-2 flex items-center gap-2"><FileText size={18}/> Daftar Subtes UTBK</h4>
                                     {period.allowed_usernames && <div className="mb-4 p-3 bg-purple-50 text-purple-800 text-xs rounded border border-purple-200 break-all"><strong>Akses Khusus:</strong> {period.allowed_usernames}</div>}
-                                    <div className="grid gap-3">{period.exams.map(exam => (<div key={exam.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-indigo-50/30 transition"><div className="flex-1"><div className="font-bold text-gray-900 text-lg">{exam.title}</div><div className="text-sm text-gray-500 flex gap-4 mt-1"><span className="bg-gray-100 px-2 py-0.5 rounded text-xs font-mono">Kode: {exam.code}</span><span className="flex items-center gap-1"><Clock size={14} className="inline"/> {exam.duration} Menit</span>{exam.questions && exam.questions.length > 0 ? <span className="text-green-600 font-bold flex items-center gap-1"><CheckCircle size={14}/> {exam.questions.length} Soal</span> : <span className="text-red-500 font-bold flex items-center gap-1"><XCircle size={14}/> 0 Soal</span>}</div></div><div className="flex items-center gap-2"><button onClick={() => handlePreviewExam(exam.id)} className="bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg hover:bg-indigo-200 transition font-bold text-sm flex items-center gap-1"><Search size={14}/> Lihat</button><label className="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 shadow flex items-center gap-2 transition"><Upload size={16}/> Upload<input type="file" accept=".xlsx" className="hidden" onChange={(e) => { if(e.target.files[0]) handleUploadQuestion(exam.id, e.target.files[0]); }}/></label></div></div>))}</div></div>
+                                    <div className="grid gap-3">{period.exams.map(exam => (<div key={exam.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-indigo-50/30 transition"><div className="flex-1"><div className="font-bold text-gray-900 text-lg">{exam.title}</div><div className="text-sm text-gray-500 flex gap-4 mt-1"><span className="bg-gray-100 px-2 py-0.5 rounded text-xs font-mono">Kode: {exam.code}</span><span className="flex items-center gap-1"><Clock size={14} className="inline"/> {exam.duration} Menit</span>{exam.questions && exam.questions.length > 0 ? <span className="text-green-600 font-bold flex items-center gap-1"><CheckCircle size={14}/> {exam.questions.length} Soal</span> : <span className="text-red-500 font-bold flex items-center gap-1"><XCircle size={14}/> 0 Soal</span>}</div></div><div className="flex items-center gap-2"><button onClick={() => handlePreviewExam(exam.id)} className="bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg hover:bg-indigo-200 transition font-bold text-sm flex items-center gap-1"><Search size={14}/> Lihat</button><label id={`btn-upload-${exam.id}`} className="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 shadow flex items-center gap-2 transition"><Upload size={16}/> Upload<input type="file" accept=".xlsx" className="hidden" onChange={(e) => { if(e.target.files[0]) handleUploadQuestion(exam.id, e.target.files[0]); }}/></label></div></div>))}</div></div>
                             )}
                         </div>
                     ))}
@@ -240,6 +264,7 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
         
+        {/* TABS LAINNYA TIDAK BERUBAH (SAMA SEPERTI SEBELUMNYA) */}
         {tab === 'users' && (<div><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">Manajemen User</h2>{selectedIds.length > 0 && <button onClick={handleBulkDelete} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"><Trash2 size={16}/> Hapus {selectedIds.length}</button>}</div><div className="bg-white p-5 rounded-lg shadow mb-6 flex gap-3 flex-wrap"><input placeholder="Username" className="border p-2 rounded flex-1" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input placeholder="Nama Lengkap" className="border p-2 rounded flex-1" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input placeholder="Password" type="password" className="border p-2 rounded flex-1" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><select className="border p-2 rounded bg-gray-50" value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})}><option value="student">Siswa</option><option value="admin">Admin</option></select><button onClick={handleAddUser} className="bg-green-600 text-white px-4 py-2 rounded font-bold"><Plus size={16}/></button><div className="w-full h-px bg-gray-200 my-2"></div><label className="text-blue-600 cursor-pointer text-sm flex items-center gap-2 hover:underline"><Upload size={14}/> Upload Excel User (.xlsx)<input type="file" className="hidden" accept=".xlsx" onChange={handleBulkUpload}/></label></div><div className="bg-white shadow rounded overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={users.length > 0 && selectedIds.length === users.length}/></th><th className="p-3 text-left">Nama</th><th className="p-3 text-left">Username</th><th className="p-3 text-left">Role</th></tr></thead><tbody>{Array.isArray(users) && users.map(u => (<tr key={u.id} className="border-b hover:bg-gray-50"><td className="p-3 text-center"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={() => handleSelectOne(u.id)}/></td><td className="p-3">{u.full_name}</td><td className="p-3 font-mono">{u.username}</td><td className="p-3"><span className={`px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-green-100 text-green-700'}`}>{u.role.toUpperCase()}</span></td></tr>))}</tbody></table></div></div>)}
         
         {tab === 'recap' && (
@@ -258,7 +283,6 @@ const AdminDashboard = ({ onLogout }) => {
                                     <td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PU}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PPU}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PBM}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PK}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.LBI}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.LBE}</td><td className="p-2 text-center border-r border-gray-100 text-gray-600">{r.PM}</td>
                                     <td className="p-4 text-center border-l border-gray-100 font-extrabold text-blue-700 text-lg bg-blue-50/50">{r.average}</td>
                                     <td className="p-4 border-l border-gray-100 align-middle">{r.status.startsWith('LULUS') ? (<div><span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-green-100 text-green-700 mb-1"><CheckCircle size={12}/> LULUS</span></div>) : (<span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-red-100 text-red-600"><XCircle size={12}/> TIDAK LULUS</span>)}</td>
-                                    
                                     <td className="p-4 border-l border-gray-100 text-center align-middle">
                                         <div className="flex flex-wrap gap-1 justify-center">
                                             {r.completed_exams && r.completed_exams.length > 0 ? (
