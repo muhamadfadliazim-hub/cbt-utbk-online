@@ -226,11 +226,18 @@ def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
     for q in exam.questions:
         opts = [{"id": o.option_index, "label": o.label, "is_correct": o.is_correct} for o in q.options]
         opts.sort(key=lambda x: x["id"])
+        
         safe_difficulty = 1.0
         try:
             if not math.isnan(q.difficulty): safe_difficulty = q.difficulty
         except: pass
-        q_data.append({"id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url, "reading_material": q.reading_material, "difficulty": safe_difficulty, "options": opts, "label_true": q.label_true, "label_false": q.label_false, "reading_label": q.reading_label, "citation": q.citation})
+
+        q_data.append({
+            "id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url,
+            "reading_material": q.reading_material, "difficulty": safe_difficulty, 
+            "options": opts, "label_true": q.label_true, "label_false": q.label_false, 
+            "reading_label": q.reading_label, "citation": q.citation
+        })
     q_data.sort(key=lambda x: x["id"])
     return {"title": exam.title, "questions": q_data}
 
@@ -241,6 +248,7 @@ def get_student_periods(username: str = None, db: Session = Depends(get_db)):
     if username:
         u = db.query(models.User).filter_by(username=username).first()
         if u: user_id = u.id
+
     res = []
     for p in periods:
         if p.allowed_usernames:
@@ -251,8 +259,10 @@ def get_student_periods(username: str = None, db: Session = Depends(get_db)):
             q_count = db.query(models.Question).filter_by(exam_id=e.id).count()
             is_done = False
             if user_id:
-                if db.query(models.ExamResult).filter_by(user_id=user_id, exam_id=e.id).first(): is_done = True
+                if db.query(models.ExamResult).filter_by(user_id=user_id, exam_id=e.id).first():
+                    is_done = True
             exams.append({"id": e.id, "title": e.title, "duration": e.duration, "q_count": q_count, "is_done": is_done, "allow_submit": p.allow_submit})
+        
         order_map = {"Penalaran Umum":1, "Pemahaman Bacaan & Menulis":2, "Pengetahuan & Pemahaman Umum":3, "Pengetahuan Kuantitatif":4, "Literasi Bahasa Indonesia":5, "Literasi Bahasa Inggris":6, "Penalaran Matematika":7}
         order_map.update({"PU":1, "PBM":2, "PPU":3, "PK":4, "LBI":5, "LBE":6, "PM":7})
         exams.sort(key=lambda x: order_map.get(x['title'], 99))
@@ -275,7 +285,9 @@ def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
 def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
     if not user: raise HTTPException(404)
-    if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first(): return {"message": "Done", "correct": 0, "wrong": 0}
+    if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first(): 
+        return {"message": "Done", "correct": 0, "wrong": 0}
+    
     questions = db.query(models.Question).filter_by(exam_id=exam_id).all()
     correct, total_w, earned_w = 0, 0.0, 0.0
     for q in questions:
@@ -283,12 +295,17 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
         is_correct = check_answer_correctness(q, user_ans)
         q.total_attempts += 1
         if is_correct: q.total_correct += 1
-        if q.total_attempts >= 5: q.difficulty = 1.0 + ((1.0 - (q.total_correct/q.total_attempts)) * 3.0)
+        if q.total_attempts >= 5:
+            q.difficulty = 1.0 + ((1.0 - (q.total_correct/q.total_attempts)) * 3.0)
         total_w += q.difficulty
-        if is_correct: correct += 1; earned_w += q.difficulty
+        if is_correct: 
+            correct += 1
+            earned_w += q.difficulty
+    
     db.commit()
     final_score = (earned_w / total_w) * 1000 if total_w > 0 else 0
     wrong = len(questions) - correct
+    
     db.add(models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct, wrong_count=wrong, irt_score=final_score))
     db.commit()
     return {"message": "Saved", "score": round(final_score, 2), "correct": correct, "wrong": wrong}
@@ -302,7 +319,6 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
                 "pg1": user.choice1.passing_grade if user.choice1 else 0}
     raise HTTPException(400, "Login Gagal")
 
-# --- MAJORS & BULK UPLOAD ---
 @app.get("/majors")
 def get_majors(db: Session = Depends(get_db)): return db.query(models.Major).all()
 @app.post("/majors")
@@ -319,19 +335,16 @@ async def bulk_upload_majors(file: UploadFile = File(...), db: Session = Depends
         content = await file.read()
         df = pd.read_excel(io.BytesIO(content))
         df.columns = df.columns.str.lower().str.strip().str.replace(' ', '_')
-        
         count = 0
         for _, row in df.iterrows():
             col_univ = next((c for c in df.columns if 'univ' in c), None)
             col_prodi = next((c for c in df.columns if 'prodi' in c or 'jurusan' in c), None)
             col_pg = next((c for c in df.columns if 'pass' in c or 'grade' in c), None)
-            
             if col_univ and col_prodi and col_pg:
                 univ = str(row[col_univ]).strip()
                 name = str(row[col_prodi]).strip()
                 try: pg = float(row[col_pg])
                 except: pg = 0.0
-                
                 existing = db.query(models.Major).filter_by(university=univ, name=name).first()
                 if existing: existing.passing_grade = pg
                 else: db.add(models.Major(university=univ, name=name, passing_grade=pg))
