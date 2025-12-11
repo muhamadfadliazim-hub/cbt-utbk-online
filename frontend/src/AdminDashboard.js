@@ -87,7 +87,9 @@ const AdminDashboard = ({ onLogout }) => {
     doc.setFontSize(10);
     doc.text(`Dicetak pada: ${new Date().toLocaleString('id-ID')}`, 14, 22);
     if(selectedRecapPeriod) {
-        const pName = periods.find(p=>p.id == selectedRecapPeriod)?.name || "Periode Tertentu";
+        // FIX: Gunakan parseInt untuk perbandingan yang aman atau == jika tipe data berbeda, 
+        // tapi sebaiknya konversi ke string/int yang sama. Di sini saya pakai parseInt.
+        const pName = periods.find(p => p.id === parseInt(selectedRecapPeriod))?.name || "Periode Tertentu";
         doc.text(`Periode: ${pName}`, 14, 27);
     } else {
         doc.text("Periode: Semua Data", 14, 27);
