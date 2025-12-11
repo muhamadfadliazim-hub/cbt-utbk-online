@@ -23,6 +23,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewData, setPreviewData] = useState(null); 
   const [analysisData, setAnalysisData] = useState(null); 
+  const [activeAnalysisId, setActiveAnalysisId] = useState(null); // ID Ujian yg sedang dianalisis
   const [showPreview, setShowPreview] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false); 
   const [showUserModal, setShowUserModal] = useState(false);
@@ -91,15 +92,26 @@ const AdminDashboard = ({ onLogout }) => {
   const handleUploadQuestion = (eid, f) => { const d=new FormData(); d.append('file',f); const btn=document.getElementById(`btn-upload-${eid}`); if(btn)btn.innerText="Uploading..."; fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchPeriods();}).finally(()=>{if(btn)btn.innerText="Upload";}); };
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
   
-  // FIX: Preview Soal LENGKAP dengan Opsi
-  const handlePreviewExam = (eid) => { 
-      fetch(`${API_URL}/admin/exams/${eid}/preview`)
-      .then(r=>r.json())
-      .then(d=>{ setPreviewData(d); setShowPreview(true); })
-      .catch(e => alert("Gagal memuat soal: " + e.message)); 
-  };
+  const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}); };
   
-  const handleShowAnalysis = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/analysis`).then(r => r.json()).then(d => { setAnalysisData(d); setShowAnalysis(true); }).catch(e => alert("Gagal memuat analisis")); };
+  // FITUR: TAMPILKAN ANALISIS & DOWNLOAD
+  const handleShowAnalysis = (eid) => {
+      fetch(`${API_URL}/admin/exams/${eid}/analysis`)
+      .then(r => r.json())
+      .then(d => {
+          setAnalysisData(d);
+          setActiveAnalysisId(eid); // Simpan ID agar bisa download
+          setShowAnalysis(true);
+      })
+      .catch(e => alert("Gagal memuat analisis"));
+  };
+
+  // FITUR: KLIK DOWNLOAD EXCEL ANALISIS
+  const handleDownloadAnalysisExcel = () => {
+      if (activeAnalysisId) {
+          window.open(`${API_URL}/admin/exams/${activeAnalysisId}/analysis/download`, '_blank');
+      }
+  };
 
   const handleResetResult = (uid, eid) => { if(window.confirm("Reset?")) fetch(`${API_URL}/admin/reset-result`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_id:uid, exam_id:eid})}).then(()=>fetchRecap()); };
   const handleAddUser = (e) => { e.preventDefault(); fetch(`${API_URL}/admin/users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(newUser)}).then(()=>fetchUsers()); };
@@ -109,7 +121,6 @@ const AdminDashboard = ({ onLogout }) => {
   const handleSelectAll = (e) => setSelectedIds(e.target.checked ? users.map(u=>u.id) : []);
   const handleSelectOne = (id) => setSelectedIds(selectedIds.includes(id) ? selectedIds.filter(i=>i!==id) : [...selectedIds, id]);
   const handleChangePassword = (uid) => { const newPass = prompt("Password Baru:"); if(newPass) fetch(`${API_URL}/admin/users/${uid}/password`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({new_password:newPass})}).then(r=>r.json()).then(d=>alert(d.message)); };
-  
   const getStatusBadge = (s) => (s && s.startsWith('LULUS')) ? <span className="text-green-600 font-bold text-xs flex items-center gap-1"><CheckCircle size={12}/> {s}</span> : <span className="text-red-600 font-bold text-xs flex items-center gap-1"><XCircle size={12}/> TIDAK LULUS</span>;
 
   return (
@@ -131,42 +142,32 @@ const AdminDashboard = ({ onLogout }) => {
       </aside>
       
       <main className="flex-1 p-8 overflow-y-auto relative">
-        {/* MODAL PREVIEW (DIPERBAIKI: Menampilkan Opsi A,B,C,D,E) */}
+        {/* MODAL PREVIEW (SOAL + OPSI) */}
         {showPreview && previewData && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
                     <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-xl font-bold">Preview: {previewData.title}</h3></div><button onClick={()=>setShowPreview(false)}><X/></button></div>
-                    <div className="flex-1 overflow-y-auto p-6 space-y-8">
-                        {previewData.questions.map((q,i)=>(
-                            <div key={q.id} className="border p-4 rounded bg-gray-50">
-                                <div className="font-bold mb-2 text-indigo-700">No. {i+1} <span className="text-xs text-gray-500 font-normal ml-2">Bobot: {q.difficulty}</span></div>
-                                {q.image_url && <img src={q.image_url} alt="soal" className="max-w-full h-auto mb-3 rounded border"/>}
-                                <div className="mb-4 text-gray-800">{renderText(q.text)}</div>
-                                
-                                {/* BAGIAN OPSI JAWABAN (KEMBALI MUNCUL) */}
-                                <div className="space-y-1 ml-4 border-l-2 pl-3 border-gray-200">
-                                    {q.options.map(opt => (
-                                        <div key={opt.id} className={`text-sm ${opt.is_correct ? 'text-green-700 font-bold bg-green-50 px-2 py-1 rounded inline-block' : 'text-gray-600'}`}>
-                                            <span className="font-bold mr-2">{opt.id}.</span> 
-                                            {renderText(opt.label)} 
-                                            {opt.is_correct && " ✅"}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-8">{previewData.questions.map((q,i)=>(
+                        <div key={q.id} className="border p-4 rounded bg-gray-50">
+                            <div className="font-bold mb-2 text-indigo-700">No. {i+1} <span className="text-xs text-gray-500 font-normal ml-2">Bobot: {q.difficulty}</span></div>
+                            <div className="mb-4">{renderText(q.text)}</div>
+                            <div className="space-y-1 ml-4 border-l-2 pl-3 border-gray-200">{q.options.map(opt => (<div key={opt.id} className={`text-sm ${opt.is_correct ? 'text-green-700 font-bold bg-green-50 px-2 py-1 rounded inline-block' : 'text-gray-600'}`}>{opt.id}. {renderText(opt.label)} {opt.is_correct && "✔"}</div>))}</div>
+                        </div>))}</div>
                 </div>
             </div>
         )}
 
-        {/* MODAL ANALISIS */}
+        {/* MODAL ANALISIS (DENGAN TOMBOL DOWNLOAD) */}
         {showAnalysis && analysisData && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col">
                     <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
                         <div><h3 className="text-xl font-bold">Analisis Butir Soal: {analysisData.title}</h3></div>
-                        <button onClick={()=>setShowAnalysis(false)}><X/></button>
+                        <div className="flex items-center gap-2">
+                            {/* TOMBOL DOWNLOAD ANALISIS */}
+                            <button onClick={handleDownloadAnalysisExcel} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 hover:bg-green-700"><Download size={14}/> Download Excel</button>
+                            <button onClick={()=>setShowAnalysis(false)} className="bg-gray-200 p-1.5 rounded hover:bg-gray-300"><X size={18}/></button>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-y-auto p-6">
                         <table className="w-full text-sm text-left border rounded-lg">
