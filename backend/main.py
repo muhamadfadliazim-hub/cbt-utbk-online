@@ -67,11 +67,14 @@ def check_answer_correctness(question, user_ans):
     if not user_ans: return False
     if question.type == 'table_boolean' and isinstance(user_ans, dict):
         for opt in question.options:
-            if user_ans.get(str(opt.option_index)) != ("B" if opt.is_correct else "S"): return False
+            student_choice = user_ans.get(str(opt.option_index))
+            correct_choice = "B" if opt.is_correct else "S"
+            if student_choice != correct_choice: return False
         return True
     elif question.type == 'short_answer':
         key = next((o for o in question.options if o.is_correct), None)
-        return key and str(user_ans).strip().lower() == key.label.strip().lower()
+        if key and user_ans:
+            return str(user_ans).strip().lower() == key.label.strip().lower()
     elif question.type == 'complex':
         correct = {o.option_index for o in question.options if o.is_correct}
         user_set = set(user_ans) if isinstance(user_ans, list) else {user_ans}
@@ -79,6 +82,7 @@ def check_answer_correctness(question, user_ans):
     else:
         key = next((o for o in question.options if o.is_correct), None)
         return key and user_ans == key.option_index
+    return False
 
 # --- ENDPOINTS ---
 @app.get("/config/{key}")
@@ -229,7 +233,7 @@ def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
         
         safe_difficulty = 1.0
         try:
-            if not math.isnan(q.difficulty): safe_difficulty = q.difficulty
+            if q.difficulty and not math.isnan(q.difficulty): safe_difficulty = q.difficulty
         except: pass
 
         q_data.append({
@@ -241,36 +245,58 @@ def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
     q_data.sort(key=lambda x: x["id"])
     return {"title": exam.title, "questions": q_data}
 
-# FITUR BARU: ANALISIS BUTIR SOAL
 @app.get("/admin/exams/{exam_id}/analysis")
 def get_exam_analysis(exam_id: str, db: Session = Depends(get_db)):
     exam = db.query(models.Exam).filter_by(id=exam_id).options(joinedload(models.Exam.questions)).first()
     if not exam: raise HTTPException(404, "Exam not found")
-    
     stats = []
     for q in exam.questions:
         attempts = q.total_attempts
         correct = q.total_correct
-        percentage = 0
-        if attempts > 0:
-            percentage = round((correct / attempts) * 100, 2)
-        
+        percentage = round((correct / attempts) * 100, 2) if attempts > 0 else 0
         safe_difficulty = 1.0
         try:
-            if not math.isnan(q.difficulty): safe_difficulty = q.difficulty
+            if q.difficulty and not math.isnan(q.difficulty): safe_difficulty = q.difficulty
         except: pass
-
-        stats.append({
-            "id": q.id,
-            "text": q.text[:50] + "..." if len(q.text) > 50 else q.text,
-            "difficulty": round(safe_difficulty, 2),
-            "attempts": attempts,
-            "correct": correct,
-            "percentage": percentage
-        })
-    # Urutkan berdasarkan ID soal
+        stats.append({"id": q.id, "text": q.text[:50] + "..." if len(q.text) > 50 else q.text, "difficulty": round(safe_difficulty, 2), "attempts": attempts, "correct": correct, "percentage": percentage})
     stats.sort(key=lambda x: x["id"])
     return {"title": exam.title, "stats": stats}
+
+# --- FIX: DOWNLOAD ANALISIS EXCEL (LEBIH AMAN) ---
+@app.get("/admin/exams/{exam_id}/analysis/download")
+def download_exam_analysis(exam_id: str, db: Session = Depends(get_db)):
+    try:
+        exam = db.query(models.Exam).filter_by(id=exam_id).options(joinedload(models.Exam.questions)).first()
+        if not exam: raise HTTPException(404, "Exam not found")
+        
+        data = []
+        for i, q in enumerate(exam.questions, 1):
+            attempts = q.total_attempts
+            correct = q.total_correct
+            percentage = round((correct / attempts) * 100, 2) if attempts > 0 else 0
+            
+            safe_diff = 1.0
+            try:
+                if q.difficulty and not math.isnan(q.difficulty): safe_diff = q.difficulty
+            except: pass
+            
+            data.append({
+                "No": i, "Soal": q.text[:100], "Tipe": q.type,
+                "Kesulitan (IRT)": round(safe_diff, 2),
+                "Total Dijawab": attempts, "Total Benar": correct,
+                "Persentase Benar (%)": percentage
+            })
+        
+        df = pd.DataFrame(data)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False)
+        output.seek(0)
+        
+        # Nama file sederhana agar tidak error
+        return StreamingResponse(output, headers={'Content-Disposition': 'attachment; filename="analisis_soal.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal download excel: {str(e)}")
 
 @app.get("/student/periods")
 def get_student_periods(username: str = None, db: Session = Depends(get_db)):
@@ -279,7 +305,6 @@ def get_student_periods(username: str = None, db: Session = Depends(get_db)):
     if username:
         u = db.query(models.User).filter_by(username=username).first()
         if u: user_id = u.id
-
     res = []
     for p in periods:
         if p.allowed_usernames:
@@ -290,10 +315,8 @@ def get_student_periods(username: str = None, db: Session = Depends(get_db)):
             q_count = db.query(models.Question).filter_by(exam_id=e.id).count()
             is_done = False
             if user_id:
-                if db.query(models.ExamResult).filter_by(user_id=user_id, exam_id=e.id).first():
-                    is_done = True
+                if db.query(models.ExamResult).filter_by(user_id=user_id, exam_id=e.id).first(): is_done = True
             exams.append({"id": e.id, "title": e.title, "duration": e.duration, "q_count": q_count, "is_done": is_done, "allow_submit": p.allow_submit})
-        
         order_map = {"Penalaran Umum":1, "Pemahaman Bacaan & Menulis":2, "Pengetahuan & Pemahaman Umum":3, "Pengetahuan Kuantitatif":4, "Literasi Bahasa Indonesia":5, "Literasi Bahasa Inggris":6, "Penalaran Matematika":7}
         order_map.update({"PU":1, "PBM":2, "PPU":3, "PK":4, "LBI":5, "LBE":6, "PM":7})
         exams.sort(key=lambda x: order_map.get(x['title'], 99))
@@ -312,6 +335,7 @@ def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
     q_data.sort(key=lambda x: x['id'])
     return {"id": exam.id, "title": exam.title, "duration": exam.duration, "questions": q_data, "allow_submit": exam.period.allow_submit}
 
+# --- FIX: RUMUS SKOR 200-1000 ---
 @app.post("/exams/{exam_id}/submit")
 def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
@@ -327,16 +351,31 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
         q.total_attempts += 1
         if is_correct: q.total_correct += 1
         if q.total_attempts >= 5:
+            # IRT: Update Difficulty
             q.difficulty = 1.0 + ((1.0 - (q.total_correct/q.total_attempts)) * 3.0)
-        total_w += q.difficulty
+        
+        # Difficulty aman (anti NaN)
+        safe_diff = 1.0
+        try:
+            if q.difficulty and not math.isnan(q.difficulty): safe_diff = q.difficulty
+        except: pass
+        
+        total_w += safe_diff
         if is_correct: 
             correct += 1
-            earned_w += q.difficulty
+            earned_w += safe_diff
     
     db.commit()
-    final_score = (earned_w / total_w) * 1000 if total_w > 0 else 0
-    wrong = len(questions) - correct
     
+    # RUMUS BARU: 200 - 1000
+    MIN, MAX = 200, 1000
+    if total_w > 0:
+        ratio = earned_w / total_w
+        final_score = MIN + (ratio * (MAX - MIN))
+    else:
+        final_score = MIN
+        
+    wrong = len(questions) - correct
     db.add(models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct, wrong_count=wrong, irt_score=final_score))
     db.commit()
     return {"message": "Saved", "score": round(final_score, 2), "correct": correct, "wrong": wrong}
@@ -358,27 +397,21 @@ def add_major(d: MajorCreateSchema, db: Session = Depends(get_db)):
 @app.delete("/majors/{mid}")
 def del_major(mid: int, db: Session = Depends(get_db)):
     db.query(models.Major).filter_by(id=mid).delete(); db.commit(); return {"message": "OK"}
-
-# FITUR: UPLOAD EXCEL JURUSAN
 @app.post("/admin/majors/bulk")
 async def bulk_upload_majors(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         content = await file.read()
         df = pd.read_excel(io.BytesIO(content))
         df.columns = df.columns.str.lower().str.strip().str.replace(' ', '_')
-        
         count = 0
         for _, row in df.iterrows():
             col_univ = next((c for c in df.columns if 'univ' in c), None)
             col_prodi = next((c for c in df.columns if 'prodi' in c or 'jurusan' in c), None)
             col_pg = next((c for c in df.columns if 'pass' in c or 'grade' in c), None)
-            
             if col_univ and col_prodi and col_pg:
-                univ = str(row[col_univ]).strip()
-                name = str(row[col_prodi]).strip()
+                univ, name = str(row[col_univ]).strip(), str(row[col_prodi]).strip()
                 try: pg = float(row[col_pg])
                 except: pg = 0.0
-                
                 existing = db.query(models.Major).filter_by(university=univ, name=name).first()
                 if existing: existing.passing_grade = pg
                 else: db.add(models.Major(university=univ, name=name, passing_grade=pg))
@@ -386,7 +419,6 @@ async def bulk_upload_majors(file: UploadFile = File(...), db: Session = Depends
         db.commit()
         return {"message": f"Berhasil memproses {count} jurusan."}
     except Exception as e: return {"message": f"Error: {str(e)}"}
-
 @app.post("/users/select-major")
 def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
     u = db.query(models.User).filter_by(username=d.username).first()
@@ -438,11 +470,21 @@ def get_recap(period_id: Optional[int]=None, db: Session=Depends(get_db)):
     return res
 @app.get("/admin/recap/download")
 def dl_recap(period_id: Optional[int]=None, db: Session=Depends(get_db)):
-    d = get_recap(period_id, db)
-    for x in d: del x['completed_exams']; del x['id']
-    df = pd.DataFrame(d)
-    out = io.BytesIO(); df.to_excel(out, index=False); out.seek(0)
-    return StreamingResponse(out, headers={'Content-Disposition': 'attachment; filename="rekap.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    try:
+        d = get_recap(period_id, db)
+        data_clean = []
+        for row in d:
+            r = row.copy()
+            if 'completed_exams' in r: del r['completed_exams']
+            if 'id' in r: del r['id']
+            data_clean.append(r)
+        df = pd.DataFrame(data_clean)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False)
+        output.seek(0)
+        return StreamingResponse(output, headers={'Content-Disposition': 'attachment; filename="rekap.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    except Exception as e: raise HTTPException(500, f"Error download: {str(e)}")
 @app.get("/student/recap/{uname}")
 def stu_recap(uname: str, db: Session=Depends(get_db)):
     cfg = db.query(models.SystemConfig).filter_by(key="release_announcement").first()
