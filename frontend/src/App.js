@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import Login from './Login';
 import Dashboard from './Dashboard';
 import ExamSimulation from './ExamSimulation';
 import UploadExam from './UploadExam';
 import AdminDashboard from './AdminDashboard'; 
-import { MajorSelection, Confirmation } from './FlowComponents';
+import { MajorSelection, Confirmation, ResultSummary } from './FlowComponents'; // Pastikan ResultSummary diimport!
 import StudentRecap from './StudentRecap'; 
 import { Loader2, AlertTriangle } from 'lucide-react';
 import './App.css';
@@ -21,63 +21,44 @@ const getSafeUserData = () => {
   }
 };
 
-// Error Boundary
-class ErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
-  static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  componentDidCatch(error, errorInfo) { console.error("APP ERROR:", error, errorInfo); }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="flex h-screen items-center justify-center bg-red-50 p-4">
-            <div className="text-center">
-                <AlertTriangle className="mx-auto text-red-600 mb-4" size={48}/>
-                <h2 className="text-xl font-bold text-gray-800">Terjadi Kesalahan</h2>
-                <p className="text-gray-600 mb-4">Aplikasi mengalami kendala teknis.</p>
-                <button onClick={() => { localStorage.clear(); window.location.href='/'; }} className="px-4 py-2 bg-red-600 text-white rounded shadow">Reset Aplikasi</button>
-            </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-// --- APP CONTENT ---
 const AppContent = () => {
-  const navigate = useNavigate(); // AMAN: Karena sudah dibungkus Router di index.js
+  const navigate = useNavigate();
+  const location = useLocation();
   const [userData, setUserData] = useState(getSafeUserData);
   const [loading, setLoading] = useState(true);
+  const [examResult, setExamResult] = useState(null); // State untuk hasil ujian
 
-  // Cek Status Login
   useEffect(() => {
-    const timer = setTimeout(() => {
-        if (userData) {
-            if (userData.role === 'admin') {
-                if (window.location.pathname === '/' || window.location.pathname === '/login') navigate('/admin');
-            } else {
-                if (!userData.display1) navigate('/select-major');
-                else if (window.location.pathname === '/' || window.location.pathname === '/login') navigate('/dashboard');
-            }
-        } else {
-            if (window.location.pathname !== '/login') navigate('/login');
-        }
-        setLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [userData, navigate]);
+    // Logika Redirect yang Lebih Aman
+    if (userData) {
+      if (userData.role === 'admin') {
+         if (location.pathname === '/' || location.pathname === '/login') navigate('/admin');
+      } else {
+         // Cek apakah sudah pilih jurusan?
+         if (!userData.display1 && location.pathname !== '/select-major') {
+             navigate('/select-major');
+         } else if (userData.display1 && (location.pathname === '/' || location.pathname === '/login')) {
+             navigate('/dashboard');
+         }
+      }
+    } else {
+      if (location.pathname !== '/login') navigate('/login');
+    }
+    setLoading(false);
+  }, [userData, navigate, location.pathname]);
 
   const handleLogin = (loginData) => {
     const newData = { ...loginData, 
         display1: loginData.pilihan1 || '', pg1: loginData.pg1 || '',
-        display2: loginData.pilihan2 || '', pg2: loginData.pg2 || ''
+        display2: loginData.pilihan2 || '', pg2: loginData.pg2 || '',
+        choice1_id: loginData.choice1_id, choice2_id: loginData.choice2_id
     };
     setUserData(newData);
     localStorage.setItem('utbk_user', JSON.stringify(newData));
 
     if (newData.role === 'admin') navigate('/admin');
-    else if (newData.display1) navigate('/confirmation');
-    else navigate('/select-major');
+    else if (newData.display1) navigate('/confirmation'); // Sudah ada jurusan -> Konfirmasi
+    else navigate('/select-major'); // Belum -> Pilih Jurusan
   };
 
   const handleLogout = () => {
@@ -95,6 +76,12 @@ const AppContent = () => {
     navigate('/confirmation');
   };
 
+  // Handler saat ujian selesai
+  const handleExamFinish = (resultData) => {
+      setExamResult(resultData);
+      navigate('/result');
+  };
+
   if (loading) return <div className="flex h-screen items-center justify-center bg-gray-50"><Loader2 className="animate-spin text-indigo-600" size={40}/></div>;
 
   return (
@@ -105,6 +92,7 @@ const AppContent = () => {
         <Route path="/upload" element={userData?.role === 'admin' ? <UploadExam onBack={() => navigate('/admin')} /> : <Navigate to="/login" />} />
 
         <Route path="/select-major" element={userData ? <MajorSelection onNext={handleMajorSelected} onLogout={handleLogout}/> : <Navigate to="/login" />} />
+        
         <Route path="/confirmation" element={userData ? <Confirmation userData={userData} onStart={() => navigate('/dashboard')} onBack={() => navigate('/select-major')}/> : <Navigate to="/login" />} />
 
         <Route path="/dashboard" element={
@@ -120,7 +108,11 @@ const AppContent = () => {
             ) : <Navigate to="/login" />
         } />
 
-        <Route path="/exam/:examId" element={userData ? <ExamSimulation /> : <Navigate to="/login" />} />
+        <Route path="/exam/:examId" element={userData ? <ExamSimulation onFinish={handleExamFinish} /> : <Navigate to="/login" />} />
+        
+        {/* Halaman Hasil Ujian */}
+        <Route path="/result" element={userData && examResult ? <ResultSummary result={examResult} onBack={() => navigate('/dashboard')} /> : <Navigate to="/dashboard" />} />
+
         <Route path="/recap" element={userData ? <StudentRecap username={userData.username} onBack={() => navigate('/dashboard')} /> : <Navigate to="/login" />} />
 
         <Route path="*" element={<Navigate to={userData ? "/" : "/login"} />} />
@@ -128,13 +120,21 @@ const AppContent = () => {
   );
 };
 
-function App() {
+// Error Boundary Sederhana
+class ErrorBoundary extends React.Component {
+  state = { hasError: false };
+  static getDerivedStateFromError(error) { return { hasError: true }; }
+  componentDidCatch(error, info) { console.error("Error:", error, info); }
+  render() {
+    if (this.state.hasError) return <div className="p-4 text-center">Terjadi kesalahan. <button onClick={() => window.location.reload()} className="underline text-blue-600">Muat Ulang</button></div>;
+    return this.props.children;
+  }
+}
+
+export default function App() {
   return (
     <ErrorBoundary>
-        {/* HAPUS BrowserRouter dari sini */}
-        <AppContent />
+      <AppContent />
     </ErrorBoundary>
   );
 }
-
-export default App;
