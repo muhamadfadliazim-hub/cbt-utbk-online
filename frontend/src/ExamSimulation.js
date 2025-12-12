@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-// FIX: Added 'CheckCircle' to imports
-import { Clock, ChevronLeft, ChevronRight, Grid, Type, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Clock, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
@@ -15,11 +14,10 @@ const ExamSimulation = () => {
   const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState({});
-  const [doubtful, setDoubtful] = useState({}); // Ragu-ragu
+  const [doubtful, setDoubtful] = useState({}); 
   const [timeLeft, setTimeLeft] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [fontSize, setFontSize] = useState(16); // Ukuran Font (A+ A-)
-  const [showNav, setShowNav] = useState(false); // Toggle Navigasi Soal
+  const [fontSize, setFontSize] = useState(16); 
 
   const timerRef = useRef(null);
 
@@ -33,6 +31,43 @@ const ExamSimulation = () => {
       return <span key={index}>{part}</span>;
     });
   };
+
+  // --- ACTIONS ---
+  const saveLocal = useCallback((ans, dbt) => {
+    const saved = JSON.parse(localStorage.getItem(`exam_${examId}`)) || {};
+    localStorage.setItem(`exam_${examId}`, JSON.stringify({ ...saved, answers: ans, doubtful: dbt }));
+  }, [examId]);
+
+  const handleAnswer = (val) => {
+    const newAns = { ...answers, [questions[currentIndex].id]: val };
+    setAnswers(newAns);
+    saveLocal(newAns, doubtful);
+  };
+
+  const toggleDoubt = () => {
+    const newDoubt = { ...doubtful, [questions[currentIndex].id]: !doubtful[questions[currentIndex].id] };
+    setDoubtful(newDoubt);
+    saveLocal(answers, newDoubt);
+  };
+
+  const handleSubmit = useCallback(async () => {
+    if (!window.confirm("Yakin ingin menyelesaikan ujian?")) return;
+    clearInterval(timerRef.current);
+    
+    const user = JSON.parse(localStorage.getItem('user'));
+    try {
+        await fetch(`${API_URL}/exams/${examId}/submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: user.username, answers })
+        });
+        localStorage.removeItem(`exam_${examId}`);
+        alert("Ujian Selesai! Terima kasih.");
+        navigate('/dashboard');
+    } catch (e) {
+        alert("Gagal kirim jawaban. Cek koneksi!");
+    }
+  }, [answers, examId, navigate]);
 
   // --- LOAD DATA ---
   useEffect(() => {
@@ -71,7 +106,7 @@ const ExamSimulation = () => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
             clearInterval(timerRef.current);
-            handleSubmit();
+            handleSubmit(); // Auto submit when time is up
             return 0;
           }
           return prev - 1;
@@ -79,49 +114,12 @@ const ExamSimulation = () => {
       }, 1000);
     }
     return () => clearInterval(timerRef.current);
-  }, [timeLeft]);
+  }, [timeLeft, handleSubmit]); // Added handleSubmit to dependency array
 
   const formatTime = (s) => {
     const m = Math.floor(s / 60);
     const sec = s % 60;
     return `${m}:${sec < 10 ? '0' : ''}${sec}`;
-  };
-
-  // --- ACTIONS ---
-  const handleAnswer = (val) => {
-    const newAns = { ...answers, [questions[currentIndex].id]: val };
-    setAnswers(newAns);
-    saveLocal(newAns, doubtful);
-  };
-
-  const toggleDoubt = () => {
-    const newDoubt = { ...doubtful, [questions[currentIndex].id]: !doubtful[questions[currentIndex].id] };
-    setDoubtful(newDoubt);
-    saveLocal(answers, newDoubt);
-  };
-
-  const saveLocal = (ans, dbt) => {
-    const saved = JSON.parse(localStorage.getItem(`exam_${examId}`)) || {};
-    localStorage.setItem(`exam_${examId}`, JSON.stringify({ ...saved, answers: ans, doubtful: dbt }));
-  };
-
-  const handleSubmit = async () => {
-    if (!window.confirm("Yakin ingin menyelesaikan ujian?")) return;
-    clearInterval(timerRef.current);
-    
-    const user = JSON.parse(localStorage.getItem('user'));
-    try {
-        await fetch(`${API_URL}/exams/${examId}/submit`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: user.username, answers })
-        });
-        localStorage.removeItem(`exam_${examId}`);
-        alert("Ujian Selesai! Terima kasih.");
-        navigate('/dashboard');
-    } catch (e) {
-        alert("Gagal kirim jawaban. Cek koneksi!");
-    }
   };
 
   // --- RENDER LOADING ---
@@ -184,7 +182,6 @@ const ExamSimulation = () => {
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         
         {/* PANEL KIRI: WACANA / GAMBAR (Scrollable) */}
-        {/* Jika ada gambar/bacaan, tampilkan di atas (mobile) atau kiri (desktop) */}
         {(q.reading_material || q.image_url) && (
             <div className="w-full md:w-1/2 bg-gray-100 border-b md:border-b-0 md:border-r border-gray-300 overflow-y-auto p-4 md:p-6">
                 <div className="bg-white p-4 rounded shadow-sm border">
