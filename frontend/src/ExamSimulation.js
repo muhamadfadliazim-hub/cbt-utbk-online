@@ -98,7 +98,8 @@ const ExamSimulation = () => {
             setTimeLeft(Math.max(0, endTime - now));
         }
       } catch (err) {
-        alert("Error: " + err.message);
+        // Jangan alert jika unmount, cukup log
+        console.error(err);
         if (isMounted) navigate('/dashboard');
       } finally {
         if (isMounted) setLoading(false);
@@ -122,7 +123,7 @@ const ExamSimulation = () => {
         });
       }, 1000);
     }
-    return () => clearInterval(timerRef.current);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [timeLeft, handleSubmit]); 
 
   const formatTime = (s) => {
@@ -144,14 +145,14 @@ const ExamSimulation = () => {
   }
 
   const q = questions[currentIndex];
-  if (!q) return null; // Safety check terakhir
+  if (!q) return <div className="p-4">Menyiapkan soal...</div>; // Safety check
 
   const isLast = currentIndex === questions.length - 1;
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 font-sans overflow-hidden" style={{ fontSize: `${fontSize}px` }}>
       
-      {/* 1. HEADER (Top Bar) - Sticky */}
+      {/* 1. HEADER */}
       <header className="bg-indigo-900 text-white shrink-0 z-50 shadow-md">
         <div className="flex justify-between items-center p-3">
             <div className="flex flex-col overflow-hidden">
@@ -170,7 +171,7 @@ const ExamSimulation = () => {
             </div>
         </div>
 
-        {/* 2. NAVIGASI NOMOR (Scrollable Strip) */}
+        {/* 2. NAVIGASI NOMOR */}
         <div className="bg-white border-b border-gray-200 p-2 flex gap-2 overflow-x-auto items-center shadow-inner scrollbar-hide" style={{scrollbarWidth: 'none'}}>
             {questions.map((ques, i) => {
                 const qId = ques.id;
@@ -253,7 +254,7 @@ const ExamSimulation = () => {
         </div>
       </main>
 
-      {/* 4. FOOTER (Bottom Navigation) - Fixed/Sticky */}
+      {/* 4. FOOTER */}
       <footer className="bg-white border-t border-gray-200 p-3 md:p-4 shrink-0 flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-50">
           
           <button 
