@@ -5,16 +5,28 @@
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#4f46e5" />
-    <meta
-      name="description"
-      content="Simulasi SNBT"
-    />
+    <meta name="description" content="Aplikasi Simulasi SNBT / UTBK" />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
     
     <title>Simulasi SNBT</title>
-    
-  </head>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              indigo: { 900: '#312e81', 800: '#3730a3', 700: '#4338ca', 600: '#4f46e5', 50: '#eef2ff' },
+              blue: { 50: '#eff6ff', 600: '#2563eb', 700: '#1d4ed8' },
+              green: { 600: '#16a34a', 700: '#15803d' },
+              red: { 600: '#dc2626', 700: '#b91c1c' }
+            }
+          }
+        }
+      }
+    </script>
+    </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>

@@ -5,39 +5,45 @@ import Dashboard from './Dashboard';
 import ExamSimulation from './ExamSimulation';
 import UploadExam from './UploadExam';
 import AdminDashboard from './AdminDashboard'; 
-// FIX: Removed ResultSummary from imports
 import { MajorSelection, Confirmation } from './FlowComponents';
 import StudentRecap from './StudentRecap'; 
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
 import './App.css';
 
-// --- KOMPONEN PEMBUNGKUS (WRAPPER) UNTUK LOGIKA LAMA ---
+// --- PENGAMAN DATA (SAFE PARSE) ---
+const getSafeUserData = () => {
+  try {
+    const saved = localStorage.getItem('utbk_user');
+    if (!saved) return null;
+    return JSON.parse(saved);
+  } catch (e) {
+    console.error("Data user rusak, mereset...", e);
+    localStorage.removeItem('utbk_user'); // Hapus data rusak agar tidak crash terus
+    return null;
+  }
+};
+
 const AppContent = () => {
   const navigate = useNavigate();
-  const [userData, setUserData] = useState(() => {
-      const saved = localStorage.getItem('utbk_user');
-      return saved ? JSON.parse(saved) : null;
-  });
+  const [userData, setUserData] = useState(getSafeUserData);
   const [loading, setLoading] = useState(true);
 
-  // Cek Status Login saat Aplikasi Dimulai
+  // Cek Status Login
   useEffect(() => {
     if (userData) {
       if (userData.role === 'admin') {
-         // Admin langsung ke dashboard admin
-         if (window.location.pathname === '/') navigate('/admin');
+         if (window.location.pathname === '/' || window.location.pathname === '/login') navigate('/admin');
       } else {
-         // Siswa dicek apakah sudah pilih jurusan
          if (!userData.display1) navigate('/select-major');
-         else if (window.location.pathname === '/') navigate('/dashboard');
+         else if (window.location.pathname === '/' || window.location.pathname === '/login') navigate('/dashboard');
       }
     } else {
-      navigate('/login');
+      // Jangan redirect jika user sedang di halaman publik tertentu, tapi default ke login
+      if (window.location.pathname !== '/login') navigate('/login');
     }
     setLoading(false);
   }, [userData, navigate]);
 
-  // --- HANDLERS (Fungsi Logika) ---
   const handleLogin = (loginData) => {
     const newData = { 
         ...userData, 
@@ -58,8 +64,8 @@ const AppContent = () => {
     if (loginData.role === 'admin') {
         navigate('/admin');
     } else {
-        if (loginData.pilihan1) navigate('/confirmation'); // Sudah punya jurusan -> Konfirmasi
-        else navigate('/select-major'); // Belum -> Pilih Jurusan
+        if (loginData.pilihan1) navigate('/confirmation');
+        else navigate('/select-major');
     }
   };
 
@@ -79,22 +85,18 @@ const AppContent = () => {
     navigate('/confirmation');
   };
 
-  if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin"/></div>;
+  if (loading) return <div className="flex h-screen items-center justify-center bg-gray-50"><Loader2 className="animate-spin text-indigo-600" size={40}/></div>;
 
   return (
     <Routes>
-        {/* HALAMAN PUBLIK */}
         <Route path="/login" element={!userData ? <Login onLogin={handleLogin} /> : <Navigate to="/" />} />
-
-        {/* HALAMAN ADMIN */}
+        
         <Route path="/admin" element={userData?.role === 'admin' ? <AdminDashboard onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="/upload" element={userData?.role === 'admin' ? <UploadExam onBack={() => navigate('/admin')} /> : <Navigate to="/login" />} />
 
-        {/* HALAMAN SISWA - ALUR PENDAFTARAN */}
         <Route path="/select-major" element={userData ? <MajorSelection onNext={handleMajorSelected} onLogout={handleLogout}/> : <Navigate to="/login" />} />
         <Route path="/confirmation" element={userData ? <Confirmation userData={userData} onStart={() => navigate('/dashboard')} onBack={() => navigate('/select-major')}/> : <Navigate to="/login" />} />
 
-        {/* HALAMAN SISWA - UTAMA */}
         <Route path="/dashboard" element={
             userData?.role === 'student' ? (
                 <Dashboard 
@@ -102,30 +104,53 @@ const AppContent = () => {
                     username={userData?.username}
                     onSelectExam={(examId) => navigate(`/exam/${examId}`)} 
                     onLogout={handleLogout} 
-                    onGoToUpload={() => navigate('/upload')} // Jika admin nyasar
+                    onGoToUpload={() => navigate('/upload')} 
                     onGoToRecap={() => navigate('/recap')} 
                 />
             ) : <Navigate to="/login" />
         } />
 
-        {/* HALAMAN UJIAN (BARU) */}
         <Route path="/exam/:examId" element={userData ? <ExamSimulation /> : <Navigate to="/login" />} />
-
-        {/* HALAMAN REKAP NILAI SISWA */}
         <Route path="/recap" element={userData ? <StudentRecap username={userData.username} onBack={() => navigate('/dashboard')} /> : <Navigate to="/login" />} />
 
-        {/* FALLBACK */}
         <Route path="*" element={<Navigate to={userData ? "/" : "/login"} />} />
     </Routes>
   );
 };
 
-// --- KOMPONEN UTAMA (YANG DIPANGGIL DI INDEX.JS) ---
+// --- ERROR BOUNDARY (PENTING UNTUK MENCEGAH LAYAR PUTIH TOTAL) ---
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, errorInfo) { console.error("Uncaught error:", error, errorInfo); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex h-screen flex-col items-center justify-center p-4 bg-gray-50 text-center">
+          <AlertTriangle size={64} className="text-red-500 mb-4" />
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">Terjadi Kesalahan Aplikasi</h1>
+          <p className="text-gray-600 mb-6">Jangan khawatir, data Anda aman. Silakan muat ulang.</p>
+          <div className="flex gap-4">
+            <button onClick={() => window.location.reload()} className="px-6 py-2 bg-blue-600 text-white rounded font-bold">Muat Ulang</button>
+            <button onClick={() => { localStorage.clear(); window.location.href = '/'; }} className="px-6 py-2 bg-gray-600 text-white rounded">Reset Sesi (Logout)</button>
+          </div>
+          <pre className="mt-8 p-4 bg-gray-200 rounded text-xs text-left text-red-800 overflow-auto max-w-lg">
+            {this.state.error && this.state.error.toString()}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function App() {
   return (
-    <BrowserRouter>
-        <AppContent />
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+          <AppContent />
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 
