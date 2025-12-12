@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Loader2, AlertTriangle } from 'lucide-react'; // Pastikan lucide-react terinstall
+import './App.css';
+
+// Import Halaman (Pastikan file-file ini ada dan tidak error)
 import Login from './Login';
 import Dashboard from './Dashboard';
 import ExamSimulation from './ExamSimulation';
@@ -7,9 +11,48 @@ import UploadExam from './UploadExam';
 import AdminDashboard from './AdminDashboard'; 
 import { MajorSelection, Confirmation } from './FlowComponents';
 import StudentRecap from './StudentRecap'; 
-import './App.css';
 
-// --- PENGAMAN DATA ---
+// --- 1. ERROR BOUNDARY (CCTV PENCATAT ERROR) ---
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null }; }
+  
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  
+  componentDidCatch(error, errorInfo) { 
+    console.error("CRITICAL APP ERROR:", error, errorInfo); 
+    this.setState({ errorInfo });
+  }
+  
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex h-screen flex-col items-center justify-center p-6 bg-red-50 text-center font-sans">
+          <div className="bg-white p-8 rounded-xl shadow-xl max-w-2xl border-l-8 border-red-600">
+            <AlertTriangle size={64} className="text-red-600 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Aplikasi Mengalami Masalah</h1>
+            <p className="text-gray-600 mb-6">Terjadi kesalahan teknis. Mohon fotokan pesan di bawah ini kepada admin/developer.</p>
+            
+            <div className="bg-gray-900 text-red-300 p-4 rounded text-left overflow-auto text-xs font-mono mb-6 max-h-64">
+              <strong>{this.state.error && this.state.error.toString()}</strong>
+              <br/><br/>
+              {this.state.errorInfo && this.state.errorInfo.componentStack}
+            </div>
+
+            <button 
+                onClick={() => { localStorage.clear(); window.location.href = '/'; }} 
+                className="px-6 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition shadow-lg"
+            >
+                Reset Aplikasi & Coba Lagi
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// --- 2. LOGIKA UTAMA APLIKASI ---
 const getSafeUserData = () => {
   try {
     const saved = localStorage.getItem('utbk_user');
@@ -25,10 +68,9 @@ const AppContent = () => {
   const [userData, setUserData] = useState(getSafeUserData);
   const [loading, setLoading] = useState(true);
 
-  // Cek Status Login
   useEffect(() => {
-    // Simulasi loading sebentar agar transisi halus
-    setTimeout(() => {
+    // Beri jeda sedikit agar loading terasa (dan memastikan render siap)
+    const timer = setTimeout(() => {
         if (userData) {
             if (userData.role === 'admin') {
                 if (window.location.pathname === '/' || window.location.pathname === '/login') navigate('/admin');
@@ -41,6 +83,7 @@ const AppContent = () => {
         }
         setLoading(false);
     }, 500);
+    return () => clearTimeout(timer);
   }, [userData, navigate]);
 
   const handleLogin = (loginData) => {
@@ -58,8 +101,7 @@ const AppContent = () => {
 
   const handleLogout = () => {
     if(window.confirm("Keluar aplikasi?")) {
-        localStorage.removeItem('utbk_user');
-        localStorage.removeItem('current_exam_id');
+        localStorage.clear(); // Bersihkan semua cache
         setUserData(null);
         navigate('/login');
     }
@@ -72,11 +114,10 @@ const AppContent = () => {
     navigate('/confirmation');
   };
 
-  // HINDARI ICON DI SINI (Gunakan Teks Saja agar Aman)
   if (loading) return (
-    <div className="flex h-screen items-center justify-center bg-gray-50 flex-col">
-        <div className="text-2xl font-bold text-indigo-600 mb-2">Simulasi SNBT</div>
-        <div className="text-gray-500">Memuat data...</div>
+    <div className="flex h-screen items-center justify-center bg-gray-50 flex-col gap-3">
+        <Loader2 className="animate-spin text-indigo-600" size={48} />
+        <div className="text-gray-500 font-medium animate-pulse">Sedang memuat aplikasi...</div>
     </div>
   );
 
@@ -97,9 +138,11 @@ const AppContent = () => {
 
 function App() {
   return (
-    <BrowserRouter>
-        <AppContent />
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+          <AppContent />
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 
