@@ -5,7 +5,8 @@ import Dashboard from './Dashboard';
 import ExamSimulation from './ExamSimulation';
 import UploadExam from './UploadExam';
 import AdminDashboard from './AdminDashboard'; 
-import { MajorSelection, Confirmation, ResultSummary } from './FlowComponents';
+// FIX: Removed ResultSummary from imports
+import { MajorSelection, Confirmation } from './FlowComponents';
 import StudentRecap from './StudentRecap'; 
 import { Loader2 } from 'lucide-react';
 import './App.css';
