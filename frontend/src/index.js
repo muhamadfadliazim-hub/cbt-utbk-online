@@ -1,9 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import './index.css'; 
+import { BrowserRouter } from 'react-router-dom'; // IMPORT INI PENTING
+import './index.css';
 import App from './App';
 
-console.log("Memulai Aplikasi..."); // Cek Console browser nanti
+console.log("Memulai Aplikasi..."); 
 
 const rootElement = document.getElementById('root');
 
@@ -11,7 +12,10 @@ if (rootElement) {
   const root = ReactDOM.createRoot(rootElement);
   root.render(
     <React.StrictMode>
-      <App />
+      {/* Router dipasang di sini, di paling luar */}
+      <BrowserRouter> 
+        <App />
+      </BrowserRouter>
     </React.StrictMode>
   );
   console.log("React berhasil dimount ke Root");
