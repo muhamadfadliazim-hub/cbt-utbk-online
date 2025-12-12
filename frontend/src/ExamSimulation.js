@@ -17,10 +17,10 @@ const ExamSimulation = ({ onFinish }) => {
   const [timeLeft, setTimeLeft] = useState(0);
   const [loading, setLoading] = useState(true);
   const [fontSize, setFontSize] = useState(16); 
+  const [allowSubmit, setAllowSubmit] = useState(true);
 
   const timerRef = useRef(null);
 
-  // FIX NO. 1: Render Text (Bold, Italic, Enter, Latex)
   const renderText = (text) => {
     if (!text) return null;
     const parts = text.split(/(\$.*?\$)/);
@@ -44,7 +44,6 @@ const ExamSimulation = ({ onFinish }) => {
     localStorage.setItem(`exam_${examId}`, JSON.stringify({ ...saved, answers: ans, doubtful: dbt }));
   }, [examId]);
 
-  // FIX NO. 2: Handle Answer sesuai Tipe Soal
   const handleAnswer = (val, subKey = null) => {
     const q = questions[currentIndex];
     if (!q) return;
@@ -52,7 +51,6 @@ const ExamSimulation = ({ onFinish }) => {
     let newAns = { ...answers };
     
     if (q.type === 'complex') {
-        // Logika Checkbox (Array of values)
         const currentArr = newAns[q.id] || [];
         if (currentArr.includes(val)) {
             newAns[q.id] = currentArr.filter(v => v !== val);
@@ -60,11 +58,9 @@ const ExamSimulation = ({ onFinish }) => {
             newAns[q.id] = [...currentArr, val];
         }
     } else if (q.type === 'table_boolean') {
-        // Logika Tabel { "1": "B", "2": "S" }
         const currentObj = newAns[q.id] || {};
         newAns[q.id] = { ...currentObj, [subKey]: val };
     } else {
-        // PG Biasa / Isian
         newAns[q.id] = val;
     }
 
@@ -111,6 +107,8 @@ const ExamSimulation = ({ onFinish }) => {
         if (isMounted) {
             setExam(data);
             setQuestions(data.questions || []);
+            setAllowSubmit(data.allow_submit); // Set status tombol selesai
+            
             const saved = JSON.parse(localStorage.getItem(`exam_${examId}`)) || {};
             if (saved.answers) setAnswers(saved.answers);
             if (saved.doubtful) setDoubtful(saved.doubtful);
@@ -204,18 +202,13 @@ const ExamSimulation = ({ onFinish }) => {
 
         <div className={`w-full ${(!q.reading_material && !q.image_url) ? 'md:max-w-3xl mx-auto' : 'md:w-1/2'} bg-white overflow-y-auto p-4 pb-24 md:pb-6`}>
             <div className="mb-6 text-gray-800 leading-relaxed font-medium text-justify whitespace-pre-wrap">{renderText(q.text)}</div>
-            
-            {/* RENDER OPSI BERDASARKAN TIPE */}
             <div className="space-y-3">
-                {/* 1. PILIHAN GANDA BIASA */}
                 {q.type === 'multiple_choice' && q.options.map((opt) => (
                     <div key={opt.id} onClick={() => handleAnswer(opt.id)} className={`flex items-start p-3 rounded-lg border-2 cursor-pointer transition-all ${answers[q.id] === opt.id ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-blue-300 bg-white'}`}>
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold mr-3 shrink-0 ${answers[q.id] === opt.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{opt.id}</div>
                         <div className="flex-1 mt-1 text-gray-700">{renderText(opt.label)}</div>
                     </div>
                 ))}
-
-                {/* 2. PILIHAN GANDA KOMPLEKS (CHECKBOX) */}
                 {q.type === 'complex' && q.options.map((opt) => {
                     const isSelected = (answers[q.id] || []).includes(opt.id);
                     return (
@@ -227,8 +220,6 @@ const ExamSimulation = ({ onFinish }) => {
                         </div>
                     )
                 })}
-
-                {/* 3. TABEL BENAR/SALAH */}
                 {q.type === 'table_boolean' && (
                     <div className="border rounded-lg overflow-hidden">
                         <table className="w-full text-sm text-left">
@@ -251,8 +242,6 @@ const ExamSimulation = ({ onFinish }) => {
                         </table>
                     </div>
                 )}
-
-                {/* 4. ISIAN SINGKAT */}
                 {q.type === 'short_answer' && (
                     <input className="w-full p-4 border-2 border-gray-300 rounded-lg focus:border-blue-500 outline-none text-lg" placeholder="Ketik jawaban Anda..." value={answers[q.id] || ''} onChange={(e) => handleAnswer(e.target.value)} />
                 )}
@@ -263,7 +252,7 @@ const ExamSimulation = ({ onFinish }) => {
       <footer className="bg-white border-t border-gray-200 p-3 shrink-0 flex justify-between items-center shadow-lg z-50">
           <button onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))} disabled={currentIndex === 0} className="flex items-center gap-1 px-4 py-2 rounded-lg font-bold bg-gray-100 text-gray-700 disabled:opacity-50"><ChevronLeft size={18}/> Prev</button>
           <button onClick={toggleDoubt} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold border-2 ${doubtful[q.id] ? 'bg-yellow-400 border-yellow-500 text-white' : 'bg-white border-yellow-400 text-yellow-600'}`}><AlertTriangle size={18}/></button>
-          {isLast ? (
+          {isLast && allowSubmit ? (
              <button onClick={handleSubmit} className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold bg-green-600 text-white hover:bg-green-700 shadow-lg">Selesai <CheckCircle size={18}/></button>
           ) : (
              <button onClick={() => setCurrentIndex(Math.min(questions.length - 1, currentIndex + 1))} className="flex items-center gap-1 px-4 py-2 rounded-lg font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-lg">Next <ChevronRight size={18}/></button>

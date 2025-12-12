@@ -51,6 +51,8 @@ class ConfigSchema(BaseModel):
     value: str
 class TogglePeriodSchema(BaseModel):
     is_active: bool
+class UpdatePeriodUsersSchema(BaseModel):
+    allowed_usernames: Optional[str] = None
 class ResetResultSchema(BaseModel):
     user_id: int
     exam_id: str
@@ -131,6 +133,15 @@ def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Periode Berhasil Dibuat!"}
 
+# --- FIX NO. 5: UPDATE PESERTA PERIODE ---
+@app.put("/admin/periods/{pid}/users")
+def update_period_users(pid: int, data: UpdatePeriodUsersSchema, db: Session = Depends(get_db)):
+    p = db.query(models.ExamPeriod).filter_by(id=pid).first()
+    if not p: raise HTTPException(404, "Period not found")
+    p.allowed_usernames = data.allowed_usernames
+    db.commit()
+    return {"message": "Akses peserta berhasil diperbarui"}
+
 @app.post("/admin/periods/{pid}/toggle")
 def toggle_period(pid: int, data: TogglePeriodSchema, db: Session = Depends(get_db)):
     p = db.query(models.ExamPeriod).filter_by(id=pid).first()
@@ -148,11 +159,17 @@ def delete_period(pid: int, db: Session = Depends(get_db)):
     db.query(models.ExamPeriod).filter_by(id=pid).delete(); db.commit()
     return {"message": "OK"}
 
+# --- FIX NO. 1: RESET HASIL (VALIDASI STRICT) ---
 @app.post("/admin/reset-result")
 def reset_result(data: ResetResultSchema, db: Session = Depends(get_db)):
-    db.query(models.ExamResult).filter_by(user_id=data.user_id, exam_id=data.exam_id).delete()
+    if not data.exam_id: 
+        raise HTTPException(400, "Exam ID required")
+    # Hanya hapus yg cocok User ID DAN Exam ID
+    deleted = db.query(models.ExamResult).filter_by(user_id=data.user_id, exam_id=data.exam_id).delete()
     db.commit()
-    return {"message": "Reset berhasil"}
+    if deleted == 0:
+        return {"message": "Tidak ada data yang dihapus (mungkin sudah kosong)"}
+    return {"message": f"Reset berhasil untuk {data.exam_id}"}
 
 @app.post("/upload-exam")
 async def upload_exam_manual(title: str = Form(...), duration: float = Form(...), description: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
@@ -230,7 +247,6 @@ def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
     for q in exam.questions:
         opts = [{"id": o.option_index, "label": o.label, "is_correct": o.is_correct} for o in q.options]
         opts.sort(key=lambda x: x["id"])
-        
         safe_difficulty = 1.0
         try:
             if q.difficulty and not math.isnan(q.difficulty): safe_difficulty = q.difficulty
@@ -262,38 +278,30 @@ def get_exam_analysis(exam_id: str, db: Session = Depends(get_db)):
     stats.sort(key=lambda x: x["id"])
     return {"title": exam.title, "stats": stats}
 
-# --- FIX: DOWNLOAD ANALISIS EXCEL (LEBIH AMAN) ---
 @app.get("/admin/exams/{exam_id}/analysis/download")
 def download_exam_analysis(exam_id: str, db: Session = Depends(get_db)):
     try:
         exam = db.query(models.Exam).filter_by(id=exam_id).options(joinedload(models.Exam.questions)).first()
         if not exam: raise HTTPException(404, "Exam not found")
-        
         data = []
         for i, q in enumerate(exam.questions, 1):
             attempts = q.total_attempts
             correct = q.total_correct
             percentage = round((correct / attempts) * 100, 2) if attempts > 0 else 0
-            
             safe_diff = 1.0
             try:
                 if q.difficulty and not math.isnan(q.difficulty): safe_diff = q.difficulty
             except: pass
-            
             data.append({
                 "No": i, "Soal": q.text[:100], "Tipe": q.type,
                 "Kesulitan (IRT)": round(safe_diff, 2),
                 "Total Dijawab": attempts, "Total Benar": correct,
                 "Persentase Benar (%)": percentage
             })
-        
         df = pd.DataFrame(data)
         output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False)
+        with pd.ExcelWriter(output, engine='openpyxl') as writer: df.to_excel(writer, index=False)
         output.seek(0)
-        
-        # Nama file sederhana agar tidak error
         return StreamingResponse(output, headers={'Content-Disposition': 'attachment; filename="analisis_soal.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal download excel: {str(e)}")
@@ -333,9 +341,9 @@ def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
         opts.sort(key=lambda x: x['id'])
         q_data.append({"id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url, "reading_material": q.reading_material, "options": opts, "label_true": q.label_true, "label_false": q.label_false, "reading_label": q.reading_label, "citation": q.citation})
     q_data.sort(key=lambda x: x['id'])
+    # FIX NO. 4: KIRIM STATUS ALLOW_SUBMIT KE FRONTEND
     return {"id": exam.id, "title": exam.title, "duration": exam.duration, "questions": q_data, "allow_submit": exam.period.allow_submit}
 
-# --- FIX: RUMUS SKOR 200-1000 ---
 @app.post("/exams/{exam_id}/submit")
 def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
@@ -351,10 +359,8 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
         q.total_attempts += 1
         if is_correct: q.total_correct += 1
         if q.total_attempts >= 5:
-            # IRT: Update Difficulty
             q.difficulty = 1.0 + ((1.0 - (q.total_correct/q.total_attempts)) * 3.0)
         
-        # Difficulty aman (anti NaN)
         safe_diff = 1.0
         try:
             if q.difficulty and not math.isnan(q.difficulty): safe_diff = q.difficulty
@@ -366,8 +372,6 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
             earned_w += safe_diff
     
     db.commit()
-    
-    # RUMUS BARU: 200 - 1000
     MIN, MAX = 200, 1000
     if total_w > 0:
         ratio = earned_w / total_w

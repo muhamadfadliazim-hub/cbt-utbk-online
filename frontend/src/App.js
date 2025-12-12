@@ -28,32 +28,24 @@ const AppContent = () => {
   const [loading, setLoading] = useState(true);
   const [examResult, setExamResult] = useState(null);
   
-  // State untuk konfigurasi global
+  // State config
   const [config, setConfig] = useState({ enableMajorSelection: true });
 
-  // Fetch Config saat awal load
+  // Fetch Config Awal
   useEffect(() => {
-    const fetchConfig = async () => {
-        try {
-            const res = await fetch(`${API_URL}/config/enable_major_selection`);
-            const data = await res.json();
-            setConfig(prev => ({ ...prev, enableMajorSelection: data.value === 'true' }));
-        } catch (e) {
-            console.error("Gagal load config", e);
-        }
-    };
-    fetchConfig();
+    fetch(`${API_URL}/config/enable_major_selection`)
+      .then(res => res.json())
+      .then(data => setConfig(prev => ({ ...prev, enableMajorSelection: data.value === 'true' })))
+      .catch(console.error);
   }, []);
 
   useEffect(() => {
-    // Beri sedikit delay agar config ter-fetch dulu
     const timer = setTimeout(() => {
         if (userData) {
             if (userData.role === 'admin') {
                 if (location.pathname === '/' || location.pathname === '/login') navigate('/admin');
             } else {
-                // LOGIKA SAKLAR PILIHAN JURUSAN (FIX NO. 6)
-                // Hanya paksa pilih jurusan JIKA config ON dan user belum pilih
+                // FIX NO. 2: Cek config sebelum paksa pilih jurusan
                 if (config.enableMajorSelection && !userData.display1 && location.pathname !== '/select-major') {
                     navigate('/select-major');
                 } else if (location.pathname === '/' || location.pathname === '/login') {
@@ -78,6 +70,7 @@ const AppContent = () => {
     localStorage.setItem('utbk_user', JSON.stringify(newData));
 
     if (newData.role === 'admin') navigate('/admin');
+    // Cek config lagi saat login
     else if (config.enableMajorSelection && !newData.display1) navigate('/select-major');
     else navigate('/dashboard');
   };

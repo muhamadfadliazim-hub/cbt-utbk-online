@@ -25,6 +25,12 @@ const AdminDashboard = ({ onLogout }) => {
   const [showPreview, setShowPreview] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false); 
   const [showUserModal, setShowUserModal] = useState(false);
+  
+  // New State for Editing Period Access
+  const [showEditAccessModal, setShowEditAccessModal] = useState(false);
+  const [editingPeriodId, setEditingPeriodId] = useState(null);
+  const [editAccessUsers, setEditAccessUsers] = useState([]);
+
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedStudentDetail, setSelectedStudentDetail] = useState(null);
   const [selectedWhitelist, setSelectedWhitelist] = useState([]);
@@ -80,6 +86,9 @@ const AdminDashboard = ({ onLogout }) => {
       fetch(`${API_URL}/admin/periods/${id}/toggle`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active:!s})})
       .then(() => fetchPeriods()); 
   };
+  constNQ_period_submit = (id, s) => { // Legacy name ref
+      togglePeriodSubmit(id, s);
+  };
   const togglePeriodSubmit = (id, s) => {
       fetch(`${API_URL}/admin/periods/${id}/toggle-submit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active:!s})})
       .then(() => fetchPeriods()); 
@@ -112,6 +121,26 @@ const AdminDashboard = ({ onLogout }) => {
   };
 
   const toggleUserWhitelist = (u) => { setSelectedWhitelist(selectedWhitelist.includes(u) ? selectedWhitelist.filter(x=>x!==u) : [...selectedWhitelist, u]); };
+  
+  // FIX NO. 5: EDIT AKSES
+  const openEditAccess = (period) => {
+      setEditingPeriodId(period.id);
+      setEditAccessUsers(period.allowed_usernames ? period.allowed_usernames.split(',').map(u=>u.trim()) : []);
+      setShowEditAccessModal(true);
+  };
+  const toggleEditAccessUser = (u) => { setEditAccessUsers(editAccessUsers.includes(u) ? editAccessUsers.filter(x=>x!==u) : [...editAccessUsers, u]); };
+  const saveEditAccess = () => {
+      const allowed = editAccessUsers.length > 0 ? editAccessUsers.join(',') : null;
+      fetch(`${API_URL}/admin/periods/${editingPeriodId}/users`, {
+          method: 'PUT', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ allowed_usernames: allowed })
+      }).then(r => r.json()).then(d => {
+          alert(d.message);
+          setShowEditAccessModal(false);
+          fetchPeriods();
+      });
+  };
+
   const handleCreatePeriod = (e) => { e.preventDefault(); let allowed = selectedWhitelist.length>0?selectedWhitelist.join(','):(allowedUsers.trim()||null); fetch(`${API_URL}/admin/periods`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newPeriodName,allowed_usernames:allowed})}).then(r=>r.json()).then(d=>{alert(d.message); setNewPeriodName(''); setAllowedUsers(''); setSelectedWhitelist([]); fetchPeriods();}); };
   const handleDeletePeriod = (id) => { if(window.confirm("Hapus?")) fetch(`${API_URL}/admin/periods/${id}`, {method:'DELETE'}).then(()=>fetchPeriods()); };
   const handleUploadQuestion = (eid, f) => { const d=new FormData(); d.append('file',f); const btn=document.getElementById(`btn-upload-${eid}`); if(btn)btn.innerText="Uploading..."; fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchPeriods();}).finally(()=>{if(btn)btn.innerText="Upload";}); };
@@ -119,10 +148,19 @@ const AdminDashboard = ({ onLogout }) => {
   const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}).catch(e => alert("Gagal: " + e.message)); };
   const handleShowAnalysis = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/analysis`).then(r => r.json()).then(d => { setAnalysisData(d); setActiveAnalysisId(eid); setShowAnalysis(true); }).catch(e => alert("Gagal memuat analisis")); };
   const handleDownloadAnalysisExcel = () => { if (activeAnalysisId) { window.open(`${API_URL}/admin/exams/${activeAnalysisId}/analysis/download`, '_blank'); } };
-
   const handleViewStudentDetail = (studentData) => { setSelectedStudentDetail(studentData); setShowDetailModal(true); };
   const handleResetResult = (uid, eid) => { if(window.confirm("Reset?")) fetch(`${API_URL}/admin/reset-result`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_id:uid, exam_id:eid})}).then(()=>fetchRecap()); };
-  const handleAddUser = (e) => { e.preventDefault(); fetch(`${API_URL}/admin/users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(newUser)}).then(()=>fetchUsers()); };
+  
+  // FIX NO. 3: ALERT ADD USER
+  const handleAddUser = (e) => { 
+      e.preventDefault(); 
+      fetch(`${API_URL}/admin/users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(newUser)})
+      .then(r => {
+          if(r.ok) { alert("User Berhasil Ditambahkan!"); fetchUsers(); setNewUser({...newUser, username:'', full_name:''}); }
+          else alert("Gagal tambah user.");
+      }); 
+  };
+  
   const handleBulkDelete = () => { if(selectedIds.length>0 && window.confirm("Hapus?")) fetch(`${API_URL}/admin/users/delete-bulk`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_ids:selectedIds})}).then(()=>fetchUsers()); };
   const handleBulkUpload = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/users/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchUsers();}) };
   const handleDownloadExcel = () => { const url = selectedRecapPeriod ? `${API_URL}/admin/recap/download?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap/download`; window.open(url, '_blank'); };
@@ -162,46 +200,66 @@ const AdminDashboard = ({ onLogout }) => {
       {isMobileMenuOpen && <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>}
 
       <main className="flex-1 p-4 md:p-8 overflow-y-auto relative h-screen">
+        {/* ... (Modals & Logic) ... */}
         {showPreview && previewData && (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
-                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-xl font-bold">Preview: {previewData.title}</h3></div><button onClick={()=>setShowPreview(false)}><X/></button></div>
-                    <div className="flex-1 overflow-y-auto p-6 space-y-8">{previewData.questions.map((q,i)=>(
-                        <div key={q.id} className="border p-4 rounded bg-gray-50">
-                            <div className="font-bold mb-2 text-indigo-700">No. {i+1} <span className="text-xs text-gray-500 font-normal ml-2">Bobot: {q.difficulty}</span></div>
-                            <div className="mb-4">{renderText(q.text)}</div>
-                            {q.type === 'table_boolean' && q.options && (
-                                <table className="w-full text-sm border">
-                                    <thead><tr className="bg-gray-100"><th className="p-2">Opsi</th><th className="p-2 text-center">Benar/Salah</th></tr></thead>
-                                    <tbody>{q.options.map(o=><tr key={o.id} className="border-t"><td className="p-2">{renderText(o.label)}</td><td className="p-2 text-center">{o.is_correct?'B':'S'}</td></tr>)}</tbody>
-                                </table>
-                            )}
-                            {q.type !== 'table_boolean' && q.options && (
-                                <div className="space-y-1 ml-4 border-l-2 pl-3 border-gray-200">{q.options.map(opt => (<div key={opt.id} className={`text-sm ${opt.is_correct ? 'text-green-700 font-bold bg-green-50 px-2 py-1 rounded inline-block' : 'text-gray-600'}`}><strong>{opt.id}.</strong> {renderText(opt.label)} {opt.is_correct && " ✅"}</div>))}</div>
-                            )}
-                        </div>))}</div>
-                </div>
-            </div>
+             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
+                 <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-xl font-bold">Preview: {previewData.title}</h3></div><button onClick={()=>setShowPreview(false)}><X/></button></div>
+                 <div className="flex-1 overflow-y-auto p-6 space-y-8">{previewData.questions.map((q,i)=>(
+                     <div key={q.id} className="border p-4 rounded bg-gray-50">
+                         <div className="font-bold mb-2 text-indigo-700">No. {i+1} <span className="text-xs text-gray-500 font-normal ml-2">Bobot: {q.difficulty}</span></div>
+                         <div className="mb-4">{renderText(q.text)}</div>
+                         {q.type === 'table_boolean' && q.options && (
+                             <table className="w-full text-sm border">
+                                 <thead><tr className="bg-gray-100"><th className="p-2">Opsi</th><th className="p-2 text-center">Benar/Salah</th></tr></thead>
+                                 <tbody>{q.options.map(o=><tr key={o.id} className="border-t"><td className="p-2">{renderText(o.label)}</td><td className="p-2 text-center">{o.is_correct?'B':'S'}</td></tr>)}</tbody>
+                             </table>
+                         )}
+                         {q.type !== 'table_boolean' && q.options && (
+                             <div className="space-y-1 ml-4 border-l-2 pl-3 border-gray-200">{q.options.map(opt => (<div key={opt.id} className={`text-sm ${opt.is_correct ? 'text-green-700 font-bold bg-green-50 px-2 py-1 rounded inline-block' : 'text-gray-600'}`}><strong>{opt.id}.</strong> {renderText(opt.label)} {opt.is_correct && " ✅"}</div>))}</div>
+                         )}
+                     </div>))}</div>
+             </div>
+         </div>
+        )}
+        
+        {/* ... Other Modals ... */}
+        {showAnalysis && analysisData && (
+             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+             <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col">
+                 <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
+                     <div><h3 className="text-xl font-bold">Analisis Butir Soal</h3></div>
+                     <div className="flex items-center gap-2">
+                         <button onClick={handleDownloadAnalysisExcel} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 hover:bg-green-700"><Download size={14}/> Excel</button>
+                         <button onClick={()=>setShowAnalysis(false)} className="bg-gray-200 p-1.5 rounded hover:bg-gray-300"><X size={18}/></button>
+                     </div>
+                 </div>
+                 <div className="flex-1 overflow-y-auto p-6">
+                     <div className="overflow-x-auto">
+                         <table className="w-full text-sm text-left border rounded-lg">
+                             <thead className="bg-indigo-50 text-indigo-900 font-bold"><tr><th className="p-3 border-b w-10">No</th><th className="p-3 border-b">Isi Soal</th><th className="p-3 border-b text-center">Diff (IRT)</th><th className="p-3 border-b text-center">Jawab</th><th className="p-3 border-b text-center">Benar</th><th className="p-3 border-b text-center">% Benar</th></tr></thead>
+                             <tbody>{analysisData.stats.map((item, idx) => (<tr key={item.id} className="hover:bg-gray-50 border-b"><td className="p-3 text-center">{idx + 1}</td><td className="p-3 text-gray-700 min-w-[200px]">{renderText(item.text)}</td><td className="p-3 text-center font-mono font-bold text-blue-600">{item.difficulty}</td><td className="p-3 text-center">{item.attempts}</td><td className="p-3 text-center text-green-600 font-bold">{item.correct}</td><td className="p-3 text-center"><div className="w-full bg-gray-200 rounded-full h-2.5 mb-1"><div className="bg-blue-600 h-2.5 rounded-full" style={{width: `${item.percentage}%`}}></div></div><span className="text-xs font-bold">{item.percentage}%</span></td></tr>))}</tbody>
+                         </table>
+                     </div>
+                 </div>
+             </div>
+         </div>
         )}
 
-        {showAnalysis && analysisData && (
+        {/* MODAL EDIT AKSES */}
+        {showEditAccessModal && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col">
-                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
-                        <div><h3 className="text-xl font-bold">Analisis Butir Soal</h3></div>
-                        <div className="flex items-center gap-2">
-                            <button onClick={handleDownloadAnalysisExcel} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 hover:bg-green-700"><Download size={14}/> Excel</button>
-                            <button onClick={()=>setShowAnalysis(false)} className="bg-gray-200 p-1.5 rounded hover:bg-gray-300"><X size={18}/></button>
-                        </div>
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">
+                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><h3 className="font-bold">Edit Akses Periode</h3><button onClick={()=>setShowEditAccessModal(false)}><X/></button></div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                        {users.filter(u=>u.role==='student').map(u=>(
+                            <label key={u.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 border rounded cursor-pointer">
+                                <input type="checkbox" checked={editAccessUsers.includes(u.username)} onChange={()=>toggleEditAccessUser(u.username)}/>
+                                <div><div className="font-bold text-sm">{u.full_name}</div><div className="text-xs text-gray-400">{u.username}</div></div>
+                            </label>
+                        ))}
                     </div>
-                    <div className="flex-1 overflow-y-auto p-6">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-left border rounded-lg">
-                                <thead className="bg-indigo-50 text-indigo-900 font-bold"><tr><th className="p-3 border-b w-10">No</th><th className="p-3 border-b">Isi Soal</th><th className="p-3 border-b text-center">Diff (IRT)</th><th className="p-3 border-b text-center">Jawab</th><th className="p-3 border-b text-center">Benar</th><th className="p-3 border-b text-center">% Benar</th></tr></thead>
-                                <tbody>{analysisData.stats.map((item, idx) => (<tr key={item.id} className="hover:bg-gray-50 border-b"><td className="p-3 text-center">{idx + 1}</td><td className="p-3 text-gray-700 min-w-[200px]">{renderText(item.text)}</td><td className="p-3 text-center font-mono font-bold text-blue-600">{item.difficulty}</td><td className="p-3 text-center">{item.attempts}</td><td className="p-3 text-center text-green-600 font-bold">{item.correct}</td><td className="p-3 text-center"><div className="w-full bg-gray-200 rounded-full h-2.5 mb-1"><div className="bg-blue-600 h-2.5 rounded-full" style={{width: `${item.percentage}%`}}></div></div><span className="text-xs font-bold">{item.percentage}%</span></td></tr>))}</tbody>
-                            </table>
-                        </div>
-                    </div>
+                    <div className="p-4 border-t text-right"><button onClick={saveEditAccess} className="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-bold">Simpan Perubahan</button></div>
                 </div>
             </div>
         )}
@@ -227,10 +285,11 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
+        {/* Modal Buat Periode (Select User Awal) */}
         {showUserModal && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">
-                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><h3 className="font-bold">Pilih Peserta</h3><button onClick={()=>setShowUserModal(false)}><X/></button></div>
+                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><h3 className="font-bold">Pilih Peserta Awal</h3><button onClick={()=>setShowUserModal(false)}><X/></button></div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-2">{users.filter(u=>u.role==='student').map(u=>(<label key={u.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 border rounded cursor-pointer"><input type="checkbox" checked={selectedWhitelist.includes(u.username)} onChange={()=>toggleUserWhitelist(u.username)}/><div><div className="font-bold text-sm">{u.full_name}</div><div className="text-xs text-gray-400">{u.username}</div></div></label>))}</div>
                     <div className="p-4 border-t text-right"><button onClick={()=>setShowUserModal(false)} className="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-bold">Selesai</button></div>
                 </div>
@@ -246,7 +305,7 @@ const AdminDashboard = ({ onLogout }) => {
 
         {tab === 'periods' && (
             <div><h2 className="text-2xl font-bold mb-6">Manajemen Soal</h2><div className="flex justify-end mb-4"><button onClick={handleDownloadTemplate} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded font-bold shadow"><Download size={18}/> Template</button></div><div className="bg-white p-6 rounded shadow mb-6"><div className="flex flex-col md:flex-row gap-4 items-end"><div className="flex-1 w-full"><label className="text-sm font-bold text-gray-600">Nama Periode</label><input className="w-full p-2 border rounded" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/></div><div className="w-full md:w-1/3"><label className="text-sm font-bold text-gray-600">Akses</label><div onClick={()=>setShowUserModal(true)} className="w-full p-2 border rounded bg-gray-50 cursor-pointer flex justify-between items-center"><span className="text-sm text-gray-600">{selectedWhitelist.length>0?`${selectedWhitelist.length} Peserta`:"Semua (Public)"}</span><Users size={16}/></div></div><button onClick={handleCreatePeriod} className="w-full md:w-auto bg-indigo-600 text-white px-6 py-2 rounded font-bold">Buat</button></div></div>
-            <div className="space-y-4">{periods.map(p=>(<div key={p.id} className="bg-white rounded shadow border overflow-hidden"><div className="p-4 bg-gray-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"><div className="flex gap-4 w-full md:w-auto"><button onClick={()=>setExpandedPeriod(expandedPeriod===p.id?null:p.id)}>{expandedPeriod===p.id?<ChevronUp/>:<ChevronDown/>}</button><div><h3 className="font-bold">{p.name}</h3><div className="flex gap-2 text-xs"><span className={`px-2 py-0.5 rounded font-bold ${p.is_active?'bg-green-100 text-green-700':'bg-gray-200'}`}>{p.is_active?'PUBLIK':'DRAFT'}</span>{p.allowed_usernames && <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-bold">TERBATAS</span>}</div></div></div><div className="flex flex-wrap gap-2 w-full md:w-auto"><button onClick={()=>togglePeriodSubmit(p.id, p.allow_submit)} className={`flex-1 md:flex-none justify-center px-3 py-1 rounded text-sm font-bold flex items-center gap-2 ${p.allow_submit?'bg-blue-100 text-blue-700':'bg-red-100 text-red-700'}`}>{p.allow_submit?<Unlock size={14}/>:<Lock size={14}/>} Submit</button><button onClick={()=>togglePeriodActive(p.id, p.is_active)} className="flex-1 md:flex-none justify-center px-3 py-1 bg-orange-100 text-orange-700 rounded text-sm font-bold flex items-center gap-2">{p.is_active?<EyeOff size={14}/>:<Eye size={14}/>} {p.is_active?'Sembunyi':'Tampil'}</button><button onClick={()=>handleDeletePeriod(p.id)} className="p-2 bg-red-50 text-red-600 rounded border border-red-200"><Trash2 size={16}/></button></div></div>{expandedPeriod===p.id && <div className="p-4 grid gap-3">{p.exams.map(e=>(<div key={e.id} className="border p-3 rounded flex flex-col md:flex-row justify-between items-start md:items-center gap-3"><div><div className="font-bold">{e.title}</div><div className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12}/> {e.duration}m | {e.questions.length} Soal</div></div>
+            <div className="space-y-4">{periods.map(p=>(<div key={p.id} className="bg-white rounded shadow border overflow-hidden"><div className="p-4 bg-gray-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"><div className="flex gap-4 w-full md:w-auto"><button onClick={()=>setExpandedPeriod(expandedPeriod===p.id?null:p.id)}>{expandedPeriod===p.id?<ChevronUp/>:<ChevronDown/>}</button><div><h3 className="font-bold">{p.name}</h3><div className="flex gap-2 text-xs"><span className={`px-2 py-0.5 rounded font-bold ${p.is_active?'bg-green-100 text-green-700':'bg-gray-200'}`}>{p.is_active?'PUBLIK':'DRAFT'}</span>{p.allowed_usernames && <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-bold">TERBATAS</span>}</div></div></div><div className="flex flex-wrap gap-2 w-full md:w-auto"><button onClick={()=>openEditAccess(p)} className="flex-1 md:flex-none justify-center px-3 py-1 bg-gray-100 text-gray-700 rounded text-sm font-bold flex items-center gap-2 border border-gray-300 hover:bg-gray-200"><Key size={14}/> Edit Akses</button><button onClick={()=>togglePeriodSubmit(p.id, p.allow_submit)} className={`flex-1 md:flex-none justify-center px-3 py-1 rounded text-sm font-bold flex items-center gap-2 ${p.allow_submit?'bg-blue-100 text-blue-700':'bg-red-100 text-red-700'}`}>{p.allow_submit?<Unlock size={14}/>:<Lock size={14}/>} Submit</button><button onClick={()=>togglePeriodActive(p.id, p.is_active)} className="flex-1 md:flex-none justify-center px-3 py-1 bg-orange-100 text-orange-700 rounded text-sm font-bold flex items-center gap-2">{p.is_active?<EyeOff size={14}/>:<Eye size={14}/>} {p.is_active?'Sembunyi':'Tampil'}</button><button onClick={()=>handleDeletePeriod(p.id)} className="p-2 bg-red-50 text-red-600 rounded border border-red-200"><Trash2 size={16}/></button></div></div>{expandedPeriod===p.id && <div className="p-4 grid gap-3">{p.exams.map(e=>(<div key={e.id} className="border p-3 rounded flex flex-col md:flex-row justify-between items-start md:items-center gap-3"><div><div className="font-bold">{e.title}</div><div className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12}/> {e.duration}m | {e.questions.length} Soal</div></div>
             <div className="flex gap-2 w-full md:w-auto">
                 <button onClick={()=>handlePreviewExam(e.id)} className="flex-1 md:flex-none justify-center px-3 py-1 bg-indigo-50 text-indigo-700 rounded text-xs font-bold flex items-center gap-1"><Search size={12}/> Lihat</button>
                 <button onClick={()=>handleShowAnalysis(e.id)} className="flex-1 md:flex-none justify-center px-3 py-1 bg-purple-100 text-purple-700 rounded text-xs font-bold flex items-center gap-1"><PieChart size={12}/> Analisis</button>
