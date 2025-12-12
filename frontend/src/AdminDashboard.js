@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock, Key, Building2, PieChart, FileCode } from 'lucide-react';
+import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock, Key, Building2, PieChart, FileCode, Info } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
-// IMPORT LIBRARY PDF
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -78,56 +77,35 @@ const AdminDashboard = ({ onLogout }) => {
       });
   };
 
-  // --- FITUR DOWNLOAD PDF ---
   const handleDownloadPDF = () => {
     const doc = new jsPDF('landscape'); 
-    doc.setFontSize(18);
-    doc.text("REKAPITULASI HASIL UJIAN (CBT)", 14, 15);
-    
-    doc.setFontSize(10);
-    doc.text(`Dicetak pada: ${new Date().toLocaleString('id-ID')}`, 14, 22);
-    if(selectedRecapPeriod) {
-        // FIX: Gunakan parseInt untuk perbandingan yang aman atau == jika tipe data berbeda, 
-        // tapi sebaiknya konversi ke string/int yang sama. Di sini saya pakai parseInt.
-        const pName = periods.find(p => p.id === parseInt(selectedRecapPeriod))?.name || "Periode Tertentu";
-        doc.text(`Periode: ${pName}`, 14, 27);
-    } else {
-        doc.text("Periode: Semua Data", 14, 27);
-    }
+    doc.setFontSize(18); doc.text("REKAPITULASI HASIL UJIAN (CBT)", 14, 15);
+    doc.setFontSize(10); doc.text(`Dicetak pada: ${new Date().toLocaleString('id-ID')}`, 14, 22);
+    doc.text(`Periode: ${selectedRecapPeriod ? (periods.find(p => p.id === parseInt(selectedRecapPeriod))?.name || "Periode Tertentu") : "Semua Data"}`, 14, 27);
 
-    const tableColumn = ["No", "Nama Siswa", "Username", "PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM", "Rata-rata", "Status"];
+    // FIX: Pastikan kolom data sesuai urutan header
+    const tableColumn = ["No", "Nama Siswa", "Username", "PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM", "Avg", "Status"];
     const tableRows = [];
-
     recap.forEach((r, index) => {
-        const rowData = [
-            index + 1,
-            r.full_name,
-            r.username,
-            r.PU, r.PBM, r.PPU, r.PK, r.LBI, r.LBE, r.PM,
-            r.average,
-            r.status 
-        ];
-        tableRows.push(rowData);
+        tableRows.push([
+            index + 1, 
+            r.full_name, 
+            r.username, 
+            r.PU || 0, r.PBM || 0, r.PPU || 0, r.PK || 0, r.LBI || 0, r.LBE || 0, r.PM || 0, // Pastikan urutan ini sama dengan backend
+            r.average, 
+            r.status
+        ]);
     });
 
     autoTable(doc, {
-        head: [tableColumn],
-        body: tableRows,
-        startY: 35,
-        theme: 'grid', 
-        styles: { fontSize: 9, cellPadding: 2 },
+        head: [tableColumn], body: tableRows, startY: 35, theme: 'grid', styles: { fontSize: 9, cellPadding: 2 },
         headStyles: { fillColor: [49, 46, 129], textColor: [255, 255, 255], fontStyle: 'bold' }, 
         alternateRowStyles: { fillColor: [245, 247, 255] }, 
         didParseCell: function(data) {
             if (data.section === 'body' && data.column.index === 11) { 
                 const text = data.cell.raw;
-                if (text && text.startsWith("LULUS")) {
-                    data.cell.styles.textColor = [0, 150, 0]; 
-                    data.cell.styles.fontStyle = 'bold';
-                } else {
-                    data.cell.styles.textColor = [200, 0, 0]; 
-                    data.cell.styles.fontStyle = 'bold';
-                }
+                if (text && text.startsWith("LULUS")) { data.cell.styles.textColor = [0, 150, 0]; data.cell.styles.fontStyle = 'bold'; } 
+                else { data.cell.styles.textColor = [200, 0, 0]; data.cell.styles.fontStyle = 'bold'; }
             }
         }
     });
@@ -141,15 +119,7 @@ const AdminDashboard = ({ onLogout }) => {
   const handleDeletePeriod = (id) => { if(window.confirm("Hapus?")) fetch(`${API_URL}/admin/periods/${id}`, {method:'DELETE'}).then(()=>fetchPeriods()); };
   const handleUploadQuestion = (eid, f) => { const d=new FormData(); d.append('file',f); const btn=document.getElementById(`btn-upload-${eid}`); if(btn)btn.innerText="Uploading..."; fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchPeriods();}).finally(()=>{if(btn)btn.innerText="Upload";}); };
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
-  
-  // FIX: PREVIEW SOAL DENGAN OPSI
-  const handlePreviewExam = (eid) => { 
-      fetch(`${API_URL}/admin/exams/${eid}/preview`)
-      .then(r=>r.json())
-      .then(d=>{ setPreviewData(d); setShowPreview(true); })
-      .catch(e => alert("Gagal: " + e.message)); 
-  };
-  
+  const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}).catch(e => alert("Gagal: " + e.message)); };
   const handleShowAnalysis = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/analysis`).then(r => r.json()).then(d => { setAnalysisData(d); setActiveAnalysisId(eid); setShowAnalysis(true); }).catch(e => alert("Gagal memuat analisis")); };
   const handleDownloadAnalysisExcel = () => { if (activeAnalysisId) { window.open(`${API_URL}/admin/exams/${activeAnalysisId}/analysis/download`, '_blank'); } };
   const handleViewStudentDetail = (studentData) => { setSelectedStudentDetail(studentData); setShowDetailModal(true); };
@@ -161,7 +131,15 @@ const AdminDashboard = ({ onLogout }) => {
   const handleSelectAll = (e) => setSelectedIds(e.target.checked ? users.map(u=>u.id) : []);
   const handleSelectOne = (id) => setSelectedIds(selectedIds.includes(id) ? selectedIds.filter(i=>i!==id) : [...selectedIds, id]);
   const handleChangePassword = (uid) => { const newPass = prompt("Password Baru:"); if(newPass) fetch(`${API_URL}/admin/users/${uid}/password`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({new_password:newPass})}).then(r=>r.json()).then(d=>alert(d.message)); };
-  const getStatusBadge = (s) => (s && s.startsWith('LULUS')) ? <span className="text-green-600 font-bold text-xs flex items-center gap-1"><CheckCircle size={12}/> {s}</span> : <span className="text-red-600 font-bold text-xs flex items-center gap-1"><XCircle size={12}/> TIDAK LULUS</span>;
+  
+  // FIX: Logika Status TIDAK LULUS
+  const getStatusBadge = (s) => {
+      if (s && s.startsWith('LULUS')) {
+          return <span className="text-green-600 font-bold text-xs flex items-center gap-1"><CheckCircle size={12}/> {s}</span>;
+      }
+      // Jika kosong atau "TIDAK LULUS", tampilkan TIDAK LULUS MERAH
+      return <span className="text-red-600 font-bold text-xs flex items-center gap-1"><XCircle size={12}/> TIDAK LULUS</span>;
+  };
 
   return (
     <div className="min-h-screen bg-gray-100 flex font-sans text-gray-800">
@@ -182,7 +160,6 @@ const AdminDashboard = ({ onLogout }) => {
       </aside>
       
       <main className="flex-1 p-8 overflow-y-auto relative">
-        {/* MODAL PREVIEW (DIPERBAIKI: Menampilkan Opsi A,B,C,D,E) */}
         {showPreview && previewData && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
@@ -197,7 +174,6 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
-        {/* MODAL ANALISIS */}
         {showAnalysis && analysisData && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col">
@@ -267,12 +243,7 @@ const AdminDashboard = ({ onLogout }) => {
 
         {tab === 'users' && (<div><div className="flex justify-between mb-6"><h2 className="text-2xl font-bold">User Management</h2>{selectedIds.length>0&&<button onClick={handleBulkDelete} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"><Trash2 size={16}/> Hapus {selectedIds.length}</button>}</div><div className="bg-white p-4 rounded shadow mb-6 flex gap-2"><input className="border p-2 rounded flex-1" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input className="border p-2 rounded flex-1" placeholder="Nama" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input className="border p-2 rounded flex-1" placeholder="Pass" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><select className="border p-2 rounded bg-gray-50" value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})}><option value="student">Siswa</option><option value="admin">Admin</option></select><button onClick={handleAddUser} className="bg-green-600 text-white px-4 rounded font-bold"><Plus size={16}/></button></div><div className="mb-4"><label className="text-blue-600 cursor-pointer text-sm hover:underline"><Upload size={14} className="inline mr-1"/>Upload Excel User<input type="file" hidden accept=".xlsx" onChange={handleBulkUpload}/></label></div><div className="bg-white shadow rounded overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={users.length>0&&selectedIds.length===users.length}/></th><th className="p-3 text-left">Nama</th><th className="p-3 text-left">Username</th><th className="p-3 text-left">Role</th><th className="p-3 text-center">Aksi</th></tr></thead><tbody>{users.map(u=>(<tr key={u.id} className="border-b"><td className="p-3 text-center"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={()=>handleSelectOne(u.id)}/></td><td className="p-3">{u.full_name}</td><td className="p-3">{u.username}</td><td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>{u.role.toUpperCase()}</span></td><td className="p-3 text-center"><button onClick={()=>handleChangePassword(u.id)} className="text-gray-500 hover:text-indigo-600" title="Ganti Password"><Key size={16}/></button></td></tr>))}</tbody></table></div></div>)}
         
-        {tab === 'recap' && (<div className="overflow-x-auto pb-20"><div className="flex justify-between items-end mb-6"><div><h2 className="text-2xl font-bold">Rekap Nilai</h2><div className="flex items-center gap-2 mt-2"><Filter size={16} className="text-gray-500"/><select className="p-2 border rounded" value={selectedRecapPeriod} onChange={e=>setSelectedRecapPeriod(e.target.value)}><option value="">-- Semua Periode --</option>{periods.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div></div><div className="flex gap-2">
-            
-            {/* TOMBOL PDF MENARIK */}
-            <button onClick={handleDownloadPDF} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded shadow text-sm font-bold hover:bg-red-700"><FileCode size={16}/> PDF</button>
-            <button onClick={handleDownloadExcel} className="flex items-center gap-2 px-4 py-2 bg-white border rounded shadow text-sm font-bold"><Download size={16}/> Excel</button>
-            <button onClick={()=>toggleConfig('release_announcement', isReleased)} className={`flex items-center gap-2 px-4 py-2 text-white rounded shadow text-sm font-bold ${isReleased?'bg-green-600':'bg-orange-500'}`}>{isReleased?<Unlock size={16}/>:<Lock size={16}/>} {isReleased?'Tutup Pengumuman':'Rilis Pengumuman'}</button></div></div><div className="bg-white shadow rounded overflow-hidden border"><table className="w-full text-sm text-left"><thead className="bg-indigo-900 text-white"><tr><th className="p-3" rowSpan="2">Nama</th><th className="p-2 text-center bg-indigo-800" colSpan="7">Skor IRT</th><th className="p-3 text-center bg-blue-900" rowSpan="2">Avg</th><th className="p-3 bg-indigo-800" rowSpan="2">Ket</th><th className="p-3 bg-red-900" rowSpan="2">Reset</th></tr><tr>{["PU","PBM","PPU","PK","LBI","LBE","PM"].map(s=><th key={s} className="p-1 text-center text-xs bg-indigo-700">{s}</th>)}</tr></thead><tbody className="divide-y">{recap.map((r,i)=>(<tr key={i} className="hover:bg-gray-50"><td className="p-3 font-bold cursor-pointer hover:underline text-indigo-700" onClick={()=>handleViewStudentDetail(r)} title="Lihat detail salah">{r.full_name}<div className="text-xs text-gray-400 no-underline font-normal">{r.username}</div></td>{["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=><td key={k} className="p-2 text-center text-gray-600">{r[k]}</td>)}<td className="p-3 text-center font-bold text-blue-700 bg-blue-50">{r.average}</td><td className="p-3">{getStatusBadge(r.status)}</td><td className="p-3 text-center">{r.completed_exams.map(e=><button key={e.exam_id} onClick={()=>handleResetResult(r.id,e.exam_id)} className="px-2 py-1 bg-red-100 text-red-600 text-[10px] rounded border border-red-200 m-0.5 hover:bg-red-600 hover:text-white">{e.code}×</button>)}</td></tr>))}</tbody></table></div></div>)}
+        {tab === 'recap' && (<div className="overflow-x-auto pb-20"><div className="flex justify-between items-end mb-6"><div><h2 className="text-2xl font-bold">Rekap Nilai</h2><div className="flex items-center gap-2 mt-2"><Filter size={16} className="text-gray-500"/><select className="p-2 border rounded" value={selectedRecapPeriod} onChange={e=>setSelectedRecapPeriod(e.target.value)}><option value="">-- Semua Periode --</option>{periods.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div></div><div className="flex gap-2"><button onClick={handleDownloadPDF} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded shadow text-sm font-bold hover:bg-red-700"><FileCode size={16}/> PDF</button><button onClick={handleDownloadExcel} className="flex items-center gap-2 px-4 py-2 bg-white border rounded shadow text-sm font-bold"><Download size={16}/> Excel</button><button onClick={()=>toggleConfig('release_announcement', isReleased)} className={`flex items-center gap-2 px-4 py-2 text-white rounded shadow text-sm font-bold ${isReleased?'bg-green-600':'bg-orange-500'}`}>{isReleased?<Unlock size={16}/>:<Lock size={16}/>} {isReleased?'Tutup Pengumuman':'Rilis Pengumuman'}</button></div></div><div className="bg-white shadow rounded overflow-hidden border"><table className="w-full text-sm text-left"><thead className="bg-indigo-900 text-white"><tr><th className="p-3" rowSpan="2">Nama</th><th className="p-2 text-center bg-indigo-800" colSpan="7">Skor IRT</th><th className="p-3 text-center bg-blue-900" rowSpan="2">Avg</th><th className="p-3 bg-indigo-800" rowSpan="2">Ket</th><th className="p-3 bg-red-900" rowSpan="2">Reset</th></tr><tr>{["PU","PBM","PPU","PK","LBI","LBE","PM"].map(s=><th key={s} className="p-1 text-center text-xs bg-indigo-700">{s}</th>)}</tr></thead><tbody className="divide-y">{recap.map((r,i)=>(<tr key={i} className="hover:bg-gray-50"><td className="p-3"><div className="flex items-center gap-2"><button onClick={()=>handleViewStudentDetail(r)} className="text-blue-600 hover:text-blue-800 bg-blue-50 p-1 rounded transition" title="Lihat Rincian Jawaban Salah"><Info size={16}/></button><div><div className="font-bold text-gray-800">{r.full_name}</div><div className="text-xs text-gray-400 font-normal">{r.username}</div></div></div></td>{["PU","PBM","PPU","PK","LBI","LBE","PM"].map(k=><td key={k} className="p-2 text-center text-gray-600">{r[k]||0}</td>)}<td className="p-3 text-center font-bold text-blue-700 bg-blue-50">{r.average}</td><td className="p-3">{getStatusBadge(r.status)}</td><td className="p-3 text-center">{r.completed_exams.map(e=><button key={e.exam_id} onClick={()=>handleResetResult(r.id,e.exam_id)} className="px-2 py-1 bg-red-100 text-red-600 text-[10px] rounded border border-red-200 m-0.5 hover:bg-red-600 hover:text-white">{e.code}×</button>)}</td></tr>))}</tbody></table></div></div>)}
       </main>
     </div>
   );
