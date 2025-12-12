@@ -33,7 +33,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedStudentDetail, setSelectedStudentDetail] = useState(null);
   const [selectedWhitelist, setSelectedWhitelist] = useState([]);
   
-  // STATE BARU UNTUK MOBILE MENU
+  // STATE MENU MOBILE
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', role: 'student' });
@@ -148,7 +148,7 @@ const AdminDashboard = ({ onLogout }) => {
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row font-sans text-gray-800">
       
-      {/* MOBILE HEADER (BARU) */}
+      {/* MOBILE HEADER (HAMBURGER MENU) */}
       <div className="md:hidden bg-indigo-900 text-white p-4 flex justify-between items-center shadow-lg sticky top-0 z-50">
           <div className="font-bold text-lg flex items-center gap-2"><Building2 size={20}/> Admin Panel</div>
           <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 bg-indigo-800 rounded">
@@ -272,14 +272,41 @@ const AdminDashboard = ({ onLogout }) => {
             <button onClick={handleDownloadExcel} className="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 bg-white border rounded shadow text-sm font-bold"><Download size={16}/> Excel</button>
             <button onClick={()=>toggleConfig('release_announcement', isReleased)} className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 text-white rounded shadow text-sm font-bold ${isReleased?'bg-green-600':'bg-orange-500'}`}>{isReleased?<Unlock size={16}/>:<Lock size={16}/>} {isReleased?'Tutup':'Rilis'}</button></div></div>
             
-            {/* TABEL RESPONSIVE: Scroll Horizontal */}
-            <div className="bg-white shadow rounded overflow-hidden border overflow-x-auto">
-            <table className="w-full text-sm text-left"><thead className="bg-indigo-900 text-white"><tr><th className="p-3" rowSpan="2">Nama</th><th className="p-2 text-center bg-indigo-800" colSpan="7">Skor IRT</th><th className="p-3 text-center bg-blue-900" rowSpan="2">Avg</th><th className="p-3 bg-indigo-800" rowSpan="2">Ket</th><th className="p-3 bg-red-900" rowSpan="2">Reset</th></tr>
-            <tr>{EXAM_ORDER.map(s=><th key={s} className="p-1 text-center text-xs bg-indigo-700">{s}</th>)}</tr>
-            </thead><tbody className="divide-y">{recap.map((r,i)=>(<tr key={i} className="hover:bg-gray-50">
-            <td className="p-3 min-w-[200px]"><div className="flex items-center gap-2"><button onClick={()=>handleViewStudentDetail(r)} className="text-blue-600 hover:text-blue-800 bg-blue-50 p-1 rounded transition" title="Lihat Rincian Jawaban Salah"><Info size={16}/></button><div><div className="font-bold text-gray-800">{r.full_name}</div><div className="text-xs text-gray-400 font-normal">{r.username}</div></div></div></td>
-            {EXAM_ORDER.map(k=><td key={k} className="p-2 text-center text-gray-600">{r[k]||0}</td>)}
-            <td className="p-3 text-center font-bold text-blue-700 bg-blue-50">{r.average}</td><td className="p-3 min-w-[120px]">{getStatusBadge(r.status)}</td><td className="p-3 text-center min-w-[150px]">{r.completed_exams.map(e=><button key={e.exam_id} onClick={()=>handleResetResult(r.id,e.exam_id)} className="px-2 py-1 bg-red-100 text-red-600 text-[10px] rounded border border-red-200 m-0.5 hover:bg-red-600 hover:text-white">{e.code}×</button>)}</td></tr>))}</tbody></table></div></div>)}
+            {/* TABEL RESPONSIVE (STICKY NAME) */}
+            <div className="bg-white shadow rounded overflow-hidden border overflow-x-auto relative">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-indigo-900 text-white">
+                        <tr>
+                            <th className="p-3 sticky left-0 z-10 bg-indigo-900 shadow-lg min-w-[200px]">Nama</th>
+                            {EXAM_ORDER.map(s=><th key={s} className="p-3 text-center text-xs bg-indigo-900 min-w-[60px]">{s}</th>)}
+                            <th className="p-3 text-center bg-blue-900 min-w-[80px]">Avg</th>
+                            <th className="p-3 bg-indigo-800 min-w-[120px]">Ket</th>
+                            <th className="p-3 bg-red-900 text-center min-w-[150px]">Reset</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                        {recap.map((r,i)=>(
+                            <tr key={i} className="hover:bg-gray-50">
+                                {/* KOLOM NAMA STICKY */}
+                                <td className="p-3 sticky left-0 z-10 bg-white shadow-lg border-r">
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={()=>handleViewStudentDetail(r)} className="text-blue-600 hover:text-blue-800 bg-blue-50 p-1 rounded shrink-0" title="Lihat"><Info size={16}/></button>
+                                        <div className="truncate max-w-[150px]">
+                                            <div className="font-bold text-gray-800 truncate">{r.full_name}</div>
+                                            <div className="text-xs text-gray-400 font-normal truncate">{r.username}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                {EXAM_ORDER.map(k=><td key={k} className="p-3 text-center text-gray-600">{r[k]||0}</td>)}
+                                <td className="p-3 text-center font-bold text-blue-700 bg-blue-50">{r.average}</td>
+                                <td className="p-3 text-xs">{getStatusBadge(r.status)}</td>
+                                <td className="p-3 text-center">{r.completed_exams.map(e=><button key={e.exam_id} onClick={()=>handleResetResult(r.id,e.exam_id)} className="px-2 py-1 bg-red-100 text-red-600 text-[10px] rounded border border-red-200 m-0.5 hover:bg-red-600 hover:text-white">{e.code}×</button>)}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>)}
       </main>
     </div>
   );
