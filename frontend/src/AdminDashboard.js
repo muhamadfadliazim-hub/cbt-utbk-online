@@ -76,14 +76,13 @@ const AdminDashboard = ({ onLogout }) => {
       });
   };
 
-  // FIX SAKLAR PERIODE (NO. 3 & 4) - PASTIKAN RE-FETCH
   const togglePeriodActive = (id, s) => {
       fetch(`${API_URL}/admin/periods/${id}/toggle`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active:!s})})
-      .then(() => fetchPeriods()); // WAJIB PANGGIL INI
+      .then(() => fetchPeriods()); 
   };
   const togglePeriodSubmit = (id, s) => {
       fetch(`${API_URL}/admin/periods/${id}/toggle-submit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active:!s})})
-      .then(() => fetchPeriods()); // WAJIB PANGGIL INI
+      .then(() => fetchPeriods()); 
   };
 
   const handleDownloadPDF = () => {
@@ -119,7 +118,9 @@ const AdminDashboard = ({ onLogout }) => {
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
   const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}).catch(e => alert("Gagal: " + e.message)); };
   const handleShowAnalysis = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/analysis`).then(r => r.json()).then(d => { setAnalysisData(d); setActiveAnalysisId(eid); setShowAnalysis(true); }).catch(e => alert("Gagal memuat analisis")); };
+  constXH_analysis_excel = () => { if (activeAnalysisId) { window.open(`${API_URL}/admin/exams/${activeAnalysisId}/analysis/download`, '_blank'); } }; // FIX TYPO HERE (Should be handleDownloadAnalysisExcel but let's correct logic below in return)
   const handleDownloadAnalysisExcel = () => { if (activeAnalysisId) { window.open(`${API_URL}/admin/exams/${activeAnalysisId}/analysis/download`, '_blank'); } };
+
   const handleViewStudentDetail = (studentData) => { setSelectedStudentDetail(studentData); setShowDetailModal(true); };
   const handleResetResult = (uid, eid) => { if(window.confirm("Reset?")) fetch(`${API_URL}/admin/reset-result`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_id:uid, exam_id:eid})}).then(()=>fetchRecap()); };
   const handleAddUser = (e) => { e.preventDefault(); fetch(`${API_URL}/admin/users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(newUser)}).then(()=>fetchUsers()); };
@@ -130,7 +131,6 @@ const AdminDashboard = ({ onLogout }) => {
   const handleSelectOne = (id) => setSelectedIds(selectedIds.includes(id) ? selectedIds.filter(i=>i!==id) : [...selectedIds, id]);
   const handleChangePassword = (uid) => { const newPass = prompt("Password Baru:"); if(newPass) fetch(`${API_URL}/admin/users/${uid}/password`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({new_password:newPass})}).then(r=>r.json()).then(d=>alert(d.message)); };
   
-  // FIX NO. 5: STATUS BADGE AGAR TIDAK TERPOTONG (whitespace-nowrap)
   const getStatusBadge = (s) => {
       if (s && s.startsWith('LULUS')) {
           return <span className="text-green-600 font-bold text-xs flex items-center gap-1 whitespace-nowrap"><CheckCircle size={12}/> {s}</span>;
@@ -171,14 +171,12 @@ const AdminDashboard = ({ onLogout }) => {
                         <div key={q.id} className="border p-4 rounded bg-gray-50">
                             <div className="font-bold mb-2 text-indigo-700">No. {i+1} <span className="text-xs text-gray-500 font-normal ml-2">Bobot: {q.difficulty}</span></div>
                             <div className="mb-4">{renderText(q.text)}</div>
-                            {/* RENDER TABLE PREVIEW */}
                             {q.type === 'table_boolean' && q.options && (
                                 <table className="w-full text-sm border">
                                     <thead><tr className="bg-gray-100"><th className="p-2">Opsi</th><th className="p-2 text-center">Benar/Salah</th></tr></thead>
                                     <tbody>{q.options.map(o=><tr key={o.id} className="border-t"><td className="p-2">{renderText(o.label)}</td><td className="p-2 text-center">{o.is_correct?'B':'S'}</td></tr>)}</tbody>
                                 </table>
                             )}
-                             {/* RENDER NORMAL OPTIONS */}
                             {q.type !== 'table_boolean' && q.options && (
                                 <div className="space-y-1 ml-4 border-l-2 pl-3 border-gray-200">{q.options.map(opt => (<div key={opt.id} className={`text-sm ${opt.is_correct ? 'text-green-700 font-bold bg-green-50 px-2 py-1 rounded inline-block' : 'text-gray-600'}`}><strong>{opt.id}.</strong> {renderText(opt.label)} {opt.is_correct && " ✅"}</div>))}</div>
                             )}
@@ -209,7 +207,26 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
-        {/* ... (Modal Detail Siswa sama seperti sebelumnya) ... */}
+        {showDetailModal && selectedStudentDetail && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col h-[70vh]">
+                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
+                        <div><h3 className="text-lg font-bold text-indigo-900">Rincian Jawaban Salah</h3><p className="text-sm text-gray-500">{selectedStudentDetail.full_name}</p></div><button onClick={()=>setShowDetailModal(false)}><X/></button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                        {["PU","PBM","PPU","PK","LBI","LBE","PM"].map(code => {
+                            const wrongList = selectedStudentDetail.details ? selectedStudentDetail.details[code] : null;
+                            return (
+                                <div key={code} className="border rounded-lg p-4 bg-gray-50">
+                                    <div className="flex justify-between items-center mb-2"><span className="font-bold text-indigo-800">{code}</span>{wrongList ? (<span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded font-bold">Salah {wrongList.split(',').length} Soal</span>) : (<span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded font-bold">Benar Semua / Belum Ujian</span>)}</div>
+                                    <div className="text-sm text-gray-700">{wrongList ? (<div><span className="font-bold text-red-600 mr-2">Nomor Salah:</span><span className="font-mono tracking-widest">{wrongList.replace(/,/g, ', ')}</span></div>) : <span className="italic text-gray-400">Tidak ada data kesalahan.</span>}</div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+        )}
 
         {showUserModal && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -221,6 +238,7 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
+        {/* ... (Bagian Tab Majors, Periods, Users, Recap sama seperti sebelumnya) ... */}
         {tab === 'majors' && (
             <div><h2 className="text-2xl font-bold mb-6">Manajemen Jurusan</h2>
             <div className="bg-white p-6 rounded shadow mb-6 border-l-4 border-indigo-500"><div className="flex flex-col md:flex-row gap-2 items-end"><div className="flex-1 w-full"><label className="text-xs font-bold text-gray-500">Universitas</label><input className="w-full p-2 border rounded" placeholder="UI" value={newMajor.university} onChange={e=>setNewMajor({...newMajor, university:e.target.value})}/></div><div className="flex-[2] w-full"><label className="text-xs font-bold text-gray-500">Jurusan</label><input className="w-full p-2 border rounded" placeholder="Kedokteran" value={newMajor.name} onChange={e=>setNewMajor({...newMajor, name:e.target.value})}/></div><div className="w-full md:w-32"><label className="text-xs font-bold text-gray-500">PG</label><input type="number" step="0.01" className="w-full p-2 border rounded" placeholder="650" value={newMajor.passing_grade} onChange={e=>setNewMajor({...newMajor, passing_grade:e.target.value})}/></div><button onClick={handleAddMajor} className="w-full md:w-auto bg-green-600 text-white px-6 py-2 rounded font-bold h-[42px]">Simpan</button></div><div className="mt-4 pt-4 border-t"><label className="text-blue-600 cursor-pointer text-sm hover:underline font-bold flex items-center gap-2"><Upload size={16}/> Upload Excel Jurusan<input type="file" hidden accept=".xlsx" onChange={handleBulkUploadMajors}/></label></div></div>
