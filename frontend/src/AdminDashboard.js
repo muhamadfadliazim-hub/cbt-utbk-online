@@ -118,7 +118,6 @@ const AdminDashboard = ({ onLogout }) => {
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
   const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}).catch(e => alert("Gagal: " + e.message)); };
   const handleShowAnalysis = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/analysis`).then(r => r.json()).then(d => { setAnalysisData(d); setActiveAnalysisId(eid); setShowAnalysis(true); }).catch(e => alert("Gagal memuat analisis")); };
-  constXH_analysis_excel = () => { if (activeAnalysisId) { window.open(`${API_URL}/admin/exams/${activeAnalysisId}/analysis/download`, '_blank'); } }; // FIX TYPO HERE (Should be handleDownloadAnalysisExcel but let's correct logic below in return)
   const handleDownloadAnalysisExcel = () => { if (activeAnalysisId) { window.open(`${API_URL}/admin/exams/${activeAnalysisId}/analysis/download`, '_blank'); } };
 
   const handleViewStudentDetail = (studentData) => { setSelectedStudentDetail(studentData); setShowDetailModal(true); };
@@ -238,7 +237,6 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
-        {/* ... (Bagian Tab Majors, Periods, Users, Recap sama seperti sebelumnya) ... */}
         {tab === 'majors' && (
             <div><h2 className="text-2xl font-bold mb-6">Manajemen Jurusan</h2>
             <div className="bg-white p-6 rounded shadow mb-6 border-l-4 border-indigo-500"><div className="flex flex-col md:flex-row gap-2 items-end"><div className="flex-1 w-full"><label className="text-xs font-bold text-gray-500">Universitas</label><input className="w-full p-2 border rounded" placeholder="UI" value={newMajor.university} onChange={e=>setNewMajor({...newMajor, university:e.target.value})}/></div><div className="flex-[2] w-full"><label className="text-xs font-bold text-gray-500">Jurusan</label><input className="w-full p-2 border rounded" placeholder="Kedokteran" value={newMajor.name} onChange={e=>setNewMajor({...newMajor, name:e.target.value})}/></div><div className="w-full md:w-32"><label className="text-xs font-bold text-gray-500">PG</label><input type="number" step="0.01" className="w-full p-2 border rounded" placeholder="650" value={newMajor.passing_grade} onChange={e=>setNewMajor({...newMajor, passing_grade:e.target.value})}/></div><button onClick={handleAddMajor} className="w-full md:w-auto bg-green-600 text-white px-6 py-2 rounded font-bold h-[42px]">Simpan</button></div><div className="mt-4 pt-4 border-t"><label className="text-blue-600 cursor-pointer text-sm hover:underline font-bold flex items-center gap-2"><Upload size={16}/> Upload Excel Jurusan<input type="file" hidden accept=".xlsx" onChange={handleBulkUploadMajors}/></label></div></div>
