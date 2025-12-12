@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Clock, ChevronLeft, ChevronRight, Grid, Type, AlertTriangle } from 'lucide-react';
+// FIX: Added 'CheckCircle' to imports
+import { Clock, ChevronLeft, ChevronRight, Grid, Type, AlertTriangle, CheckCircle } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
