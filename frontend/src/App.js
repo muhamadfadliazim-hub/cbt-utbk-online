@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import Login from './Login';
 import Dashboard from './Dashboard';
 import ExamSimulation from './ExamSimulation';
@@ -7,71 +7,82 @@ import UploadExam from './UploadExam';
 import AdminDashboard from './AdminDashboard'; 
 import { MajorSelection, Confirmation } from './FlowComponents';
 import StudentRecap from './StudentRecap'; 
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
 import './App.css';
 
-// --- PENGAMAN DATA (SAFE PARSE) ---
+// --- PENGAMAN DATA ---
 const getSafeUserData = () => {
   try {
     const saved = localStorage.getItem('utbk_user');
-    if (!saved) return null;
-    return JSON.parse(saved);
+    return saved ? JSON.parse(saved) : null;
   } catch (e) {
-    console.error("Data user rusak, mereset...", e);
-    localStorage.removeItem('utbk_user'); 
+    localStorage.removeItem('utbk_user');
     return null;
   }
 };
 
+// Error Boundary
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, errorInfo) { console.error("APP ERROR:", error, errorInfo); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex h-screen items-center justify-center bg-red-50 p-4">
+            <div className="text-center">
+                <AlertTriangle className="mx-auto text-red-600 mb-4" size={48}/>
+                <h2 className="text-xl font-bold text-gray-800">Terjadi Kesalahan</h2>
+                <p className="text-gray-600 mb-4">Aplikasi mengalami kendala teknis.</p>
+                <button onClick={() => { localStorage.clear(); window.location.href='/'; }} className="px-4 py-2 bg-red-600 text-white rounded shadow">Reset Aplikasi</button>
+            </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// --- APP CONTENT ---
 const AppContent = () => {
-  const navigate = useNavigate();
+  const navigate = useNavigate(); // AMAN: Karena sudah dibungkus Router di index.js
   const [userData, setUserData] = useState(getSafeUserData);
   const [loading, setLoading] = useState(true);
 
   // Cek Status Login
   useEffect(() => {
-    if (userData) {
-      if (userData.role === 'admin') {
-         if (window.location.pathname === '/' || window.location.pathname === '/login') navigate('/admin');
-      } else {
-         if (!userData.display1) navigate('/select-major');
-         else if (window.location.pathname === '/' || window.location.pathname === '/login') navigate('/dashboard');
-      }
-    } else {
-      if (window.location.pathname !== '/login') navigate('/login');
-    }
-    setLoading(false);
+    const timer = setTimeout(() => {
+        if (userData) {
+            if (userData.role === 'admin') {
+                if (window.location.pathname === '/' || window.location.pathname === '/login') navigate('/admin');
+            } else {
+                if (!userData.display1) navigate('/select-major');
+                else if (window.location.pathname === '/' || window.location.pathname === '/login') navigate('/dashboard');
+            }
+        } else {
+            if (window.location.pathname !== '/login') navigate('/login');
+        }
+        setLoading(false);
+    }, 500);
+    return () => clearTimeout(timer);
   }, [userData, navigate]);
 
   const handleLogin = (loginData) => {
-    const newData = { 
-        ...userData, 
-        name: loginData.name, 
-        username: loginData.username, 
-        role: loginData.role,
-        display1: loginData.pilihan1 || '', 
-        display2: loginData.pilihan2 || '',
-        pg1: loginData.pg1 || '', 
-        pg2: loginData.pg2 || '',
-        choice1_id: loginData.choice1_id, 
-        choice2_id: loginData.choice2_id
+    const newData = { ...loginData, 
+        display1: loginData.pilihan1 || '', pg1: loginData.pg1 || '',
+        display2: loginData.pilihan2 || '', pg2: loginData.pg2 || ''
     };
-    
     setUserData(newData);
     localStorage.setItem('utbk_user', JSON.stringify(newData));
 
-    if (loginData.role === 'admin') {
-        navigate('/admin');
-    } else {
-        if (loginData.pilihan1) navigate('/confirmation');
-        else navigate('/select-major');
-    }
+    if (newData.role === 'admin') navigate('/admin');
+    else if (newData.display1) navigate('/confirmation');
+    else navigate('/select-major');
   };
 
   const handleLogout = () => {
     if(window.confirm("Keluar aplikasi?")) {
-        localStorage.removeItem('utbk_user');
-        localStorage.removeItem('current_exam_id');
+        localStorage.clear();
         setUserData(null);
         navigate('/login');
     }
@@ -117,37 +128,11 @@ const AppContent = () => {
   );
 };
 
-// --- ERROR BOUNDARY ---
-class ErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
-  static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  componentDidCatch(error, errorInfo) { console.error("Uncaught error:", error, errorInfo); }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="flex h-screen flex-col items-center justify-center p-4 bg-gray-50 text-center">
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Terjadi Kesalahan Aplikasi</h1>
-          <p className="text-gray-600 mb-6">Jangan khawatir, data Anda aman. Silakan muat ulang.</p>
-          <div className="flex gap-4">
-            <button onClick={() => window.location.reload()} className="px-6 py-2 bg-blue-600 text-white rounded font-bold">Muat Ulang</button>
-            <button onClick={() => { localStorage.clear(); window.location.href = '/'; }} className="px-6 py-2 bg-gray-600 text-white rounded">Reset Sesi (Logout)</button>
-          </div>
-          <pre className="mt-8 p-4 bg-gray-200 rounded text-xs text-left text-red-800 overflow-auto max-w-lg">
-            {this.state.error && this.state.error.toString()}
-          </pre>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
 function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
-          <AppContent />
-      </BrowserRouter>
+        {/* HAPUS BrowserRouter dari sini */}
+        <AppContent />
     </ErrorBoundary>
   );
 }

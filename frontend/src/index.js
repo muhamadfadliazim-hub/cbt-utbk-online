@@ -1,10 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom'; // IMPORT INI PENTING
+import { BrowserRouter } from 'react-router-dom'; // Router WAJIB ada di sini
 import './index.css';
 import App from './App';
 
-console.log("Memulai Aplikasi..."); 
+console.log("Memulai Aplikasi...");
 
 const rootElement = document.getElementById('root');
 
@@ -12,8 +12,8 @@ if (rootElement) {
   const root = ReactDOM.createRoot(rootElement);
   root.render(
     <React.StrictMode>
-      {/* Router dipasang di sini, di paling luar */}
-      <BrowserRouter> 
+      {/* Bungkus App dengan BrowserRouter di sini */}
+      <BrowserRouter>
         <App />
       </BrowserRouter>
     </React.StrictMode>
