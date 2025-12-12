@@ -40,7 +40,7 @@ const Login = ({ onLogin }) => {
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans">
       <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full border border-gray-200">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-extrabold text-indigo-900">CBT UTBK</h1>
+          <h1 className="text-3xl font-extrabold text-indigo-900">Simulasi SNBT UTBK</h1>
           <p className="text-gray-500 mt-2 text-sm">Sistem Ujian Berbasis Komputer</p>
         </div>
         {error && (
