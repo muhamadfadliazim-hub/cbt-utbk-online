@@ -6,6 +6,9 @@ import { API_URL } from './config';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+// --- URUTAN KOLOM BAKU (AGAR TIDAK GESER) ---
+const EXAM_ORDER = ["PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM"];
+
 const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
   const [periods, setPeriods] = useState([]);
@@ -83,15 +86,17 @@ const AdminDashboard = ({ onLogout }) => {
     doc.setFontSize(10); doc.text(`Dicetak pada: ${new Date().toLocaleString('id-ID')}`, 14, 22);
     doc.text(`Periode: ${selectedRecapPeriod ? (periods.find(p => p.id === parseInt(selectedRecapPeriod))?.name || "Periode Tertentu") : "Semua Data"}`, 14, 27);
 
-    // FIX: Pastikan kolom data sesuai urutan header
-    const tableColumn = ["No", "Nama Siswa", "Username", "PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM", "Avg", "Status"];
+    // FIX: Menggunakan EXAM_ORDER agar PDF juga rapi
+    const tableColumn = ["No", "Nama Siswa", "Username", ...EXAM_ORDER, "Avg", "Status"];
     const tableRows = [];
     recap.forEach((r, index) => {
+        // Ambil nilai berdasarkan urutan EXAM_ORDER
+        const scores = EXAM_ORDER.map(key => r[key] || 0);
         tableRows.push([
             index + 1, 
             r.full_name, 
             r.username, 
-            r.PU || 0, r.PBM || 0, r.PPU || 0, r.PK || 0, r.LBI || 0, r.LBE || 0, r.PM || 0, // Pastikan urutan ini sama dengan backend
+            ...scores,
             r.average, 
             r.status
         ]);
@@ -102,7 +107,8 @@ const AdminDashboard = ({ onLogout }) => {
         headStyles: { fillColor: [49, 46, 129], textColor: [255, 255, 255], fontStyle: 'bold' }, 
         alternateRowStyles: { fillColor: [245, 247, 255] }, 
         didParseCell: function(data) {
-            if (data.section === 'body' && data.column.index === 11) { 
+            // Kolom Status adalah index terakhir
+            if (data.section === 'body' && data.column.index === (tableColumn.length - 1)) { 
                 const text = data.cell.raw;
                 if (text && text.startsWith("LULUS")) { data.cell.styles.textColor = [0, 150, 0]; data.cell.styles.fontStyle = 'bold'; } 
                 else { data.cell.styles.textColor = [200, 0, 0]; data.cell.styles.fontStyle = 'bold'; }
@@ -132,12 +138,11 @@ const AdminDashboard = ({ onLogout }) => {
   const handleSelectOne = (id) => setSelectedIds(selectedIds.includes(id) ? selectedIds.filter(i=>i!==id) : [...selectedIds, id]);
   const handleChangePassword = (uid) => { const newPass = prompt("Password Baru:"); if(newPass) fetch(`${API_URL}/admin/users/${uid}/password`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({new_password:newPass})}).then(r=>r.json()).then(d=>alert(d.message)); };
   
-  // FIX: Logika Status TIDAK LULUS
+  // FIX: Tampilkan "TIDAK LULUS" jika status kosong/gagal
   const getStatusBadge = (s) => {
       if (s && s.startsWith('LULUS')) {
           return <span className="text-green-600 font-bold text-xs flex items-center gap-1"><CheckCircle size={12}/> {s}</span>;
       }
-      // Jika kosong atau "TIDAK LULUS", tampilkan TIDAK LULUS MERAH
       return <span className="text-red-600 font-bold text-xs flex items-center gap-1"><XCircle size={12}/> TIDAK LULUS</span>;
   };
 
@@ -243,7 +248,29 @@ const AdminDashboard = ({ onLogout }) => {
 
         {tab === 'users' && (<div><div className="flex justify-between mb-6"><h2 className="text-2xl font-bold">User Management</h2>{selectedIds.length>0&&<button onClick={handleBulkDelete} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"><Trash2 size={16}/> Hapus {selectedIds.length}</button>}</div><div className="bg-white p-4 rounded shadow mb-6 flex gap-2"><input className="border p-2 rounded flex-1" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input className="border p-2 rounded flex-1" placeholder="Nama" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input className="border p-2 rounded flex-1" placeholder="Pass" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><select className="border p-2 rounded bg-gray-50" value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})}><option value="student">Siswa</option><option value="admin">Admin</option></select><button onClick={handleAddUser} className="bg-green-600 text-white px-4 rounded font-bold"><Plus size={16}/></button></div><div className="mb-4"><label className="text-blue-600 cursor-pointer text-sm hover:underline"><Upload size={14} className="inline mr-1"/>Upload Excel User<input type="file" hidden accept=".xlsx" onChange={handleBulkUpload}/></label></div><div className="bg-white shadow rounded overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={users.length>0&&selectedIds.length===users.length}/></th><th className="p-3 text-left">Nama</th><th className="p-3 text-left">Username</th><th className="p-3 text-left">Role</th><th className="p-3 text-center">Aksi</th></tr></thead><tbody>{users.map(u=>(<tr key={u.id} className="border-b"><td className="p-3 text-center"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={()=>handleSelectOne(u.id)}/></td><td className="p-3">{u.full_name}</td><td className="p-3">{u.username}</td><td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>{u.role.toUpperCase()}</span></td><td className="p-3 text-center"><button onClick={()=>handleChangePassword(u.id)} className="text-gray-500 hover:text-indigo-600" title="Ganti Password"><Key size={16}/></button></td></tr>))}</tbody></table></div></div>)}
         
-        {tab === 'recap' && (<div className="overflow-x-auto pb-20"><div className="flex justify-between items-end mb-6"><div><h2 className="text-2xl font-bold">Rekap Nilai</h2><div className="flex items-center gap-2 mt-2"><Filter size={16} className="text-gray-500"/><select className="p-2 border rounded" value={selectedRecapPeriod} onChange={e=>setSelectedRecapPeriod(e.target.value)}><option value="">-- Semua Periode --</option>{periods.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div></div><div className="flex gap-2"><button onClick={handleDownloadPDF} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded shadow text-sm font-bold hover:bg-red-700"><FileCode size={16}/> PDF</button><button onClick={handleDownloadExcel} className="flex items-center gap-2 px-4 py-2 bg-white border rounded shadow text-sm font-bold"><Download size={16}/> Excel</button><button onClick={()=>toggleConfig('release_announcement', isReleased)} className={`flex items-center gap-2 px-4 py-2 text-white rounded shadow text-sm font-bold ${isReleased?'bg-green-600':'bg-orange-500'}`}>{isReleased?<Unlock size={16}/>:<Lock size={16}/>} {isReleased?'Tutup Pengumuman':'Rilis Pengumuman'}</button></div></div><div className="bg-white shadow rounded overflow-hidden border"><table className="w-full text-sm text-left"><thead className="bg-indigo-900 text-white"><tr><th className="p-3" rowSpan="2">Nama</th><th className="p-2 text-center bg-indigo-800" colSpan="7">Skor IRT</th><th className="p-3 text-center bg-blue-900" rowSpan="2">Avg</th><th className="p-3 bg-indigo-800" rowSpan="2">Ket</th><th className="p-3 bg-red-900" rowSpan="2">Reset</th></tr><tr>{["PU","PBM","PPU","PK","LBI","LBE","PM"].map(s=><th key={s} className="p-1 text-center text-xs bg-indigo-700">{s}</th>)}</tr></thead><tbody className="divide-y">{recap.map((r,i)=>(<tr key={i} className="hover:bg-gray-50"><td className="p-3"><div className="flex items-center gap-2"><button onClick={()=>handleViewStudentDetail(r)} className="text-blue-600 hover:text-blue-800 bg-blue-50 p-1 rounded transition" title="Lihat Rincian Jawaban Salah"><Info size={16}/></button><div><div className="font-bold text-gray-800">{r.full_name}</div><div className="text-xs text-gray-400 font-normal">{r.username}</div></div></div></td>{["PU","PBM","PPU","PK","LBI","LBE","PM"].map(k=><td key={k} className="p-2 text-center text-gray-600">{r[k]||0}</td>)}<td className="p-3 text-center font-bold text-blue-700 bg-blue-50">{r.average}</td><td className="p-3">{getStatusBadge(r.status)}</td><td className="p-3 text-center">{r.completed_exams.map(e=><button key={e.exam_id} onClick={()=>handleResetResult(r.id,e.exam_id)} className="px-2 py-1 bg-red-100 text-red-600 text-[10px] rounded border border-red-200 m-0.5 hover:bg-red-600 hover:text-white">{e.code}×</button>)}</td></tr>))}</tbody></table></div></div>)}
+        {/* TAB REKAP - URUTAN KOLOM FIX */}
+        {tab === 'recap' && (<div className="overflow-x-auto pb-20"><div className="flex justify-between items-end mb-6"><div><h2 className="text-2xl font-bold">Rekap Nilai</h2><div className="flex items-center gap-2 mt-2"><Filter size={16} className="text-gray-500"/><select className="p-2 border rounded" value={selectedRecapPeriod} onChange={e=>setSelectedRecapPeriod(e.target.value)}><option value="">-- Semua Periode --</option>{periods.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div></div><div className="flex gap-2">
+            <button onClick={handleDownloadPDF} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded shadow text-sm font-bold hover:bg-red-700"><FileCode size={16}/> PDF</button>
+            <button onClick={handleDownloadExcel} className="flex items-center gap-2 px-4 py-2 bg-white border rounded shadow text-sm font-bold"><Download size={16}/> Excel</button>
+            <button onClick={()=>toggleConfig('release_announcement', isReleased)} className={`flex items-center gap-2 px-4 py-2 text-white rounded shadow text-sm font-bold ${isReleased?'bg-green-600':'bg-orange-500'}`}>{isReleased?<Unlock size={16}/>:<Lock size={16}/>} {isReleased?'Tutup Pengumuman':'Rilis Pengumuman'}</button></div></div><div className="bg-white shadow rounded overflow-hidden border"><table className="w-full text-sm text-left"><thead className="bg-indigo-900 text-white"><tr><th className="p-3" rowSpan="2">Nama</th><th className="p-2 text-center bg-indigo-800" colSpan="7">Skor IRT</th><th className="p-3 text-center bg-blue-900" rowSpan="2">Avg</th><th className="p-3 bg-indigo-800" rowSpan="2">Ket</th><th className="p-3 bg-red-900" rowSpan="2">Reset</th></tr>
+            
+            {/* HEADER MENGGUNAKAN VARIABEL BAKU (EXAM_ORDER) */}
+            <tr>{EXAM_ORDER.map(s=><th key={s} className="p-1 text-center text-xs bg-indigo-700">{s}</th>)}</tr>
+            
+            </thead><tbody className="divide-y">{recap.map((r,i)=>(<tr key={i} className="hover:bg-gray-50">
+            <td className="p-3">
+                <div className="flex items-center gap-2">
+                    <button onClick={()=>handleViewStudentDetail(r)} className="text-blue-600 hover:text-blue-800 bg-blue-50 p-1 rounded transition" title="Lihat Rincian Jawaban Salah"><Info size={16}/></button>
+                    <div>
+                        <div className="font-bold text-gray-800">{r.full_name}</div>
+                        <div className="text-xs text-gray-400 font-normal">{r.username}</div>
+                    </div>
+                </div>
+            </td>
+            {/* BODY JUGA MENGGUNAKAN VARIABEL BAKU (EXAM_ORDER) - DIJAMIN LURUS */}
+            {EXAM_ORDER.map(k=><td key={k} className="p-2 text-center text-gray-600">{r[k]||0}</td>)}
+            
+            <td className="p-3 text-center font-bold text-blue-700 bg-blue-50">{r.average}</td><td className="p-3">{getStatusBadge(r.status)}</td><td className="p-3 text-center">{r.completed_exams.map(e=><button key={e.exam_id} onClick={()=>handleResetResult(r.id,e.exam_id)} className="px-2 py-1 bg-red-100 text-red-600 text-[10px] rounded border border-red-200 m-0.5 hover:bg-red-600 hover:text-white">{e.code}×</button>)}</td></tr>))}</tbody></table></div></div>)}
       </main>
     </div>
   );
