@@ -7,10 +7,10 @@ import UploadExam from './UploadExam';
 import AdminDashboard from './AdminDashboard'; 
 import { MajorSelection, Confirmation, ResultSummary } from './FlowComponents';
 import StudentRecap from './StudentRecap'; 
-import { Loader2 } from 'lucide-react'; // HAPUS AlertTriangle
+import { Loader2 } from 'lucide-react';
+import { API_URL } from './config';
 import './App.css';
 
-// --- PENGAMAN DATA ---
 const getSafeUserData = () => {
   try {
     const saved = localStorage.getItem('utbk_user');
@@ -27,23 +27,46 @@ const AppContent = () => {
   const [userData, setUserData] = useState(getSafeUserData);
   const [loading, setLoading] = useState(true);
   const [examResult, setExamResult] = useState(null);
+  
+  // State untuk konfigurasi global
+  const [config, setConfig] = useState({ enableMajorSelection: true });
+
+  // Fetch Config saat awal load
+  useEffect(() => {
+    const fetchConfig = async () => {
+        try {
+            const res = await fetch(`${API_URL}/config/enable_major_selection`);
+            const data = await res.json();
+            setConfig(prev => ({ ...prev, enableMajorSelection: data.value === 'true' }));
+        } catch (e) {
+            console.error("Gagal load config", e);
+        }
+    };
+    fetchConfig();
+  }, []);
 
   useEffect(() => {
-    if (userData) {
-      if (userData.role === 'admin') {
-         if (location.pathname === '/' || location.pathname === '/login') navigate('/admin');
-      } else {
-         if (!userData.display1 && location.pathname !== '/select-major') {
-             navigate('/select-major');
-         } else if (userData.display1 && (location.pathname === '/' || location.pathname === '/login')) {
-             navigate('/dashboard');
-         }
-      }
-    } else {
-      if (location.pathname !== '/login') navigate('/login');
-    }
-    setLoading(false);
-  }, [userData, navigate, location.pathname]);
+    // Beri sedikit delay agar config ter-fetch dulu
+    const timer = setTimeout(() => {
+        if (userData) {
+            if (userData.role === 'admin') {
+                if (location.pathname === '/' || location.pathname === '/login') navigate('/admin');
+            } else {
+                // LOGIKA SAKLAR PILIHAN JURUSAN (FIX NO. 6)
+                // Hanya paksa pilih jurusan JIKA config ON dan user belum pilih
+                if (config.enableMajorSelection && !userData.display1 && location.pathname !== '/select-major') {
+                    navigate('/select-major');
+                } else if (location.pathname === '/' || location.pathname === '/login') {
+                    navigate('/dashboard');
+                }
+            }
+        } else {
+            if (location.pathname !== '/login') navigate('/login');
+        }
+        setLoading(false);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [userData, navigate, location.pathname, config.enableMajorSelection]);
 
   const handleLogin = (loginData) => {
     const newData = { ...loginData, 
@@ -55,8 +78,8 @@ const AppContent = () => {
     localStorage.setItem('utbk_user', JSON.stringify(newData));
 
     if (newData.role === 'admin') navigate('/admin');
-    else if (newData.display1) navigate('/confirmation');
-    else navigate('/select-major');
+    else if (config.enableMajorSelection && !newData.display1) navigate('/select-major');
+    else navigate('/dashboard');
   };
 
   const handleLogout = () => {
@@ -109,8 +132,10 @@ class ErrorBoundary extends React.Component {
 
 export default function App() {
   return (
-    <ErrorBoundary>
-      <AppContent />
-    </ErrorBoundary>
+    <div className="App font-sans text-gray-800">
+        <ErrorBoundary>
+            <AppContent />
+        </ErrorBoundary>
+    </div>
   );
 }
