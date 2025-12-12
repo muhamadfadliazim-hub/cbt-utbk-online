@@ -5,7 +5,7 @@ import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
 
-const ExamSimulation = ({ onFinish }) => { // Menerima props onFinish dari App.js
+const ExamSimulation = ({ onFinish }) => {
   const { examId } = useParams();
   const navigate = useNavigate();
   
@@ -20,15 +20,11 @@ const ExamSimulation = ({ onFinish }) => { // Menerima props onFinish dari App.j
 
   const timerRef = useRef(null);
 
-  // --- HELPER RENDER TEKS (FIX BOLD/ITALIC/ENTER) ---
+  // --- HELPER RENDER TEKS (FIX ITEMIZE & LAYOUT) ---
   const renderText = (text) => {
     if (!text) return null;
     
-    // 1. Ganti baris baru (\n) dengan <br/>
-    // 2. Ganti kode Bold/Italic manual [b]..[/b] jika ada
-    // 3. Render LaTeX
-    
-    // Kita pecah dulu berdasarkan LaTeX
+    // Pecah LaTeX
     const parts = text.split(/(\$.*?\$)/);
     
     return parts.map((part, index) => {
@@ -36,14 +32,16 @@ const ExamSimulation = ({ onFinish }) => { // Menerima props onFinish dari App.j
         return <InlineMath key={index} math={part.slice(1, -1)} />;
       }
       
-      // Proses formatting sederhana HTML-like dan Newline
+      // Render HTML Sederhana
+      // 1. Enter (\n) jadi <br/>
+      // 2. [b] jadi <strong>
+      // 3. [i] jadi <em>
       return (
         <span key={index} dangerouslySetInnerHTML={{ 
             __html: part
-                .replace(/\n/g, '<br/>') // Enter
-                .replace(/\[b\](.*?)\[\/b\]/g, '<strong>$1</strong>') // Bold [b]
-                .replace(/\[i\](.*?)\[\/i\]/g, '<em>$1</em>') // Italic [i]
-                // Tambahkan support itemize jika perlu (manual logic)
+                .replace(/\n/g, '<br/>') 
+                .replace(/\[b\](.*?)\[\/b\]/g, '<strong>$1</strong>') 
+                .replace(/\[i\](.*?)\[\/i\]/g, '<em>$1</em>')
         }} />
       );
     });
@@ -74,7 +72,7 @@ const ExamSimulation = ({ onFinish }) => { // Menerima props onFinish dari App.j
     if (!window.confirm("Yakin ingin menyelesaikan ujian?")) return;
     if (timerRef.current) clearInterval(timerRef.current);
     
-    const user = JSON.parse(localStorage.getItem('utbk_user')); // Pakai key yang konsisten 'utbk_user'
+    const user = JSON.parse(localStorage.getItem('utbk_user'));
     if (!user) { alert("Sesi habis, login ulang."); navigate('/login'); return; }
 
     try {
@@ -87,24 +85,16 @@ const ExamSimulation = ({ onFinish }) => { // Menerima props onFinish dari App.j
         if (!res.ok) throw new Error("Gagal submit");
         
         const resultData = await res.json();
-        
-        // Hapus data lokal
         localStorage.removeItem(`exam_${examId}`);
         
-        // Panggil callback ke App.js untuk pindah ke halaman hasil
-        if (onFinish) {
-            onFinish(resultData);
-        } else {
-            // Fallback jika props tidak ada
-            navigate('/dashboard');
-        }
+        if (onFinish) onFinish(resultData);
+        else navigate('/dashboard');
         
     } catch (e) {
         alert("Gagal kirim jawaban. Cek koneksi!");
     }
   }, [answers, examId, navigate, onFinish]);
 
-  // Load Data & Timer (Sama seperti sebelumnya, pastikan key localStorage 'utbk_user')
   useEffect(() => {
     let isMounted = true;
     const fetchData = async () => {
@@ -185,7 +175,7 @@ const ExamSimulation = ({ onFinish }) => { // Menerima props onFinish dari App.j
                 <button onClick={() => setFontSize(Math.min(24, fontSize + 2))} className="p-2 hover:bg-indigo-700"><span className="text-sm font-bold">A+</span></button>
             </div>
         </div>
-        {/* NAVIGASI NOMOR */}
+        {/* NAVIGASI */}
         <div className="bg-white border-b border-gray-200 p-2 flex gap-2 overflow-x-auto items-center shadow-inner no-scrollbar">
             {questions.map((ques, i) => {
                 const qId = ques.id;
@@ -200,18 +190,37 @@ const ExamSimulation = ({ onFinish }) => { // Menerima props onFinish dari App.j
         </div>
       </header>
 
-      {/* CONTENT */}
+      {/* MAIN CONTENT */}
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+        {/* PANEL WACANA (KIRI/ATAS) */}
         {(q.reading_material || q.image_url) && (
             <div className="w-full md:w-1/2 bg-gray-100 border-b md:border-b-0 md:border-r border-gray-300 overflow-y-auto p-4" style={{maxHeight: '40vh', minHeight: '20vh'}}>
                 <div className="bg-white p-4 rounded shadow-sm border text-justify">
-                    {q.image_url && <img src={q.image_url} alt="Soal" className="w-full h-auto mb-4 rounded" />}
-                    <div className="prose max-w-none text-gray-800 leading-relaxed">{renderText(q.reading_material)}</div>
+                    {/* LABEL */}
+                    {q.reading_label && <div className="font-bold text-indigo-900 mb-2 uppercase text-xs tracking-wider">{q.reading_label}</div>}
+                    
+                    {/* TEKS WACANA (DI ATAS) - Support Enter & Spasi */}
+                    <div className="prose max-w-none text-gray-800 leading-relaxed whitespace-pre-wrap font-serif text-lg">
+                        {renderText(q.reading_material)}
+                    </div>
+
+                    {/* GAMBAR (DI BAWAH TEKS) */}
+                    {q.image_url && <img src={q.image_url} alt="Soal" className="w-full h-auto mt-4 rounded border shadow-sm" />}
+                    
+                    {/* SUMBER */}
+                    {q.citation && <div className="mt-4 text-xs text-gray-500 italic text-right">Sumber: {q.citation}</div>}
                 </div>
             </div>
         )}
+
+        {/* PANEL SOAL (KANAN/BAWAH) */}
         <div className={`w-full ${(!q.reading_material && !q.image_url) ? 'md:max-w-3xl mx-auto' : 'md:w-1/2'} bg-white overflow-y-auto p-4 pb-24 md:pb-6`}>
-            <div className="mb-6 text-gray-800 leading-relaxed font-medium text-justify">{renderText(q.text)}</div>
+            {/* Pertanyaan */}
+            <div className="mb-6 text-gray-800 leading-relaxed font-medium text-justify whitespace-pre-wrap">
+                {renderText(q.text)}
+            </div>
+
+            {/* Pilihan Ganda */}
             <div className="space-y-3">
                 {q.type === 'multiple_choice' && q.options.map((opt) => (
                     <div key={opt.id} onClick={() => handleAnswer(opt.id)} className={`flex items-start p-3 rounded-lg border-2 cursor-pointer transition-all ${answers[q.id] === opt.id ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-blue-300 bg-white'}`}>

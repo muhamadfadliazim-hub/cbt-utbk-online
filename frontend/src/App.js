@@ -5,9 +5,9 @@ import Dashboard from './Dashboard';
 import ExamSimulation from './ExamSimulation';
 import UploadExam from './UploadExam';
 import AdminDashboard from './AdminDashboard'; 
-import { MajorSelection, Confirmation, ResultSummary } from './FlowComponents'; // Pastikan ResultSummary diimport!
+import { MajorSelection, Confirmation, ResultSummary } from './FlowComponents';
 import StudentRecap from './StudentRecap'; 
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2 } from 'lucide-react'; // HAPUS AlertTriangle
 import './App.css';
 
 // --- PENGAMAN DATA ---
@@ -26,15 +26,13 @@ const AppContent = () => {
   const location = useLocation();
   const [userData, setUserData] = useState(getSafeUserData);
   const [loading, setLoading] = useState(true);
-  const [examResult, setExamResult] = useState(null); // State untuk hasil ujian
+  const [examResult, setExamResult] = useState(null);
 
   useEffect(() => {
-    // Logika Redirect yang Lebih Aman
     if (userData) {
       if (userData.role === 'admin') {
          if (location.pathname === '/' || location.pathname === '/login') navigate('/admin');
       } else {
-         // Cek apakah sudah pilih jurusan?
          if (!userData.display1 && location.pathname !== '/select-major') {
              navigate('/select-major');
          } else if (userData.display1 && (location.pathname === '/' || location.pathname === '/login')) {
@@ -57,8 +55,8 @@ const AppContent = () => {
     localStorage.setItem('utbk_user', JSON.stringify(newData));
 
     if (newData.role === 'admin') navigate('/admin');
-    else if (newData.display1) navigate('/confirmation'); // Sudah ada jurusan -> Konfirmasi
-    else navigate('/select-major'); // Belum -> Pilih Jurusan
+    else if (newData.display1) navigate('/confirmation');
+    else navigate('/select-major');
   };
 
   const handleLogout = () => {
@@ -76,7 +74,6 @@ const AppContent = () => {
     navigate('/confirmation');
   };
 
-  // Handler saat ujian selesai
   const handleExamFinish = (resultData) => {
       setExamResult(resultData);
       navigate('/result');
@@ -87,40 +84,19 @@ const AppContent = () => {
   return (
     <Routes>
         <Route path="/login" element={!userData ? <Login onLogin={handleLogin} /> : <Navigate to="/" />} />
-        
         <Route path="/admin" element={userData?.role === 'admin' ? <AdminDashboard onLogout={handleLogout} /> : <Navigate to="/login" />} />
         <Route path="/upload" element={userData?.role === 'admin' ? <UploadExam onBack={() => navigate('/admin')} /> : <Navigate to="/login" />} />
-
         <Route path="/select-major" element={userData ? <MajorSelection onNext={handleMajorSelected} onLogout={handleLogout}/> : <Navigate to="/login" />} />
-        
         <Route path="/confirmation" element={userData ? <Confirmation userData={userData} onStart={() => navigate('/dashboard')} onBack={() => navigate('/select-major')}/> : <Navigate to="/login" />} />
-
-        <Route path="/dashboard" element={
-            userData?.role === 'student' ? (
-                <Dashboard 
-                    userName={userData?.name} 
-                    username={userData?.username}
-                    onSelectExam={(examId) => navigate(`/exam/${examId}`)} 
-                    onLogout={handleLogout} 
-                    onGoToUpload={() => navigate('/upload')} 
-                    onGoToRecap={() => navigate('/recap')} 
-                />
-            ) : <Navigate to="/login" />
-        } />
-
+        <Route path="/dashboard" element={userData?.role === 'student' ? <Dashboard userName={userData?.name} username={userData?.username} onSelectExam={(examId) => navigate(`/exam/${examId}`)} onLogout={handleLogout} onGoToUpload={() => navigate('/upload')} onGoToRecap={() => navigate('/recap')} /> : <Navigate to="/login" />} />
         <Route path="/exam/:examId" element={userData ? <ExamSimulation onFinish={handleExamFinish} /> : <Navigate to="/login" />} />
-        
-        {/* Halaman Hasil Ujian */}
         <Route path="/result" element={userData && examResult ? <ResultSummary result={examResult} onBack={() => navigate('/dashboard')} /> : <Navigate to="/dashboard" />} />
-
         <Route path="/recap" element={userData ? <StudentRecap username={userData.username} onBack={() => navigate('/dashboard')} /> : <Navigate to="/login" />} />
-
         <Route path="*" element={<Navigate to={userData ? "/" : "/login"} />} />
     </Routes>
   );
 };
 
-// Error Boundary Sederhana
 class ErrorBoundary extends React.Component {
   state = { hasError: false };
   static getDerivedStateFromError(error) { return { hasError: true }; }
