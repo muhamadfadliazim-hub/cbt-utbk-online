@@ -1,216 +1,285 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import 'katex/dist/katex.min.css';
+import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Clock, ChevronLeft, ChevronRight, Grid, Type, AlertTriangle } from 'lucide-react';
+import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
-import { Clock, ChevronLeft, ChevronRight, Save, Lock } from 'lucide-react';
+import { API_URL } from './config';
 
-const ExamSimulation = ({ examData, onSubmit, onBack }) => {
-  const savedAnswers = JSON.parse(localStorage.getItem('saved_answers')) || {};
-  const savedTimer = localStorage.getItem('saved_timer');
-  const initialTime = savedTimer ? parseInt(savedTimer, 10) : (examData?.duration || 30) * 60;
+const ExamSimulation = () => {
+  const { examId } = useParams();
+  const navigate = useNavigate();
   
-  const userData = JSON.parse(localStorage.getItem('utbk_user')) || {};
-  
-  const isSubmitAllowed = examData.allow_submit !== false; 
+  // --- STATE ---
+  const [exam, setExam] = useState(null);
+  const [questions, setQuestions] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [doubtful, setDoubtful] = useState({}); // Ragu-ragu
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [fontSize, setFontSize] = useState(16); // Ukuran Font (A+ A-)
+  const [showNav, setShowNav] = useState(false); // Toggle Navigasi Soal
 
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [answers, setAnswers] = useState(savedAnswers);
-  const [timeLeft, setTimeLeft] = useState(initialTime);
-  const [isSubmitting, setIsSubmitting] = useState(false); 
-  const [fontSize, setFontSize] = useState(16);
+  const timerRef = useRef(null);
 
-  const answersRef = useRef(answers);
-
-  // UTILITY: FORMAT TEKS AMAN (ANTI MELEBAR)
-  const formatHtmlText = (text) => {
-    if (!text) return '';
-    return String(text)
-        .replace(/\n/g, '<br/>') 
-        .replace(/\[B\](.*?)\[\/B\]/g, '<strong>$1</strong>')
-        .replace(/\[I\](.*?)\[\/I\]/g, '<em>$1</em>')
-        .replace(/\[U\](.*?)\[\/U\]/g, '<u>$1</u>')
-        .replace(/\[S\](.*?)\[\/S\]/g, '<span style="font-size: 85%;">$1</span>')
-        .replace(/\[M\](.*?)\[\/M\]/g, '<span style="font-size: 100%;">$1</span>')
-        .replace(/\[L\](.*?)\[\/L\]/g, '<span style="font-size: 125%;">$1</span>')
-        .replace(/\[XL\](.*?)\[\/XL\]/g, '<span style="font-size: 150%; font-weight: bold;">$1</span>');
-  };
-
-  const renderMixedContent = (content) => {
-    if (!content) return null;
-    const parts = String(content).split(/(\$.*?\$)/g);
-    return (
-        // CSS PENTING: break-words whitespace-pre-wrap agar teks turun ke bawah
-        <div className="inline-block w-full break-words whitespace-pre-wrap not-italic"> 
-            {parts.map((part, index) => {
-                if (part.startsWith('$') && part.endsWith('$')) {
-                    return <InlineMath key={index} math={part.slice(1, -1)} />;
-                } else {
-                    return (
-                        <span 
-                            key={index} 
-                            dangerouslySetInnerHTML={{ __html: formatHtmlText(part) }} 
-                        />
-                    );
-                }
-            })}
-        </div>
-    );
-  };
-
-  const handleFinalSubmit = useCallback(() => {
-      if (!isSubmitAllowed && timeLeft > 0) {
-          alert("Tombol Akhiri Ujian dinonaktifkan oleh Admin. Anda harus menunggu hingga waktu habis.");
-          return;
+  // --- HELPER RENDER ---
+  const renderText = (text) => {
+    if (!text) return null;
+    return text.split(/(\$.*?\$)/).map((part, index) => {
+      if (part.startsWith('$') && part.endsWith('$')) {
+        return <InlineMath key={index} math={part.slice(1, -1)} />;
       }
-      if(!window.confirm("Apakah Anda yakin ingin MENGAKHIRI ujian dan mengirim jawaban?")) return;
-      setIsSubmitting(true);
-      const finalAnswers = { answers: answersRef.current, username: userData.username };
-      onSubmit(finalAnswers);
-  }, [onSubmit, userData.username, isSubmitAllowed, timeLeft]);
+      return <span key={index}>{part}</span>;
+    });
+  };
 
+  // --- LOAD DATA ---
   useEffect(() => {
-    answersRef.current = answers;
-    localStorage.setItem('saved_answers', JSON.stringify(answers));
-  }, [answers]);
+    const fetchData = async () => {
+      try {
+        const res = await fetch(`${API_URL}/exams/${examId}`);
+        if (!res.ok) throw new Error("Gagal memuat ujian");
+        const data = await res.json();
+        setExam(data);
+        setQuestions(data.questions);
+        
+        // Cek Local Storage (Resume Ujian)
+        const saved = JSON.parse(localStorage.getItem(`exam_${examId}`)) || {};
+        if (saved.answers) setAnswers(saved.answers);
+        if (saved.doubtful) setDoubtful(saved.doubtful);
+        
+        // Timer Logic
+        const now = Math.floor(Date.now() / 1000);
+        const endTime = saved.endTime || (now + data.duration * 60);
+        localStorage.setItem(`exam_${examId}`, JSON.stringify({ ...saved, endTime }));
+        setTimeLeft(Math.max(0, endTime - now));
+        
+        setLoading(false);
+      } catch (err) {
+        alert("Error: " + err.message);
+        navigate('/dashboard');
+      }
+    };
+    fetchData();
+  }, [examId, navigate]);
 
+  // --- TIMER ---
   useEffect(() => {
-    if (!examData || isSubmitting) return;
-    if (timeLeft <= 0) {
-        setIsSubmitting(true);
-        alert("WAKTU HABIS! Jawaban dikirim otomatis.");
-        setIsSubmitting(true);
-        const finalAnswers = { answers: answersRef.current, username: userData.username };
-        onSubmit(finalAnswers);
-        return;
+    if (timeLeft > 0) {
+      timerRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timerRef.current);
+            handleSubmit();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     }
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        const newVal = prev - 1;
-        localStorage.setItem('saved_timer', newVal);
-        return newVal;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft, examData, isSubmitting, onSubmit, userData.username]);
+    return () => clearInterval(timerRef.current);
+  }, [timeLeft]);
 
-  if (!examData) return <div className="p-10 text-center">Memuat Data Ujian...</div>;
-  if (!examData.questions || examData.questions.length === 0) return <div className="p-10 text-center">Soal belum tersedia.</div>;
+  const formatTime = (s) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec < 10 ? '0' : ''}${sec}`;
+  };
 
-  const questions = examData.questions;
-  const question = questions[currentIdx];
-  const hasReading = !!question.reading_material;
+  // --- ACTIONS ---
+  const handleAnswer = (val) => {
+    const newAns = { ...answers, [questions[currentIndex].id]: val };
+    setAnswers(newAns);
+    saveLocal(newAns, doubtful);
+  };
 
-  const handleAnswer = (val, subId = null) => {
-    if (timeLeft <= 0) return; 
-    if (question.type === 'table_boolean') {
-        const curr = answers[question.id] || {};
-        setAnswers({ ...answers, [question.id]: { ...curr, [subId]: val } });
-    } else if (question.type === 'complex') {
-        const curr = answers[question.id] || [];
-        const newAns = curr.includes(val) ? curr.filter(i => i !== val) : [...curr, val];
-        setAnswers({ ...answers, [question.id]: newAns });
-    } else {
-        setAnswers({ ...answers, [question.id]: val });
+  const toggleDoubt = () => {
+    const newDoubt = { ...doubtful, [questions[currentIndex].id]: !doubtful[questions[currentIndex].id] };
+    setDoubtful(newDoubt);
+    saveLocal(answers, newDoubt);
+  };
+
+  const saveLocal = (ans, dbt) => {
+    const saved = JSON.parse(localStorage.getItem(`exam_${examId}`)) || {};
+    localStorage.setItem(`exam_${examId}`, JSON.stringify({ ...saved, answers: ans, doubtful: dbt }));
+  };
+
+  const handleSubmit = async () => {
+    if (!window.confirm("Yakin ingin menyelesaikan ujian?")) return;
+    clearInterval(timerRef.current);
+    
+    const user = JSON.parse(localStorage.getItem('user'));
+    try {
+        await fetch(`${API_URL}/exams/${examId}/submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: user.username, answers })
+        });
+        localStorage.removeItem(`exam_${examId}`);
+        alert("Ujian Selesai! Terima kasih.");
+        navigate('/dashboard');
+    } catch (e) {
+        alert("Gagal kirim jawaban. Cek koneksi!");
     }
   };
 
-  const isAnswered = (id) => {
-      const val = answers[id];
-      if(!val) return false;
-      if(typeof val === 'object' && !Array.isArray(val)) return Object.keys(val).length > 0;
-      if(Array.isArray(val)) return val.length > 0;
-      return true;
-  };
+  // --- RENDER LOADING ---
+  if (loading) return <div className="flex h-screen items-center justify-center bg-gray-100 text-indigo-700 font-bold">Memuat Soal...</div>;
 
-  const formatTime = (s) => `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
+  const q = questions[currentIndex];
+  const isLast = currentIndex === questions.length - 1;
 
   return (
-    <div className="flex flex-col h-screen bg-gray-100 font-sans select-none text-left">
-      <header className="bg-indigo-900 text-white p-3 flex flex-col md:flex-row justify-between items-center shadow-md z-50 sticky top-0">
-        <div className="flex items-center justify-between w-full md:w-auto mb-2 md:mb-0">
-            <div className="flex items-center gap-4">
-                <h1 className="font-bold text-sm md:text-base">{examData.title}</h1>
-                <div className="bg-indigo-800 px-3 py-1 rounded text-sm font-mono border border-indigo-600">
-                    SOAL <span className="font-bold text-yellow-400">{currentIdx + 1}</span> / {questions.length}
-                </div>
+    <div className="flex flex-col h-screen bg-gray-50 font-sans overflow-hidden" style={{ fontSize: `${fontSize}px` }}>
+      
+      {/* 1. HEADER (Top Bar) - Sticky */}
+      <header className="bg-indigo-900 text-white shrink-0 z-50 shadow-md">
+        <div className="flex justify-between items-center p-3">
+            {/* Kiri: Judul & No Soal */}
+            <div className="flex flex-col">
+                <h1 className="font-bold text-sm md:text-lg truncate max-w-[150px] md:max-w-none">{exam.title}</h1>
+                <span className="text-xs md:text-sm text-indigo-200">Soal No. {currentIndex + 1} / {questions.length}</span>
             </div>
-            <div className="flex items-center gap-4 ml-4">
-                {hasReading && (
-                    <div className="flex bg-indigo-800 rounded-lg overflow-hidden border border-indigo-600">
-                        <button onClick={()=>setFontSize(s=>Math.max(12, s-2))} className="px-2 py-1 hover:bg-indigo-700 text-xs font-bold text-white">A-</button>
-                        <button onClick={()=>setFontSize(s=>Math.min(24, s+2))} className="px-2 py-1 hover:bg-indigo-700 text-xs font-bold border-l border-indigo-600 text-white">A+</button>
-                    </div>
-                )}
-                <div className={`flex items-center gap-2 font-mono text-xl font-bold px-3 py-1 rounded-lg border-2 ${timeLeft < 300 ? 'bg-red-600 border-red-400 animate-pulse' : 'bg-indigo-800 border-indigo-600'}`}>
-                    <Clock size={20} /> {formatTime(timeLeft)}
-                </div>
+
+            {/* Tengah: Timer (Besar & Jelas) */}
+            <div className="bg-indigo-800 px-4 py-1 rounded-full flex items-center gap-2 border border-indigo-600 shadow-inner">
+                <Clock size={18} className="animate-pulse text-yellow-400"/>
+                <span className="font-mono font-bold text-lg md:text-xl tracking-wider">{formatTime(timeLeft)}</span>
+            </div>
+
+            {/* Kanan: Font Size */}
+            <div className="flex items-center bg-indigo-800 rounded overflow-hidden border border-indigo-600">
+                <button onClick={() => setFontSize(Math.max(12, fontSize - 2))} className="p-2 hover:bg-indigo-700 transition" title="Kecilkan Huruf"><span className="text-xs">A-</span></button>
+                <button onClick={() => setFontSize(Math.min(24, fontSize + 2))} className="p-2 hover:bg-indigo-700 transition" title="Besarkan Huruf"><span className="text-sm font-bold">A+</span></button>
             </div>
         </div>
-        <div className="flex overflow-x-auto gap-2 py-1 w-full md:w-auto md:justify-end">
-            {questions.map((q, i) => (
-                <button key={i} onClick={()=>setCurrentIdx(i)} className={`w-8 h-8 rounded-full text-xs font-bold shrink-0 transition-all shadow-sm ${currentIdx===i ? 'bg-yellow-400 text-indigo-900 ring-2 ring-yellow-200': isAnswered(q.id) ? 'bg-indigo-500 text-white border border-indigo-200' : 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'}`}>{i+1}</button>
-            ))}
+
+        {/* 2. NAVIGASI NOMOR (Scrollable Strip) */}
+        <div className="bg-white border-b border-gray-200 p-2 flex gap-2 overflow-x-auto no-scrollbar items-center shadow-inner">
+            {questions.map((_, i) => {
+                const qId = questions[i].id;
+                let statusClass = "bg-white border-gray-300 text-gray-700"; // Kosong
+                if (currentIndex === i) statusClass = "bg-blue-600 text-white border-blue-600 ring-2 ring-blue-300"; // Aktif
+                else if (doubtful[qId]) statusClass = "bg-yellow-400 text-white border-yellow-500"; // Ragu
+                else if (answers[qId]) statusClass = "bg-green-600 text-white border-green-600"; // Terjawab
+
+                return (
+                    <button 
+                        key={i} 
+                        onClick={() => setCurrentIndex(i)}
+                        className={`
+                            shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-full border-2 flex items-center justify-center 
+                            font-bold text-sm transition-all duration-200 ${statusClass}
+                        `}
+                    >
+                        {i + 1}
+                    </button>
+                );
+            })}
         </div>
       </header>
 
-      <main className="flex flex-1 overflow-hidden relative">
-        {isSubmitting && (<div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm"><div className="animate-spin rounded-full h-16 w-16 border-b-4 border-indigo-600 mb-4"></div><h2 className="text-2xl font-bold text-indigo-900">Waktu Habis!</h2><p className="text-gray-600">Sedang mengirim jawaban...</p></div>)}
+      {/* 3. MAIN CONTENT (Split Screen / Mobile Stack) */}
+      <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         
-        {/* WACANA */}
-        {hasReading && (
-            <div className="w-1/2 p-6 overflow-y-auto border-r bg-white scrollbar-thin">
-                <div className="prose max-w-none text-gray-800 leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
-                    <h3 className="font-bold text-gray-500 mb-2 uppercase text-xs border-b pb-2 tracking-wide text-left">{question.reading_label || "Wacana"}</h3>
-                    {question.citation && <p className="text-gray-400 text-xs italic mb-4 mt-[-8px] text-right">Sumber: {question.citation}</p>}
-                    <div className="text-justify font-serif leading-8 text-gray-800">
-                        {renderMixedContent(question.reading_material)}
+        {/* PANEL KIRI: WACANA / GAMBAR (Scrollable) */}
+        {/* Jika ada gambar/bacaan, tampilkan di atas (mobile) atau kiri (desktop) */}
+        {(q.reading_material || q.image_url) && (
+            <div className="w-full md:w-1/2 bg-gray-100 border-b md:border-b-0 md:border-r border-gray-300 overflow-y-auto p-4 md:p-6">
+                <div className="bg-white p-4 rounded shadow-sm border">
+                    {q.reading_label && <div className="font-bold text-indigo-900 mb-2 uppercase text-xs tracking-wider">{q.reading_label}</div>}
+                    {q.image_url && <img src={q.image_url} alt="Soal" className="w-full h-auto mb-4 rounded border" />}
+                    <div className="prose max-w-none text-gray-800 leading-relaxed text-justify">
+                        {renderText(q.reading_material)}
                     </div>
-                    {question.image_url && (<div className="mt-6 mb-4 flex justify-center"><img src={question.image_url} alt="Ilustrasi" className="max-w-full h-auto rounded-lg border shadow-sm object-contain max-h-[400px]" onError={(e) => { e.target.style.display='none'; }} /></div>)}
+                    {q.citation && <div className="mt-4 text-xs text-gray-500 italic text-right">Sumber: {q.citation}</div>}
                 </div>
             </div>
         )}
 
-        <div className={`flex-1 flex flex-col ${hasReading ? 'w-1/2' : 'w-full max-w-4xl mx-auto'}`}>
-            <div className="flex-1 p-6 overflow-y-auto text-left">
-                <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 min-h-[400px]">
-                    <div className="mb-8 text-lg text-gray-800 leading-relaxed text-left">
-                        {!hasReading && question.image_url && (<div className="mb-6 flex justify-center"><img src={question.image_url} alt="Soal" className="max-w-full h-auto rounded-lg border shadow-sm object-contain max-h-[400px]" onError={(e) => { e.target.onerror=null; e.target.src="https://via.placeholder.com/400x200?text=Gagal+Muat+Gambar"; }}/></div>)}
-                        
-                        <div>{renderMixedContent(question.text)}</div>
-                    </div>
-                    
-                    <div className="space-y-3 text-left">
-                        {question.type === 'short_answer' ? (
-                            <input type="text" className="border-2 border-gray-300 p-4 rounded-lg w-full text-lg uppercase focus:border-indigo-500 outline-none transition" placeholder="Ketik jawaban singkat..." value={answers[question.id] || ''} onChange={(e)=>handleAnswer(e.target.value)}/>
-                        ) : question.type === 'table_boolean' ? (
-                            <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden"><thead className="bg-gray-50"><tr><th className="p-3 text-left border-b font-bold text-gray-600">Pernyataan</th><th className="p-3 text-center w-24 border-b font-bold text-green-700 bg-green-50">{question.label_true || "Benar"}</th><th className="p-3 text-center w-24 border-b font-bold text-red-700 bg-red-50">{question.label_false || "Salah"}</th></tr></thead><tbody>{question.options.map(opt => (<tr key={opt.id} className="border-b last:border-0 hover:bg-gray-50"><td className="p-3 border-r">{renderMixedContent(opt.label)}</td><td className="text-center border-r bg-green-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-green-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='B'} onChange={()=>handleAnswer('B',opt.id)}/></td><td className="text-center bg-red-50/20"><input type="radio" name={`r-${opt.id}`} className="w-5 h-5 accent-red-600 cursor-pointer" checked={(answers[question.id]||{})[opt.id]==='S'} onChange={()=>handleAnswer('S',opt.id)}/></td></tr>))}</tbody></table>
-                        ) : (
-                            question.options.map(opt => {
-                                const isComplex = question.type === 'complex';
-                                const userVal = answers[question.id];
-                                const active = isComplex ? Array.isArray(userVal) && userVal.includes(opt.id) : userVal === opt.id;
-                                return (
-                                    <div key={opt.id} onClick={()=>handleAnswer(opt.id)} className={`p-4 border-2 rounded-xl cursor-pointer flex items-center transition-all duration-200 ${active ? 'bg-indigo-50 border-indigo-500 shadow-md transform scale-[1.01]': 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'}`}>
-                                        <div className={`w-8 h-8 flex items-center justify-center mr-4 font-bold text-sm rounded-full transition-colors ${active?'bg-indigo-600 text-white':'bg-gray-200 text-gray-600'}`}>{opt.id}</div>
-                                        <div className="text-sm font-medium text-gray-700 w-full">{renderMixedContent(opt.label)}</div>{isComplex && <div className={`w-5 h-5 border-2 rounded ml-auto flex items-center justify-center ${active ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300'}`}>{active && <span className="text-white text-xs">✓</span>}</div>}
-                                    </div>
-                                )
-                            })
-                        )}
-                    </div>
-                </div>
+        {/* PANEL KANAN: SOAL & OPSI (Scrollable) */}
+        <div className={`w-full ${(!q.reading_material && !q.image_url) ? 'md:max-w-3xl mx-auto' : 'md:w-1/2'} bg-white overflow-y-auto p-4 md:p-6 pb-24 md:pb-6`}>
+            
+            {/* Teks Soal */}
+            <div className="mb-6">
+                <div className="text-gray-800 leading-relaxed">{renderText(q.text)}</div>
             </div>
 
-            <div className="bg-white border-t p-4 flex justify-between items-center shadow-lg z-40">
-                <button disabled={currentIdx===0} onClick={()=>setCurrentIdx(c=>c-1)} className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2 font-bold transition shadow-sm"><ChevronLeft size={18}/> Sebelumnya</button>
-                <button disabled={(!isSubmitAllowed && timeLeft > 0) || isSubmitting} onClick={handleFinalSubmit} className={`px-5 py-2.5 rounded-lg shadow-md font-bold transition flex items-center gap-2 ${(isSubmitAllowed || timeLeft <= 0) ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-400 text-gray-700 cursor-not-allowed'}`} title={!isSubmitAllowed && timeLeft > 0 ? "Tombol dikunci oleh Admin" : "Kirim Jawaban"}>
-                    {(!isSubmitAllowed && timeLeft > 0) ? <Lock size={18}/> : <Save size={18}/>} 
-                    {!isSubmitAllowed && timeLeft > 0 ? `Terkunci (${formatTime(timeLeft)})` : isSubmitting ? 'Mengirim...' : 'AKHIRI & SUBMIT'}
-                </button>
-                <button disabled={currentIdx===questions.length-1} onClick={()=>setCurrentIdx(c=>c+1)} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md font-bold flex items-center gap-2 transition disabled:opacity-50">Berikutnya <ChevronRight size={18}/></button>
+            {/* Pilihan Ganda */}
+            <div className="space-y-3">
+                {q.type === 'multiple_choice' && q.options.map((opt) => (
+                    <div 
+                        key={opt.id} 
+                        onClick={() => handleAnswer(opt.id)}
+                        className={`
+                            flex items-start p-3 md:p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 group hover:shadow-md
+                            ${answers[q.id] === opt.id 
+                                ? 'border-blue-600 bg-blue-50' 
+                                : 'border-gray-200 hover:border-blue-300 bg-white'}
+                        `}
+                    >
+                        <div className={`
+                            w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center font-bold mr-3 md:mr-4 shrink-0 transition-colors
+                            ${answers[q.id] === opt.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 group-hover:bg-blue-100'}
+                        `}>
+                            {opt.id}
+                        </div>
+                        <div className="flex-1 mt-1 md:mt-2 text-gray-700">{renderText(opt.label)}</div>
+                    </div>
+                ))}
+
+                {/* Tipe Soal Isian Singkat */}
+                {q.type === 'short_answer' && (
+                    <input 
+                        className="w-full p-4 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-lg"
+                        placeholder="Ketik jawaban Anda..."
+                        value={answers[q.id] || ''}
+                        onChange={(e) => handleAnswer(e.target.value)}
+                    />
+                )}
             </div>
         </div>
       </main>
+
+      {/* 4. FOOTER (Bottom Navigation) - Fixed/Sticky */}
+      <footer className="bg-white border-t border-gray-200 p-3 md:p-4 shrink-0 flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-50">
+          
+          <button 
+            onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
+            disabled={currentIndex === 0}
+            className="flex items-center gap-1 md:gap-2 px-3 md:px-5 py-2 md:py-2.5 rounded-lg font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          >
+            <ChevronLeft size={18}/> <span className="hidden md:inline">Sebelumnya</span>
+          </button>
+
+          <button 
+            onClick={toggleDoubt}
+            className={`
+                flex items-center gap-2 px-3 md:px-5 py-2 md:py-2.5 rounded-lg font-bold border-2 transition
+                ${doubtful[q.id] ? 'bg-yellow-400 border-yellow-500 text-white' : 'bg-white border-yellow-400 text-yellow-600'}
+            `}
+          >
+            <AlertTriangle size={18}/> <span className="hidden md:inline">Ragu-ragu</span>
+          </button>
+
+          {isLast ? (
+             <button 
+                onClick={handleSubmit}
+                className="flex items-center gap-2 px-4 md:px-6 py-2 md:py-2.5 rounded-lg font-bold bg-green-600 text-white hover:bg-green-700 shadow-lg hover:shadow-green-200/50 transition transform active:scale-95"
+             >
+                Selesai <CheckCircle size={18}/>
+             </button>
+          ) : (
+             <button 
+                onClick={() => setCurrentIndex(Math.min(questions.length - 1, currentIndex + 1))}
+                className="flex items-center gap-1 md:gap-2 px-3 md:px-5 py-2 md:py-2.5 rounded-lg font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-lg hover:shadow-blue-200/50 transition"
+             >
+                <span className="hidden md:inline">Selanjutnya</span> <ChevronRight size={18}/>
+             </button>
+          )}
+      </footer>
     </div>
   );
 };
+
 export default ExamSimulation;
