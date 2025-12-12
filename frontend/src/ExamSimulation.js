@@ -21,6 +21,7 @@ const ExamSimulation = ({ onFinish }) => {
 
   const timerRef = useRef(null);
 
+  // FIX: Regex [\s\S]*? supports multiline match for [b] and [i]
   const renderText = (text) => {
     if (!text) return null;
     const parts = text.split(/(\$.*?\$)/);
@@ -32,8 +33,8 @@ const ExamSimulation = ({ onFinish }) => {
         <span key={index} dangerouslySetInnerHTML={{ 
             __html: part
                 .replace(/\n/g, '<br/>')
-                .replace(/\[b\](.*?)\[\/b\]/gi, '<strong>$1</strong>')
-                .replace(/\[i\](.*?)\[\/i\]/gi, '<em>$1</em>')
+                .replace(/\[b\]([\s\S]*?)\[\/b\]/gi, '<strong>$1</strong>')
+                .replace(/\[i\]([\s\S]*?)\[\/i\]/gi, '<em>$1</em>')
         }} />
       );
     });
@@ -261,4 +262,5 @@ const ExamSimulation = ({ onFinish }) => {
     </div>
   );
 };
+
 export default ExamSimulation;

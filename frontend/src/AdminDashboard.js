@@ -25,12 +25,9 @@ const AdminDashboard = ({ onLogout }) => {
   const [showPreview, setShowPreview] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false); 
   const [showUserModal, setShowUserModal] = useState(false);
-  
-  // New State for Editing Period Access
   const [showEditAccessModal, setShowEditAccessModal] = useState(false);
   const [editingPeriodId, setEditingPeriodId] = useState(null);
   const [editAccessUsers, setEditAccessUsers] = useState([]);
-
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedStudentDetail, setSelectedStudentDetail] = useState(null);
   const [selectedWhitelist, setSelectedWhitelist] = useState([]);
@@ -40,11 +37,17 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
+  // FIX RENDER TEXT WITH MULTILINE REGEX
   const renderText = (text) => {
     if (!text) return null;
     return text.split(/(\$.*?\$)/).map((part, index) => {
       if (part.startsWith('$') && part.endsWith('$')) return <InlineMath key={index} math={part.slice(1, -1)} />;
-      return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br/>').replace(/\[b\](.*?)\[\/b\]/gi, '<strong>$1</strong>').replace(/\[i\](.*?)\[\/i\]/gi, '<em>$1</em>') }} />;
+      return <span key={index} dangerouslySetInnerHTML={{ 
+        __html: part
+            .replace(/\n/g, '<br/>')
+            .replace(/\[b\]([\s\S]*?)\[\/b\]/gi, '<strong>$1</strong>')
+            .replace(/\[i\]([\s\S]*?)\[\/i\]/gi, '<em>$1</em>') 
+      }} />;
     });
   };
 
@@ -76,20 +79,31 @@ const AdminDashboard = ({ onLogout }) => {
   };
 
   const toggleConfig = (k, v) => {
-      const nv = !v; if(k==='release_announcement') setIsReleased(nv); if(k==='enable_major_selection') setIsMajorSelectionEnabled(nv);
-      fetch(`${API_URL}/config/${k}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({value:nv?"true":"false"})}).then(r=>r.json()).then(d=>{
-          if(k==='release_announcement') setIsReleased(d.value==='true'); if(k==='enable_major_selection') setIsMajorSelectionEnabled(d.value==='true');
+      // Optimistic UI for Config
+      const nv = !v; 
+      if(k==='release_announcement') setIsReleased(nv); 
+      if(k==='enable_major_selection') setIsMajorSelectionEnabled(nv);
+      
+      fetch(`${API_URL}/config/${k}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({value:nv?"true":"false"})})
+      .catch(() => {
+          // Revert if fail
+          if(k==='release_announcement') setIsReleased(v); 
+          if(k==='enable_major_selection') setIsMajorSelectionEnabled(v);
+          alert("Gagal mengubah pengaturan.");
       });
   };
 
-  const togglePeriodActive = (id, s) => {
-      fetch(`${API_URL}/admin/periods/${id}/toggle`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active:!s})})
-      .then(() => fetchPeriods()); 
+  // FIX SAKLAR RESPONSIF (OPTIMISTIC UPDATE)
+  const togglePeriodActive = (id, currentStatus) => {
+      setPeriods(prev => prev.map(p => p.id === id ? { ...p, is_active: !currentStatus } : p));
+      fetch(`${API_URL}/admin/periods/${id}/toggle`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active:!currentStatus})})
+      .catch(() => { alert("Gagal koneksi."); fetchPeriods(); });
   };
   
-  const togglePeriodSubmit = (id, s) => {
-      fetch(`${API_URL}/admin/periods/${id}/toggle-submit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active:!s})})
-      .then(() => fetchPeriods()); 
+  const togglePeriodSubmit = (id, currentStatus) => {
+      setPeriods(prev => prev.map(p => p.id === id ? { ...p, allow_submit: !currentStatus } : p));
+      fetch(`${API_URL}/admin/periods/${id}/toggle-submit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active:!currentStatus})})
+      .catch(() => { alert("Gagal koneksi."); fetchPeriods(); });
   };
 
   const handleDownloadPDF = () => {
@@ -120,7 +134,6 @@ const AdminDashboard = ({ onLogout }) => {
 
   const toggleUserWhitelist = (u) => { setSelectedWhitelist(selectedWhitelist.includes(u) ? selectedWhitelist.filter(x=>x!==u) : [...selectedWhitelist, u]); };
   
-  // FIX NO. 5: EDIT AKSES
   const openEditAccess = (period) => {
       setEditingPeriodId(period.id);
       setEditAccessUsers(period.allowed_usernames ? period.allowed_usernames.split(',').map(u=>u.trim()) : []);
@@ -149,8 +162,6 @@ const AdminDashboard = ({ onLogout }) => {
 
   const handleViewStudentDetail = (studentData) => { setSelectedStudentDetail(studentData); setShowDetailModal(true); };
   const handleResetResult = (uid, eid) => { if(window.confirm("Reset?")) fetch(`${API_URL}/admin/reset-result`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_id:uid, exam_id:eid})}).then(()=>fetchRecap()); };
-  
-  // FIX NO. 3: ALERT ADD USER
   const handleAddUser = (e) => { 
       e.preventDefault(); 
       fetch(`${API_URL}/admin/users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(newUser)})
@@ -159,7 +170,6 @@ const AdminDashboard = ({ onLogout }) => {
           else alert("Gagal tambah user.");
       }); 
   };
-  
   const handleBulkDelete = () => { if(selectedIds.length>0 && window.confirm("Hapus?")) fetch(`${API_URL}/admin/users/delete-bulk`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_ids:selectedIds})}).then(()=>fetchUsers()); };
   const handleBulkUpload = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/users/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchUsers();}) };
   const handleDownloadExcel = () => { const url = selectedRecapPeriod ? `${API_URL}/admin/recap/download?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap/download`; window.open(url, '_blank'); };
@@ -200,27 +210,26 @@ const AdminDashboard = ({ onLogout }) => {
 
       <main className="flex-1 p-4 md:p-8 overflow-y-auto relative h-screen">
         {showPreview && previewData && (
-             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
-                 <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-xl font-bold">Preview: {previewData.title}</h3></div><button onClick={()=>setShowPreview(false)}><X/></button></div>
-                 <div className="flex-1 overflow-y-auto p-6 space-y-8">{previewData.questions.map((q,i)=>(
-                     <div key={q.id} className="border p-4 rounded bg-gray-50">
-                         <div className="font-bold mb-2 text-indigo-700">No. {i+1} <span className="text-xs text-gray-500 font-normal ml-2">Bobot: {q.difficulty}</span></div>
-                         <div className="mb-4">{renderText(q.text)}</div>
-                         {q.type === 'table_boolean' && q.options && (
-                             <table className="w-full text-sm border">
-                                 <thead><tr className="bg-gray-100"><th className="p-2">Opsi</th><th className="p-2 text-center">Benar/Salah</th></tr></thead>
-                                 <tbody>{q.options.map(o=><tr key={o.id} className="border-t"><td className="p-2">{renderText(o.label)}</td><td className="p-2 text-center">{o.is_correct?'B':'S'}</td></tr>)}</tbody>
-                             </table>
-                         )}
-                         {q.type !== 'table_boolean' && q.options && (
-                             <div className="space-y-1 ml-4 border-l-2 pl-3 border-gray-200">{q.options.map(opt => (<div key={opt.id} className={`text-sm ${opt.is_correct ? 'text-green-700 font-bold bg-green-50 px-2 py-1 rounded inline-block' : 'text-gray-600'}`}><strong>{opt.id}.</strong> {renderText(opt.label)} {opt.is_correct && " ✅"}</div>))}</div>
-                         )}
-                     </div>))}</div>
-             </div>
-         </div>
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
+                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-xl font-bold">Preview: {previewData.title}</h3></div><button onClick={()=>setShowPreview(false)}><X/></button></div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-8">{previewData.questions.map((q,i)=>(
+                        <div key={q.id} className="border p-4 rounded bg-gray-50">
+                            <div className="font-bold mb-2 text-indigo-700">No. {i+1} <span className="text-xs text-gray-500 font-normal ml-2">Bobot: {q.difficulty}</span></div>
+                            <div className="mb-4">{renderText(q.text)}</div>
+                            {q.type === 'table_boolean' && q.options && (
+                                <table className="w-full text-sm border">
+                                    <thead><tr className="bg-gray-100"><th className="p-2">Opsi</th><th className="p-2 text-center">Benar/Salah</th></tr></thead>
+                                    <tbody>{q.options.map(o=><tr key={o.id} className="border-t"><td className="p-2">{renderText(o.label)}</td><td className="p-2 text-center">{o.is_correct?'B':'S'}</td></tr>)}</tbody>
+                                </table>
+                            )}
+                            {q.type !== 'table_boolean' && q.options && (
+                                <div className="space-y-1 ml-4 border-l-2 pl-3 border-gray-200">{q.options.map(opt => (<div key={opt.id} className={`text-sm ${opt.is_correct ? 'text-green-700 font-bold bg-green-50 px-2 py-1 rounded inline-block' : 'text-gray-600'}`}><strong>{opt.id}.</strong> {renderText(opt.label)} {opt.is_correct && " ✅"}</div>))}</div>
+                            )}
+                        </div>))}</div>
+                </div>
+            </div>
         )}
-        
         {showAnalysis && analysisData && (
              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
              <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col">
@@ -242,8 +251,6 @@ const AdminDashboard = ({ onLogout }) => {
              </div>
          </div>
         )}
-
-        {/* MODAL EDIT AKSES */}
         {showEditAccessModal && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">
@@ -260,7 +267,6 @@ const AdminDashboard = ({ onLogout }) => {
                 </div>
             </div>
         )}
-
         {showDetailModal && selectedStudentDetail && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col h-[70vh]">
@@ -281,7 +287,6 @@ const AdminDashboard = ({ onLogout }) => {
                 </div>
             </div>
         )}
-
         {showUserModal && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">
@@ -292,7 +297,7 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
-        {/* ... Tab Majors, Periods, Users, Recap logic is already rendered in the main flow ... */}
+        {/* --- MAIN DASHBOARD CONTENT --- */}
         {tab === 'majors' && (
             <div><h2 className="text-2xl font-bold mb-6">Manajemen Jurusan</h2>
             <div className="bg-white p-6 rounded shadow mb-6 border-l-4 border-indigo-500"><div className="flex flex-col md:flex-row gap-2 items-end"><div className="flex-1 w-full"><label className="text-xs font-bold text-gray-500">Universitas</label><input className="w-full p-2 border rounded" placeholder="UI" value={newMajor.university} onChange={e=>setNewMajor({...newMajor, university:e.target.value})}/></div><div className="flex-[2] w-full"><label className="text-xs font-bold text-gray-500">Jurusan</label><input className="w-full p-2 border rounded" placeholder="Kedokteran" value={newMajor.name} onChange={e=>setNewMajor({...newMajor, name:e.target.value})}/></div><div className="w-full md:w-32"><label className="text-xs font-bold text-gray-500">PG</label><input type="number" step="0.01" className="w-full p-2 border rounded" placeholder="650" value={newMajor.passing_grade} onChange={e=>setNewMajor({...newMajor, passing_grade:e.target.value})}/></div><button onClick={handleAddMajor} className="w-full md:w-auto bg-green-600 text-white px-6 py-2 rounded font-bold h-[42px]">Simpan</button></div><div className="mt-4 pt-4 border-t"><label className="text-blue-600 cursor-pointer text-sm hover:underline font-bold flex items-center gap-2"><Upload size={16}/> Upload Excel Jurusan<input type="file" hidden accept=".xlsx" onChange={handleBulkUploadMajors}/></label></div></div>
