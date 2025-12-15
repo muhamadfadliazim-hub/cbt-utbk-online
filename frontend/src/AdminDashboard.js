@@ -6,6 +6,7 @@ import { API_URL } from './config';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+// Urutan Standar untuk Laporan Admin (Biar Rapi)
 const EXAM_ORDER = ["PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM"];
 
 const AdminDashboard = ({ onLogout }) => {
@@ -37,7 +38,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
-  // FIX RENDER TEXT WITH MULTILINE REGEX
+  // Helper render text (LaTeX & Bold/Italic)
   const renderText = (text) => {
     if (!text) return null;
     return text.split(/(\$.*?\$)/).map((part, index) => {
@@ -79,21 +80,13 @@ const AdminDashboard = ({ onLogout }) => {
   };
 
   const toggleConfig = (k, v) => {
-      // Optimistic UI for Config
       const nv = !v; 
       if(k==='release_announcement') setIsReleased(nv); 
       if(k==='enable_major_selection') setIsMajorSelectionEnabled(nv);
-      
       fetch(`${API_URL}/config/${k}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({value:nv?"true":"false"})})
-      .catch(() => {
-          // Revert if fail
-          if(k==='release_announcement') setIsReleased(v); 
-          if(k==='enable_major_selection') setIsMajorSelectionEnabled(v);
-          alert("Gagal mengubah pengaturan.");
-      });
+      .catch(() => { if(k==='release_announcement') setIsReleased(v); if(k==='enable_major_selection') setIsMajorSelectionEnabled(v); alert("Gagal mengubah pengaturan."); });
   };
 
-  // FIX SAKLAR RESPONSIF (OPTIMISTIC UPDATE)
   const togglePeriodActive = (id, currentStatus) => {
       setPeriods(prev => prev.map(p => p.id === id ? { ...p, is_active: !currentStatus } : p));
       fetch(`${API_URL}/admin/periods/${id}/toggle`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({is_active:!currentStatus})})
@@ -108,7 +101,7 @@ const AdminDashboard = ({ onLogout }) => {
 
   const handleDownloadPDF = () => {
     const doc = new jsPDF('landscape'); 
-    doc.setFontSize(18); doc.text("REKAPITULASI HASIL UJIAN (CBT)", 14, 15);
+    doc.setFontSize(18); doc.text("REKAPITULASI HASIL UTBK SNBT", 14, 15);
     doc.setFontSize(10); doc.text(`Dicetak pada: ${new Date().toLocaleString('id-ID')}`, 14, 22);
     doc.text(`Periode: ${selectedRecapPeriod ? (periods.find(p => p.id === parseInt(selectedRecapPeriod))?.name || "Periode Tertentu") : "Semua Data"}`, 14, 27);
     const tableColumn = ["No", "Nama Siswa", "Username", ...EXAM_ORDER, "Avg", "Status"];
@@ -129,7 +122,7 @@ const AdminDashboard = ({ onLogout }) => {
             }
         }
     });
-    doc.save('Laporan_Rekap_Nilai_CBT.pdf');
+    doc.save('Laporan_Rekap_Nilai_UTBK.pdf');
   };
 
   const toggleUserWhitelist = (u) => { setSelectedWhitelist(selectedWhitelist.includes(u) ? selectedWhitelist.filter(x=>x!==u) : [...selectedWhitelist, u]); };
@@ -145,16 +138,25 @@ const AdminDashboard = ({ onLogout }) => {
       fetch(`${API_URL}/admin/periods/${editingPeriodId}/users`, {
           method: 'PUT', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ allowed_usernames: allowed })
-      }).then(r => r.json()).then(d => {
-          alert(d.message);
-          setShowEditAccessModal(false);
-          fetchPeriods();
-      });
+      }).then(r => r.json()).then(d => { alert(d.message); setShowEditAccessModal(false); fetchPeriods(); });
   };
 
-  const handleCreatePeriod = (e) => { e.preventDefault(); let allowed = selectedWhitelist.length>0?selectedWhitelist.join(','):(allowedUsers.trim()||null); fetch(`${API_URL}/admin/periods`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newPeriodName,allowed_usernames:allowed})}).then(r=>r.json()).then(d=>{alert(d.message); setNewPeriodName(''); setAllowedUsers(''); setSelectedWhitelist([]); fetchPeriods();}); };
-  const handleDeletePeriod = (id) => { if(window.confirm("Hapus?")) fetch(`${API_URL}/admin/periods/${id}`, {method:'DELETE'}).then(()=>fetchPeriods()); };
-  const handleUploadQuestion = (eid, f) => { const d=new FormData(); d.append('file',f); const btn=document.getElementById(`btn-upload-${eid}`); if(btn)btn.innerText="Uploading..."; fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchPeriods();}).finally(()=>{if(btn)btn.innerText="Upload";}); };
+  const handleCreatePeriod = (e) => { 
+      e.preventDefault(); 
+      let allowed = selectedWhitelist.length>0?selectedWhitelist.join(','):(allowedUsers.trim()||null); 
+      fetch(`${API_URL}/admin/periods`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newPeriodName,allowed_usernames:allowed})})
+      .then(r=>r.json()).then(d=>{alert(d.message); setNewPeriodName(''); setAllowedUsers(''); setSelectedWhitelist([]); fetchPeriods();}); 
+  };
+  const handleDeletePeriod = (id) => { if(window.confirm("Hapus Periode? Semua data ujian di dalamnya akan hilang.")) fetch(`${API_URL}/admin/periods/${id}`, {method:'DELETE'}).then(()=>fetchPeriods()); };
+  
+  const handleUploadQuestion = (eid, f) => { 
+      const d=new FormData(); d.append('file',f); 
+      const btn=document.getElementById(`btn-upload-${eid}`); if(btn)btn.innerText="Uploading..."; 
+      fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d})
+      .then(r=>r.json()).then(d=>{alert(d.message); fetchPeriods();})
+      .finally(()=>{if(btn)btn.innerText="Upload";}); 
+  };
+  
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
   const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}).catch(e => alert("Gagal: " + e.message)); };
   const handleShowAnalysis = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/analysis`).then(r => r.json()).then(d => { setAnalysisData(d); setActiveAnalysisId(eid); setShowAnalysis(true); }).catch(e => alert("Gagal memuat analisis")); };
@@ -162,13 +164,11 @@ const AdminDashboard = ({ onLogout }) => {
 
   const handleViewStudentDetail = (studentData) => { setSelectedStudentDetail(studentData); setShowDetailModal(true); };
   const handleResetResult = (uid, eid) => { if(window.confirm("Reset?")) fetch(`${API_URL}/admin/reset-result`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_id:uid, exam_id:eid})}).then(()=>fetchRecap()); };
+  
   const handleAddUser = (e) => { 
       e.preventDefault(); 
       fetch(`${API_URL}/admin/users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(newUser)})
-      .then(r => {
-          if(r.ok) { alert("User Berhasil Ditambahkan!"); fetchUsers(); setNewUser({...newUser, username:'', full_name:''}); }
-          else alert("Gagal tambah user.");
-      }); 
+      .then(r => { if(r.ok) { alert("User Berhasil Ditambahkan!"); fetchUsers(); setNewUser({...newUser, username:'', full_name:''}); } else alert("Gagal tambah user."); }); 
   };
   const handleBulkDelete = () => { if(selectedIds.length>0 && window.confirm("Hapus?")) fetch(`${API_URL}/admin/users/delete-bulk`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({user_ids:selectedIds})}).then(()=>fetchUsers()); };
   const handleBulkUpload = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/users/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchUsers();}) };
@@ -178,9 +178,7 @@ const AdminDashboard = ({ onLogout }) => {
   const handleChangePassword = (uid) => { const newPass = prompt("Password Baru:"); if(newPass) fetch(`${API_URL}/admin/users/${uid}/password`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({new_password:newPass})}).then(r=>r.json()).then(d=>alert(d.message)); };
   
   const getStatusBadge = (s) => {
-      if (s && s.startsWith('LULUS')) {
-          return <span className="text-green-600 font-bold text-xs flex items-center gap-1 whitespace-nowrap"><CheckCircle size={12}/> {s}</span>;
-      }
+      if (s && s.startsWith('LULUS')) return <span className="text-green-600 font-bold text-xs flex items-center gap-1 whitespace-nowrap"><CheckCircle size={12}/> {s}</span>;
       return <span className="text-red-600 font-bold text-xs flex items-center gap-1 whitespace-nowrap"><XCircle size={12}/> TIDAK LULUS</span>;
   };
 
@@ -209,6 +207,7 @@ const AdminDashboard = ({ onLogout }) => {
       {isMobileMenuOpen && <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>}
 
       <main className="flex-1 p-4 md:p-8 overflow-y-auto relative h-screen">
+        {/* --- MODALS --- */}
         {showPreview && previewData && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
@@ -230,6 +229,7 @@ const AdminDashboard = ({ onLogout }) => {
                 </div>
             </div>
         )}
+
         {showAnalysis && analysisData && (
              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
              <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col">
@@ -251,6 +251,7 @@ const AdminDashboard = ({ onLogout }) => {
              </div>
          </div>
         )}
+
         {showEditAccessModal && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">
@@ -267,6 +268,7 @@ const AdminDashboard = ({ onLogout }) => {
                 </div>
             </div>
         )}
+
         {showDetailModal && selectedStudentDetail && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col h-[70vh]">
@@ -274,7 +276,7 @@ const AdminDashboard = ({ onLogout }) => {
                         <div><h3 className="text-lg font-bold text-indigo-900">Rincian Jawaban Salah</h3><p className="text-sm text-gray-500">{selectedStudentDetail.full_name}</p></div><button onClick={()=>setShowDetailModal(false)}><X/></button>
                     </div>
                     <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                        {["PU","PBM","PPU","PK","LBI","LBE","PM"].map(code => {
+                        {EXAM_ORDER.map(code => {
                             const wrongList = selectedStudentDetail.details ? selectedStudentDetail.details[code] : null;
                             return (
                                 <div key={code} className="border rounded-lg p-4 bg-gray-50">
@@ -287,6 +289,7 @@ const AdminDashboard = ({ onLogout }) => {
                 </div>
             </div>
         )}
+
         {showUserModal && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">

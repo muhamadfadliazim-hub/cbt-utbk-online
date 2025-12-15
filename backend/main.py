@@ -10,6 +10,7 @@ import pandas as pd
 import io
 import time
 import math
+import random
 
 models.Base.metadata.create_all(bind=database.engine)
 app = FastAPI()
@@ -133,7 +134,6 @@ def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Periode Berhasil Dibuat!"}
 
-# --- FIX NO. 5: UPDATE PESERTA PERIODE ---
 @app.put("/admin/periods/{pid}/users")
 def update_period_users(pid: int, data: UpdatePeriodUsersSchema, db: Session = Depends(get_db)):
     p = db.query(models.ExamPeriod).filter_by(id=pid).first()
@@ -159,17 +159,12 @@ def delete_period(pid: int, db: Session = Depends(get_db)):
     db.query(models.ExamPeriod).filter_by(id=pid).delete(); db.commit()
     return {"message": "OK"}
 
-# --- FIX NO. 1: RESET HASIL (VALIDASI STRICT) ---
 @app.post("/admin/reset-result")
 def reset_result(data: ResetResultSchema, db: Session = Depends(get_db)):
-    if not data.exam_id: 
-        raise HTTPException(400, "Exam ID required")
-    # Hanya hapus yg cocok User ID DAN Exam ID
+    if not data.exam_id: raise HTTPException(400, "Exam ID required")
     deleted = db.query(models.ExamResult).filter_by(user_id=data.user_id, exam_id=data.exam_id).delete()
     db.commit()
-    if deleted == 0:
-        return {"message": "Tidak ada data yang dihapus (mungkin sudah kosong)"}
-    return {"message": f"Reset berhasil untuk {data.exam_id}"}
+    return {"message": f"Reset berhasil ({deleted} data)"}
 
 @app.post("/upload-exam")
 async def upload_exam_manual(title: str = Form(...), duration: float = Form(...), description: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
@@ -251,13 +246,7 @@ def preview_exam_questions(exam_id: str, db: Session = Depends(get_db)):
         try:
             if q.difficulty and not math.isnan(q.difficulty): safe_difficulty = q.difficulty
         except: pass
-
-        q_data.append({
-            "id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url,
-            "reading_material": q.reading_material, "difficulty": safe_difficulty, 
-            "options": opts, "label_true": q.label_true, "label_false": q.label_false, 
-            "reading_label": q.reading_label, "citation": q.citation
-        })
+        q_data.append({"id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url, "reading_material": q.reading_material, "difficulty": safe_difficulty, "options": opts, "label_true": q.label_true, "label_false": q.label_false, "reading_label": q.reading_label, "citation": q.citation})
     q_data.sort(key=lambda x: x["id"])
     return {"title": exam.title, "questions": q_data}
 
@@ -292,12 +281,7 @@ def download_exam_analysis(exam_id: str, db: Session = Depends(get_db)):
             try:
                 if q.difficulty and not math.isnan(q.difficulty): safe_diff = q.difficulty
             except: pass
-            data.append({
-                "No": i, "Soal": q.text[:100], "Tipe": q.type,
-                "Kesulitan (IRT)": round(safe_diff, 2),
-                "Total Dijawab": attempts, "Total Benar": correct,
-                "Persentase Benar (%)": percentage
-            })
+            data.append({"No": i, "Soal": q.text[:100], "Tipe": q.type, "Kesulitan (IRT)": round(safe_diff, 2), "Total Dijawab": attempts, "Total Benar": correct, "Persentase Benar (%)": percentage})
         df = pd.DataFrame(data)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer: df.to_excel(writer, index=False)
@@ -309,26 +293,67 @@ def download_exam_analysis(exam_id: str, db: Session = Depends(get_db)):
 @app.get("/student/periods")
 def get_student_periods(username: str = None, db: Session = Depends(get_db)):
     periods = db.query(models.ExamPeriod).filter_by(is_active=True).order_by(models.ExamPeriod.id.desc()).all()
-    user_id = None
+    
+    user = None
     if username:
-        u = db.query(models.User).filter_by(username=username).first()
-        if u: user_id = u.id
+        user = db.query(models.User).filter_by(username=username).first()
+    
     res = []
     for p in periods:
+        # Cek Whitelist
         if p.allowed_usernames:
             allowed_list = [u.strip().lower() for u in p.allowed_usernames.split(',')]
             if not username or username.lower() not in allowed_list: continue
-        exams = []
+            
+        exams_data = []
         for e in p.exams:
             q_count = db.query(models.Question).filter_by(exam_id=e.id).count()
             is_done = False
-            if user_id:
-                if db.query(models.ExamResult).filter_by(user_id=user_id, exam_id=e.id).first(): is_done = True
-            exams.append({"id": e.id, "title": e.title, "duration": e.duration, "q_count": q_count, "is_done": is_done, "allow_submit": p.allow_submit})
-        order_map = {"Penalaran Umum":1, "Pemahaman Bacaan & Menulis":2, "Pengetahuan & Pemahaman Umum":3, "Pengetahuan Kuantitatif":4, "Literasi Bahasa Indonesia":5, "Literasi Bahasa Inggris":6, "Penalaran Matematika":7}
-        order_map.update({"PU":1, "PBM":2, "PPU":3, "PK":4, "LBI":5, "LBE":6, "PM":7})
-        exams.sort(key=lambda x: order_map.get(x['title'], 99))
-        res.append({"id": p.id, "name": p.name, "exams": exams})
+            if user:
+                if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=e.id).first(): 
+                    is_done = True
+            exams_data.append({
+                "id": e.id, 
+                "title": e.title, 
+                "duration": e.duration, 
+                "q_count": q_count, 
+                "is_done": is_done,
+                "allow_submit": p.allow_submit
+            })
+        
+        # --- LOGIKA PENGACAKAN DETERMINISTIK (BARU) ---
+        if user:
+            # Kita gunakan Seed gabungan ID User + ID Periode
+            # Supaya urutan acak ini 'menempel' selamanya pada user tersebut di periode ini
+            seed_val = f"{user.id}_{p.id}_SECRET_KEY"
+            rng = random.Random(seed_val)
+            rng.shuffle(exams_data)
+        else:
+            # Default sorting jika tidak ada user (misal untuk preview admin)
+            order_map = {"PU":1, "PBM":2, "PPU":3, "PK":4, "LBI":5, "LBE":6, "PM":7}
+            exams_data.sort(key=lambda x: order_map.get(x['id'].split('_')[-1], 99))
+            
+        # --- LOGIKA BLOCKING TIME (Kunci soal berikutnya) ---
+        # Kita tandai mana yang "locked" berdasarkan urutan hasil acakan tadi
+        final_exams = []
+        is_previous_done = True # Ujian pertama selalu terbuka
+        
+        for ex in exams_data:
+            # Status: open, done, atau locked
+            status = "locked"
+            if ex["is_done"]:
+                status = "done"
+            elif is_previous_done:
+                status = "open" # Ini ujian yang sedang aktif dikerjakan
+            
+            ex["status"] = status
+            final_exams.append(ex)
+            
+            # Update flag untuk soal berikutnya
+            # Soal berikutnya hanya boleh buka jika soal ini sudah DONE
+            is_previous_done = ex["is_done"]
+
+        res.append({"id": p.id, "name": p.name, "exams": final_exams})     
     return res
 
 @app.get("/exams/{exam_id}")
@@ -341,15 +366,18 @@ def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
         opts.sort(key=lambda x: x['id'])
         q_data.append({"id": q.id, "type": q.type, "text": q.text, "image_url": q.image_url, "reading_material": q.reading_material, "options": opts, "label_true": q.label_true, "label_false": q.label_false, "reading_label": q.reading_label, "citation": q.citation})
     q_data.sort(key=lambda x: x['id'])
-    # FIX NO. 4: KIRIM STATUS ALLOW_SUBMIT KE FRONTEND
     return {"id": exam.id, "title": exam.title, "duration": exam.duration, "questions": q_data, "allow_submit": exam.period.allow_submit}
 
+# --- FIX: SUBMIT AGAR TIDAK DOUBLE (CEGAH 8 UJIAN) ---
 @app.post("/exams/{exam_id}/submit")
 def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
     if not user: raise HTTPException(404)
-    if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first(): 
-        return {"message": "Done", "correct": 0, "wrong": 0}
+    
+    # CEK DUPLIKASI: Jika sudah ada, jangan simpan lagi
+    existing = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first()
+    if existing: 
+        return {"message": "Already Submitted", "correct": existing.correct_count, "wrong": existing.wrong_count}
     
     questions = db.query(models.Question).filter_by(exam_id=exam_id).all()
     correct, total_w, earned_w = 0, 0.0, 0.0
@@ -358,6 +386,8 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
         is_correct = check_answer_correctness(q, user_ans)
         q.total_attempts += 1
         if is_correct: q.total_correct += 1
+        
+        # Difficulty Update Logic
         if q.total_attempts >= 5:
             q.difficulty = 1.0 + ((1.0 - (q.total_correct/q.total_attempts)) * 3.0)
         
@@ -455,6 +485,8 @@ async def bulk_user(file: UploadFile = File(...), db: Session = Depends(get_db))
                 db.add(models.User(username=str(r['username']), password=str(r['password']), full_name=str(r['full_name']), role=str(r.get('role','student')))); c+=1
         db.commit(); return {"message": f"{c} users"}
     except Exception as e: return {"message": str(e)}
+
+# --- FIX: RECAP BUG (Prevent Suffix matching like PU in PPU) ---
 @app.get("/admin/recap")
 def get_recap(period_id: Optional[int]=None, db: Session=Depends(get_db)):
     users = db.query(models.User).filter_by(role='student').options(joinedload(models.User.results), joinedload(models.User.choice1), joinedload(models.User.choice2)).all()
@@ -462,16 +494,27 @@ def get_recap(period_id: Optional[int]=None, db: Session=Depends(get_db)):
     for u in users:
         urs = [r for r in u.results if r.exam_id.startswith(f"P{period_id}_")] if period_id else u.results
         if period_id and not urs: continue
-        sc={r.exam_id.split('_')[-1]: r.irt_score for r in urs}
-        completed=[{"code":k, "exam_id": next(r.exam_id for r in urs if r.exam_id.endswith(k))} for k in sc]
+        sc={}
+        exam_id_map = {} # Maps code -> exact exam_id
+        for r in urs:
+            # FIX: Strict splitting to get the exact code (PU, PBM, etc)
+            code = r.exam_id.split('_')[-1]
+            sc[code] = r.irt_score
+            exam_id_map[code] = r.exam_id
+        
+        # Build completed list using the exact map, preventing duplicates or bad matching
+        completed=[{"code":k, "exam_id": exam_id_map[k]} for k in sc]
+        
         avg = sum(sc.values())/7 if sc else 0
         stat, maj = "TIDAK LULUS", "-"
         if u.choice1 and avg >= u.choice1.passing_grade: stat, maj = "LULUS PIL 1", u.choice1.name
         elif u.choice2 and avg >= u.choice2.passing_grade: stat, maj = "LULUS PIL 2", u.choice2.name
+        
         row = {"id":u.id, "full_name":u.full_name, "username":u.username, "average":round(avg,2), "status":stat, "accepted_major":maj, "completed_exams":completed}
         for k in ["PU","PPU","PBM","PK","LBI","LBE","PM"]: row[k]=round(sc.get(k,0),2)
         res.append(row)
     return res
+
 @app.get("/admin/recap/download")
 def dl_recap(period_id: Optional[int]=None, db: Session=Depends(get_db)):
     try:
@@ -489,27 +532,36 @@ def dl_recap(period_id: Optional[int]=None, db: Session=Depends(get_db)):
         output.seek(0)
         return StreamingResponse(output, headers={'Content-Disposition': 'attachment; filename="rekap.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     except Exception as e: raise HTTPException(500, f"Error download: {str(e)}")
+
 @app.get("/student/recap/{uname}")
 def stu_recap(uname: str, db: Session=Depends(get_db)):
     cfg = db.query(models.SystemConfig).filter_by(key="release_announcement").first()
     released = cfg.value=="true" if cfg else False
     u = db.query(models.User).filter_by(username=uname).options(joinedload(models.User.results), joinedload(models.User.choice1), joinedload(models.User.choice2)).first()
     if not u: raise HTTPException(404)
+    
+    # Identify Periods user has participated in
     p_ids = {int(r.exam_id.split('_')[0].replace('P','')) for r in u.results if 'P' in r.exam_id}
     p_map = {p.id:p.name for p in db.query(models.ExamPeriod).filter(models.ExamPeriod.id.in_(p_ids)).all()}
+    
     reps = []
     for pid in p_ids:
         p_tot = 0
         dets = []
         for c in ["PU","PPU","PBM","PK","LBI","LBE","PM"]:
-            res = next((r for r in u.results if r.exam_id == f"P{pid}_{c}"), None)
-            sc = res.irt_score if res else 0; p_tot+=sc
+            # Strict match for result
+            target_id = f"P{pid}_{c}"
+            res = next((r for r in u.results if r.exam_id == target_id), None)
+            sc = res.irt_score if res else 0
+            p_tot += sc
             dets.append({"code":c, "correct":res.correct_count if res else 0, "wrong":res.wrong_count if res else 0, "score":round(sc,2)})
+        
         avg = p_tot/7
         st, mj = "TIDAK LULUS", "-"
         if u.choice1 and avg >= u.choice1.passing_grade: st, mj = "LULUS PIL 1", u.choice1.name
         elif u.choice2 and avg >= u.choice2.passing_grade: st, mj = "LULUS PIL 2", u.choice2.name
         reps.append({"period_id":pid, "period_name":p_map.get(pid,"Tryout"), "average":round(avg,2), "status":st, "accepted_major":mj, "details":dets})
+    
     c1 = f"{u.choice1.university} - {u.choice1.name}" if u.choice1 else "-"
     c2 = f"{u.choice2.university} - {u.choice2.name}" if u.choice2 else "-"
     return {"is_released":released, "full_name":u.full_name, "choice1_label":c1, "choice1_pg":u.choice1.passing_grade if u.choice1 else 0, "choice2_label":c2, "choice2_pg":u.choice2.passing_grade if u.choice2 else 0, "reports":reps}
