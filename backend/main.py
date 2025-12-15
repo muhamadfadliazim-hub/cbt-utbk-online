@@ -10,7 +10,7 @@ import pandas as pd
 import io
 import time
 import math
-import random
+import random # <--- PENTING
 
 models.Base.metadata.create_all(bind=database.engine)
 app = FastAPI()
@@ -57,9 +57,13 @@ class UpdatePeriodUsersSchema(BaseModel):
 class ResetResultSchema(BaseModel):
     user_id: int
     exam_id: str
+
+# UPDATE SCHEMA CREATE PERIOD
 class PeriodCreateSchema(BaseModel):
     name: str
     allowed_usernames: Optional[str] = None 
+    is_random: bool = True # <--- Tambahan
+
 class MajorCreateSchema(BaseModel):
     university: str
     name: str
@@ -116,7 +120,15 @@ def get_admin_periods(db: Session = Depends(get_db)):
     periods = db.query(models.ExamPeriod).order_by(models.ExamPeriod.id.desc()).options(joinedload(models.ExamPeriod.exams).joinedload(models.Exam.questions)).all()
     result = []
     for p in periods:
-        p_data = {"id": p.id, "name": p.name, "is_active": p.is_active, "allow_submit": p.allow_submit, "allowed_usernames": p.allowed_usernames, "exams": []}
+        p_data = {
+            "id": p.id, 
+            "name": p.name, 
+            "is_active": p.is_active, 
+            "allow_submit": p.allow_submit, 
+            "allowed_usernames": p.allowed_usernames,
+            "is_random": p.is_random, # Tambahan kirim ke frontend
+            "exams": []
+        }
         for e in p.exams:
             q_count = len(e.questions) if e.questions else 0
             dummy_qs = [{"id": i} for i in range(q_count)]
@@ -126,7 +138,14 @@ def get_admin_periods(db: Session = Depends(get_db)):
 
 @app.post("/admin/periods")
 def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
-    new_period = models.ExamPeriod(name=data.name, is_active=False, allow_submit=True, allowed_usernames=data.allowed_usernames)
+    # Simpan is_random dari input admin
+    new_period = models.ExamPeriod(
+        name=data.name, 
+        is_active=False, 
+        allow_submit=True, 
+        allowed_usernames=data.allowed_usernames,
+        is_random=data.is_random 
+    )
     db.add(new_period); db.commit(); db.refresh(new_period)
     structure = [("PU", "Penalaran Umum", 30), ("PBM", "Pemahaman Bacaan & Menulis", 25), ("PPU", "Pengetahuan & Pemahaman Umum", 15), ("PK", "Pengetahuan Kuantitatif", 20), ("LBI", "Literasi Bahasa Indonesia", 42.5), ("LBE", "Literasi Bahasa Inggris", 20), ("PM", "Penalaran Matematika", 42.5)]
     for c, t, d in structure:
@@ -169,7 +188,7 @@ def reset_result(data: ResetResultSchema, db: Session = Depends(get_db)):
 @app.post("/upload-exam")
 async def upload_exam_manual(title: str = Form(...), duration: float = Form(...), description: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
-        p = models.ExamPeriod(name=f"Manual: {title}", is_active=False, allow_submit=True)
+        p = models.ExamPeriod(name=f"Manual: {title}", is_active=False, allow_submit=True, is_random=False)
         db.add(p); db.commit(); db.refresh(p)
         eid = f"MANUAL_{p.id}_{int(time.time())}"
         db.add(models.Exam(id=eid, period_id=p.id, code=description, title=title, description="Upload", duration=duration))
@@ -290,6 +309,7 @@ def download_exam_analysis(exam_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal download excel: {str(e)}")
 
+# --- UPDATE PENTING DI SINI: get_student_periods ---
 @app.get("/student/periods")
 def get_student_periods(username: str = None, db: Session = Depends(get_db)):
     periods = db.query(models.ExamPeriod).filter_by(is_active=True).order_by(models.ExamPeriod.id.desc()).all()
@@ -300,7 +320,6 @@ def get_student_periods(username: str = None, db: Session = Depends(get_db)):
     
     res = []
     for p in periods:
-        # Cek Whitelist
         if p.allowed_usernames:
             allowed_list = [u.strip().lower() for u in p.allowed_usernames.split(',')]
             if not username or username.lower() not in allowed_list: continue
@@ -310,50 +329,36 @@ def get_student_periods(username: str = None, db: Session = Depends(get_db)):
             q_count = db.query(models.Question).filter_by(exam_id=e.id).count()
             is_done = False
             if user:
-                if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=e.id).first(): 
-                    is_done = True
-            exams_data.append({
-                "id": e.id, 
-                "title": e.title, 
-                "duration": e.duration, 
-                "q_count": q_count, 
-                "is_done": is_done,
-                "allow_submit": p.allow_submit
-            })
+                if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=e.id).first(): is_done = True
+            exams_data.append({"id": e.id, "title": e.title, "duration": e.duration, "q_count": q_count, "is_done": is_done, "allow_submit": p.allow_submit})
         
-        # --- LOGIKA PENGACAKAN DETERMINISTIK (BARU) ---
-        if user:
-            # Kita gunakan Seed gabungan ID User + ID Periode
-            # Supaya urutan acak ini 'menempel' selamanya pada user tersebut di periode ini
-            seed_val = f"{user.id}_{p.id}_SECRET_KEY"
+        # --- LOGIKA PENGACAKAN ---
+        if user and p.is_random:
+            # Acak Konsisten per User & Periode
+            seed_val = f"{user.id}_{p.id}_UTBK2024"
             rng = random.Random(seed_val)
             rng.shuffle(exams_data)
         else:
-            # Default sorting jika tidak ada user (misal untuk preview admin)
+            # Normal Sort
             order_map = {"PU":1, "PBM":2, "PPU":3, "PK":4, "LBI":5, "LBE":6, "PM":7}
             exams_data.sort(key=lambda x: order_map.get(x['id'].split('_')[-1], 99))
             
-        # --- LOGIKA BLOCKING TIME (Kunci soal berikutnya) ---
-        # Kita tandai mana yang "locked" berdasarkan urutan hasil acakan tadi
+        # --- BLOCKING TIME LOGIC ---
         final_exams = []
-        is_previous_done = True # Ujian pertama selalu terbuka
+        is_previous_done = True
         
         for ex in exams_data:
-            # Status: open, done, atau locked
             status = "locked"
             if ex["is_done"]:
                 status = "done"
             elif is_previous_done:
-                status = "open" # Ini ujian yang sedang aktif dikerjakan
+                status = "open"
             
             ex["status"] = status
             final_exams.append(ex)
-            
-            # Update flag untuk soal berikutnya
-            # Soal berikutnya hanya boleh buka jika soal ini sudah DONE
             is_previous_done = ex["is_done"]
 
-        res.append({"id": p.id, "name": p.name, "exams": final_exams})     
+        res.append({"id": p.id, "name": p.name, "exams": final_exams})
     return res
 
 @app.get("/exams/{exam_id}")
@@ -368,13 +373,11 @@ def get_exam_questions(exam_id: str, db: Session = Depends(get_db)):
     q_data.sort(key=lambda x: x['id'])
     return {"id": exam.id, "title": exam.title, "duration": exam.duration, "questions": q_data, "allow_submit": exam.period.allow_submit}
 
-# --- FIX: SUBMIT AGAR TIDAK DOUBLE (CEGAH 8 UJIAN) ---
 @app.post("/exams/{exam_id}/submit")
 def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
     if not user: raise HTTPException(404)
     
-    # CEK DUPLIKASI: Jika sudah ada, jangan simpan lagi
     existing = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first()
     if existing: 
         return {"message": "Already Submitted", "correct": existing.correct_count, "wrong": existing.wrong_count}
@@ -387,7 +390,6 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
         q.total_attempts += 1
         if is_correct: q.total_correct += 1
         
-        # Difficulty Update Logic
         if q.total_attempts >= 5:
             q.difficulty = 1.0 + ((1.0 - (q.total_correct/q.total_attempts)) * 3.0)
         
@@ -486,7 +488,6 @@ async def bulk_user(file: UploadFile = File(...), db: Session = Depends(get_db))
         db.commit(); return {"message": f"{c} users"}
     except Exception as e: return {"message": str(e)}
 
-# --- FIX: RECAP BUG (Prevent Suffix matching like PU in PPU) ---
 @app.get("/admin/recap")
 def get_recap(period_id: Optional[int]=None, db: Session=Depends(get_db)):
     users = db.query(models.User).filter_by(role='student').options(joinedload(models.User.results), joinedload(models.User.choice1), joinedload(models.User.choice2)).all()
@@ -495,14 +496,12 @@ def get_recap(period_id: Optional[int]=None, db: Session=Depends(get_db)):
         urs = [r for r in u.results if r.exam_id.startswith(f"P{period_id}_")] if period_id else u.results
         if period_id and not urs: continue
         sc={}
-        exam_id_map = {} # Maps code -> exact exam_id
+        exam_id_map = {} 
         for r in urs:
-            # FIX: Strict splitting to get the exact code (PU, PBM, etc)
             code = r.exam_id.split('_')[-1]
             sc[code] = r.irt_score
             exam_id_map[code] = r.exam_id
         
-        # Build completed list using the exact map, preventing duplicates or bad matching
         completed=[{"code":k, "exam_id": exam_id_map[k]} for k in sc]
         
         avg = sum(sc.values())/7 if sc else 0
@@ -540,7 +539,6 @@ def stu_recap(uname: str, db: Session=Depends(get_db)):
     u = db.query(models.User).filter_by(username=uname).options(joinedload(models.User.results), joinedload(models.User.choice1), joinedload(models.User.choice2)).first()
     if not u: raise HTTPException(404)
     
-    # Identify Periods user has participated in
     p_ids = {int(r.exam_id.split('_')[0].replace('P','')) for r in u.results if 'P' in r.exam_id}
     p_map = {p.id:p.name for p in db.query(models.ExamPeriod).filter(models.ExamPeriod.id.in_(p_ids)).all()}
     
@@ -549,7 +547,6 @@ def stu_recap(uname: str, db: Session=Depends(get_db)):
         p_tot = 0
         dets = []
         for c in ["PU","PPU","PBM","PK","LBI","LBE","PM"]:
-            # Strict match for result
             target_id = f"P{pid}_{c}"
             res = next((r for r in u.results if r.exam_id == target_id), None)
             sc = res.irt_score if res else 0

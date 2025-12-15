@@ -6,7 +6,6 @@ import { API_URL } from './config';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// Urutan Standar untuk Laporan Admin (Biar Rapi)
 const EXAM_ORDER = ["PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM"];
 
 const AdminDashboard = ({ onLogout }) => {
@@ -14,6 +13,11 @@ const AdminDashboard = ({ onLogout }) => {
   const [periods, setPeriods] = useState([]);
   const [newPeriodName, setNewPeriodName] = useState('');
   const [allowedUsers, setAllowedUsers] = useState('');
+  
+  // --- STATE BARU: SAKLAR ACAK ---
+  const [isRandom, setIsRandom] = useState(true); 
+  // ------------------------------
+  
   const [users, setUsers] = useState([]);
   const [recap, setRecap] = useState([]);
   const [majors, setMajors] = useState([]); 
@@ -38,7 +42,6 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
-  // Helper render text (LaTeX & Bold/Italic)
   const renderText = (text) => {
     if (!text) return null;
     return text.split(/(\$.*?\$)/).map((part, index) => {
@@ -144,9 +147,26 @@ const AdminDashboard = ({ onLogout }) => {
   const handleCreatePeriod = (e) => { 
       e.preventDefault(); 
       let allowed = selectedWhitelist.length>0?selectedWhitelist.join(','):(allowedUsers.trim()||null); 
-      fetch(`${API_URL}/admin/periods`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newPeriodName,allowed_usernames:allowed})})
-      .then(r=>r.json()).then(d=>{alert(d.message); setNewPeriodName(''); setAllowedUsers(''); setSelectedWhitelist([]); fetchPeriods();}); 
+      fetch(`${API_URL}/admin/periods`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+              name:newPeriodName,
+              allowed_usernames:allowed,
+              is_random: isRandom // <--- KIRIM STATE SAKLAR ACAK
+          })
+      })
+      .then(r=>r.json())
+      .then(d=>{
+          alert(d.message); 
+          setNewPeriodName(''); 
+          setAllowedUsers(''); 
+          setSelectedWhitelist([]); 
+          setIsRandom(true); // Reset ke Default Acak
+          fetchPeriods();
+      }); 
   };
+
   const handleDeletePeriod = (id) => { if(window.confirm("Hapus Periode? Semua data ujian di dalamnya akan hilang.")) fetch(`${API_URL}/admin/periods/${id}`, {method:'DELETE'}).then(()=>fetchPeriods()); };
   
   const handleUploadQuestion = (eid, f) => { 
@@ -309,8 +329,35 @@ const AdminDashboard = ({ onLogout }) => {
         )}
 
         {tab === 'periods' && (
-            <div><h2 className="text-2xl font-bold mb-6">Manajemen Soal</h2><div className="flex justify-end mb-4"><button onClick={handleDownloadTemplate} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded font-bold shadow"><Download size={18}/> Template</button></div><div className="bg-white p-6 rounded shadow mb-6"><div className="flex flex-col md:flex-row gap-4 items-end"><div className="flex-1 w-full"><label className="text-sm font-bold text-gray-600">Nama Periode</label><input className="w-full p-2 border rounded" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/></div><div className="w-full md:w-1/3"><label className="text-sm font-bold text-gray-600">Akses</label><div onClick={()=>setShowUserModal(true)} className="w-full p-2 border rounded bg-gray-50 cursor-pointer flex justify-between items-center"><span className="text-sm text-gray-600">{selectedWhitelist.length>0?`${selectedWhitelist.length} Peserta`:"Semua (Public)"}</span><Users size={16}/></div></div><button onClick={handleCreatePeriod} className="w-full md:w-auto bg-indigo-600 text-white px-6 py-2 rounded font-bold">Buat</button></div></div>
-            <div className="space-y-4">{periods.map(p=>(<div key={p.id} className="bg-white rounded shadow border overflow-hidden"><div className="p-4 bg-gray-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"><div className="flex gap-4 w-full md:w-auto"><button onClick={()=>setExpandedPeriod(expandedPeriod===p.id?null:p.id)}>{expandedPeriod===p.id?<ChevronUp/>:<ChevronDown/>}</button><div><h3 className="font-bold">{p.name}</h3><div className="flex gap-2 text-xs"><span className={`px-2 py-0.5 rounded font-bold ${p.is_active?'bg-green-100 text-green-700':'bg-gray-200'}`}>{p.is_active?'PUBLIK':'DRAFT'}</span>{p.allowed_usernames && <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-bold">TERBATAS</span>}</div></div></div><div className="flex flex-wrap gap-2 w-full md:w-auto"><button onClick={()=>openEditAccess(p)} className="flex-1 md:flex-none justify-center px-3 py-1 bg-gray-100 text-gray-700 rounded text-sm font-bold flex items-center gap-2 border border-gray-300 hover:bg-gray-200"><Key size={14}/> Edit Akses</button><button onClick={()=>togglePeriodSubmit(p.id, p.allow_submit)} className={`flex-1 md:flex-none justify-center px-3 py-1 rounded text-sm font-bold flex items-center gap-2 ${p.allow_submit?'bg-blue-100 text-blue-700':'bg-red-100 text-red-700'}`}>{p.allow_submit?<Unlock size={14}/>:<Lock size={14}/>} Submit</button><button onClick={()=>togglePeriodActive(p.id, p.is_active)} className="flex-1 md:flex-none justify-center px-3 py-1 bg-orange-100 text-orange-700 rounded text-sm font-bold flex items-center gap-2">{p.is_active?<EyeOff size={14}/>:<Eye size={14}/>} {p.is_active?'Sembunyi':'Tampil'}</button><button onClick={()=>handleDeletePeriod(p.id)} className="p-2 bg-red-50 text-red-600 rounded border border-red-200"><Trash2 size={16}/></button></div></div>{expandedPeriod===p.id && <div className="p-4 grid gap-3">{p.exams.map(e=>(<div key={e.id} className="border p-3 rounded flex flex-col md:flex-row justify-between items-start md:items-center gap-3"><div><div className="font-bold">{e.title}</div><div className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12}/> {e.duration}m | {e.questions.length} Soal</div></div>
+            <div><h2 className="text-2xl font-bold mb-6">Manajemen Soal</h2><div className="flex justify-end mb-4"><button onClick={handleDownloadTemplate} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded font-bold shadow"><Download size={18}/> Template</button></div>
+            <div className="bg-white p-6 rounded shadow mb-6">
+                <div className="flex flex-col md:flex-row gap-4 items-end">
+                    <div className="flex-1 w-full"><label className="text-sm font-bold text-gray-600">Nama Periode</label><input className="w-full p-2 border rounded" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/></div>
+                    <div className="w-full md:w-1/3"><label className="text-sm font-bold text-gray-600">Akses</label><div onClick={()=>setShowUserModal(true)} className="w-full p-2 border rounded bg-gray-50 cursor-pointer flex justify-between items-center"><span className="text-sm text-gray-600">{selectedWhitelist.length>0?`${selectedWhitelist.length} Peserta`:"Semua (Public)"}</span><Users size={16}/></div></div>
+                    
+                    {/* --- SAKLAR ACAK UI --- */}
+                    <div className="w-full md:w-auto flex items-center justify-center">
+                        <label className="flex items-center gap-2 cursor-pointer bg-gray-50 px-3 py-2 rounded border hover:bg-gray-100 border-gray-300">
+                            <input type="checkbox" checked={isRandom} onChange={e => setIsRandom(e.target.checked)} className="w-5 h-5 text-indigo-600 rounded"/>
+                            <span className="text-sm font-bold text-gray-700 select-none">Acak Subtes?</span>
+                        </label>
+                    </div>
+                    {/* ----------------------- */}
+
+                    <button onClick={handleCreatePeriod} className="w-full md:w-auto bg-indigo-600 text-white px-6 py-2 rounded font-bold">Buat</button>
+                </div>
+            </div>
+            <div className="space-y-4">{periods.map(p=>(<div key={p.id} className="bg-white rounded shadow border overflow-hidden"><div className="p-4 bg-gray-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"><div className="flex gap-4 w-full md:w-auto"><button onClick={()=>setExpandedPeriod(expandedPeriod===p.id?null:p.id)}>{expandedPeriod===p.id?<ChevronUp/>:<ChevronDown/>}</button>
+            <div>
+                <h3 className="font-bold">{p.name}</h3>
+                <div className="flex gap-2 text-xs">
+                    <span className={`px-2 py-0.5 rounded font-bold ${p.is_active?'bg-green-100 text-green-700':'bg-gray-200'}`}>{p.is_active?'PUBLIK':'DRAFT'}</span>
+                    {p.allowed_usernames && <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-bold">TERBATAS</span>}
+                    {/* Label Random/Urut */}
+                    <span className={`px-2 py-0.5 rounded font-bold ${p.is_random?'bg-blue-100 text-blue-700':'bg-yellow-100 text-yellow-700'}`}>{p.is_random ? 'ACAK' : 'URUT'}</span>
+                </div>
+            </div>
+            </div><div className="flex flex-wrap gap-2 w-full md:w-auto"><button onClick={()=>openEditAccess(p)} className="flex-1 md:flex-none justify-center px-3 py-1 bg-gray-100 text-gray-700 rounded text-sm font-bold flex items-center gap-2 border border-gray-300 hover:bg-gray-200"><Key size={14}/> Edit Akses</button><button onClick={()=>togglePeriodSubmit(p.id, p.allow_submit)} className={`flex-1 md:flex-none justify-center px-3 py-1 rounded text-sm font-bold flex items-center gap-2 ${p.allow_submit?'bg-blue-100 text-blue-700':'bg-red-100 text-red-700'}`}>{p.allow_submit?<Unlock size={14}/>:<Lock size={14}/>} Submit</button><button onClick={()=>togglePeriodActive(p.id, p.is_active)} className="flex-1 md:flex-none justify-center px-3 py-1 bg-orange-100 text-orange-700 rounded text-sm font-bold flex items-center gap-2">{p.is_active?<EyeOff size={14}/>:<Eye size={14}/>} {p.is_active?'Sembunyi':'Tampil'}</button><button onClick={()=>handleDeletePeriod(p.id)} className="p-2 bg-red-50 text-red-600 rounded border border-red-200"><Trash2 size={16}/></button></div></div>{expandedPeriod===p.id && <div className="p-4 grid gap-3">{p.exams.map(e=>(<div key={e.id} className="border p-3 rounded flex flex-col md:flex-row justify-between items-start md:items-center gap-3"><div><div className="font-bold">{e.title}</div><div className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12}/> {e.duration}m | {e.questions.length} Soal</div></div>
             <div className="flex gap-2 w-full md:w-auto">
                 <button onClick={()=>handlePreviewExam(e.id)} className="flex-1 md:flex-none justify-center px-3 py-1 bg-indigo-50 text-indigo-700 rounded text-xs font-bold flex items-center gap-1"><Search size={12}/> Lihat</button>
                 <button onClick={()=>handleShowAnalysis(e.id)} className="flex-1 md:flex-none justify-center px-3 py-1 bg-purple-100 text-purple-700 rounded text-xs font-bold flex items-center gap-1"><PieChart size={12}/> Analisis</button>
