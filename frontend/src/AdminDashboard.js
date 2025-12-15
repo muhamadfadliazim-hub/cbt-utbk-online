@@ -6,6 +6,7 @@ import { API_URL } from './config';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+// Urutan Standar untuk Laporan Admin (Biar Rapi)
 const EXAM_ORDER = ["PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM"];
 
 const AdminDashboard = ({ onLogout }) => {
@@ -13,16 +14,16 @@ const AdminDashboard = ({ onLogout }) => {
   const [periods, setPeriods] = useState([]);
   const [newPeriodName, setNewPeriodName] = useState('');
   const [allowedUsers, setAllowedUsers] = useState('');
-  
-  // --- STATE BARU: SAKLAR ACAK ---
-  const [isRandom, setIsRandom] = useState(true); 
-  // ------------------------------
-  
   const [users, setUsers] = useState([]);
   const [recap, setRecap] = useState([]);
   const [majors, setMajors] = useState([]); 
   const [isReleased, setIsReleased] = useState(false);
   const [isMajorSelectionEnabled, setIsMajorSelectionEnabled] = useState(true);
+  
+  // --- STATE SAKLAR ACAK ---
+  const [isRandom, setIsRandom] = useState(true); 
+  // -------------------------
+
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewData, setPreviewData] = useState(null); 
   const [analysisData, setAnalysisData] = useState(null); 
@@ -42,6 +43,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
+  // Helper render text (LaTeX & Bold/Italic)
   const renderText = (text) => {
     if (!text) return null;
     return text.split(/(\$.*?\$)/).map((part, index) => {
@@ -144,28 +146,55 @@ const AdminDashboard = ({ onLogout }) => {
       }).then(r => r.json()).then(d => { alert(d.message); setShowEditAccessModal(false); fetchPeriods(); });
   };
 
-  const handleCreatePeriod = (e) => { 
+  // --- FUNGSI BUAT PERIODE YANG SUDAH DIPERBAIKI ---
+  const handleCreatePeriod = async (e) => { 
       e.preventDefault(); 
-      let allowed = selectedWhitelist.length>0?selectedWhitelist.join(','):(allowedUsers.trim()||null); 
-      fetch(`${API_URL}/admin/periods`,{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-              name:newPeriodName,
-              allowed_usernames:allowed,
-              is_random: isRandom // <--- KIRIM STATE SAKLAR ACAK
-          })
-      })
-      .then(r=>r.json())
-      .then(d=>{
-          alert(d.message); 
+
+      // 1. Validasi Input
+      if (!newPeriodName) {
+          alert("Nama Periode wajib diisi!");
+          return;
+      }
+
+      let allowed = selectedWhitelist.length > 0 
+          ? selectedWhitelist.join(',') 
+          : (allowedUsers.trim() || null); 
+      
+      try {
+          // 2. Kirim ke Backend
+          const response = await fetch(`${API_URL}/admin/periods`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  name: newPeriodName,
+                  allowed_usernames: allowed,
+                  is_random: isRandom 
+              })
+          });
+
+          const data = await response.json();
+
+          // 3. Cek apakah Backend menolak?
+          if (!response.ok) {
+              // Tampilkan pesan error dari backend
+              throw new Error(data.detail || "Gagal membuat periode");
+          }
+
+          // 4. Jika Sukses
+          alert("SUKSES: " + data.message); 
           setNewPeriodName(''); 
           setAllowedUsers(''); 
           setSelectedWhitelist([]); 
-          setIsRandom(true); // Reset ke Default Acak
+          setIsRandom(true); 
           fetchPeriods();
-      }); 
+
+      } catch (err) {
+          // 5. Tangkap Error Jaringan atau Server
+          console.error("Error creating period:", err);
+          alert("GAGAL: " + err.message + "\n\n(Jika error 'is_random', berarti Database perlu di-reset/ganti nama di backend/database.py)");
+      }
   };
+  // ----------------------------------------------------
 
   const handleDeletePeriod = (id) => { if(window.confirm("Hapus Periode? Semua data ujian di dalamnya akan hilang.")) fetch(`${API_URL}/admin/periods/${id}`, {method:'DELETE'}).then(()=>fetchPeriods()); };
   
@@ -421,3 +450,4 @@ const AdminDashboard = ({ onLogout }) => {
   );
 };
 export default AdminDashboard;
+}
