@@ -19,9 +19,10 @@ const AdminDashboard = ({ onLogout }) => {
   const [isReleased, setIsReleased] = useState(false);
   const [isMajorSelectionEnabled, setIsMajorSelectionEnabled] = useState(true);
   
-  // --- FITUR OPSIONAL: ACAK SUBTEST ---
+  // --- STATE SETTING PERIOD ---
   const [isRandom, setIsRandom] = useState(true); 
-  // ------------------------------------
+  const [isFlexible, setIsFlexible] = useState(false); // Default Urut (False)
+  // ---------------------------
 
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewData, setPreviewData] = useState(null); 
@@ -153,14 +154,17 @@ const AdminDashboard = ({ onLogout }) => {
               body: JSON.stringify({
                   name: newPeriodName,
                   allowed_usernames: allowed,
-                  is_random: isRandom // <--- KIRIM DATA ACAK/URUT KE BACKEND
+                  is_random: isRandom,
+                  is_flexible: isFlexible // <--- KIRIM STATUS FLEXIBLE
               })
           });
           const data = await response.json();
           if (!response.ok) throw new Error(data.detail || "Gagal membuat periode");
 
           alert("SUKSES: " + data.message); 
-          setNewPeriodName(''); setAllowedUsers(''); setSelectedWhitelist([]); setIsRandom(true); fetchPeriods();
+          setNewPeriodName(''); setAllowedUsers(''); setSelectedWhitelist([]); 
+          setIsRandom(true); setIsFlexible(false); 
+          fetchPeriods();
 
       } catch (err) {
           console.error(err);
@@ -336,11 +340,16 @@ const AdminDashboard = ({ onLogout }) => {
                     <div className="flex-1 w-full"><label className="text-sm font-bold text-gray-600">Nama Periode</label><input className="w-full p-2 border rounded" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/></div>
                     <div className="w-full md:w-1/3"><label className="text-sm font-bold text-gray-600">Akses</label><div onClick={()=>setShowUserModal(true)} className="w-full p-2 border rounded bg-gray-50 cursor-pointer flex justify-between items-center"><span className="text-sm text-gray-600">{selectedWhitelist.length>0?`${selectedWhitelist.length} Peserta`:"Semua (Public)"}</span><Users size={16}/></div></div>
                     
-                    {/* --- SAKLAR ACAK UI --- */}
-                    <div className="w-full md:w-auto flex items-center justify-center">
+                    {/* --- SAKLAR SETTING --- */}
+                    <div className="w-full md:w-auto flex flex-col md:flex-row gap-4 justify-center items-center">
                         <label className="flex items-center gap-2 cursor-pointer bg-gray-50 px-3 py-2 rounded border hover:bg-gray-100 border-gray-300">
                             <input type="checkbox" checked={isRandom} onChange={e => setIsRandom(e.target.checked)} className="w-5 h-5 text-indigo-600 rounded"/>
                             <span className="text-sm font-bold text-gray-700 select-none">Acak Subtes?</span>
+                        </label>
+                        {/* INPUT BARU: BEBAS PILIH */}
+                        <label className="flex items-center gap-2 cursor-pointer bg-blue-50 px-3 py-2 rounded border border-blue-200 hover:bg-blue-100">
+                            <input type="checkbox" checked={isFlexible} onChange={e => setIsFlexible(e.target.checked)} className="w-5 h-5 text-blue-600 rounded"/>
+                            <span className="text-sm font-bold text-blue-800 select-none">Bebas Pilih Subtes?</span>
                         </label>
                     </div>
                     {/* ----------------------- */}
@@ -351,11 +360,13 @@ const AdminDashboard = ({ onLogout }) => {
             <div className="space-y-4">{periods.map(p=>(<div key={p.id} className="bg-white rounded shadow border overflow-hidden"><div className="p-4 bg-gray-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"><div className="flex gap-4 w-full md:w-auto"><button onClick={()=>setExpandedPeriod(expandedPeriod===p.id?null:p.id)}>{expandedPeriod===p.id?<ChevronUp/>:<ChevronDown/>}</button>
             <div>
                 <h3 className="font-bold">{p.name}</h3>
-                <div className="flex gap-2 text-xs">
+                <div className="flex gap-2 text-xs flex-wrap">
                     <span className={`px-2 py-0.5 rounded font-bold ${p.is_active?'bg-green-100 text-green-700':'bg-gray-200'}`}>{p.is_active?'PUBLIK':'DRAFT'}</span>
                     {p.allowed_usernames && <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-bold">TERBATAS</span>}
-                    {/* Label Random/Urut */}
+                    {/* Label Random */}
                     <span className={`px-2 py-0.5 rounded font-bold ${p.is_random?'bg-blue-100 text-blue-700':'bg-yellow-100 text-yellow-700'}`}>{p.is_random ? 'ACAK' : 'URUT'}</span>
+                    {/* Label Flexible */}
+                    <span className={`px-2 py-0.5 rounded font-bold ${p.is_flexible?'bg-teal-100 text-teal-700':'bg-gray-200 text-gray-500'}`}>{p.is_flexible ? 'BEBAS' : 'TERKUNCI'}</span>
                 </div>
             </div>
             </div><div className="flex flex-wrap gap-2 w-full md:w-auto"><button onClick={()=>openEditAccess(p)} className="flex-1 md:flex-none justify-center px-3 py-1 bg-gray-100 text-gray-700 rounded text-sm font-bold flex items-center gap-2 border border-gray-300 hover:bg-gray-200"><Key size={14}/> Edit Akses</button><button onClick={()=>togglePeriodSubmit(p.id, p.allow_submit)} className={`flex-1 md:flex-none justify-center px-3 py-1 rounded text-sm font-bold flex items-center gap-2 ${p.allow_submit?'bg-blue-100 text-blue-700':'bg-red-100 text-red-700'}`}>{p.allow_submit?<Unlock size={14}/>:<Lock size={14}/>} Submit</button><button onClick={()=>togglePeriodActive(p.id, p.is_active)} className="flex-1 md:flex-none justify-center px-3 py-1 bg-orange-100 text-orange-700 rounded text-sm font-bold flex items-center gap-2">{p.is_active?<EyeOff size={14}/>:<Eye size={14}/>} {p.is_active?'Sembunyi':'Tampil'}</button><button onClick={()=>handleDeletePeriod(p.id)} className="p-2 bg-red-50 text-red-600 rounded border border-red-200"><Trash2 size={16}/></button></div></div>{expandedPeriod===p.id && <div className="p-4 grid gap-3">{p.exams.map(e=>(<div key={e.id} className="border p-3 rounded flex flex-col md:flex-row justify-between items-start md:items-center gap-3"><div><div className="font-bold">{e.title}</div><div className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12}/> {e.duration}m | {e.questions.length} Soal</div></div>

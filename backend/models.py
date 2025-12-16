@@ -36,9 +36,10 @@ class ExamPeriod(Base):
     is_active = Column(Boolean, default=False)
     allow_submit = Column(Boolean, default=True)
     
-    # --- FITUR BARU: SAKLAR ACAK ---
-    is_random = Column(Boolean, default=True) 
-    # -------------------------------
+    # --- FITUR LENGKAP ---
+    is_random = Column(Boolean, default=True)   # Acak Urutan?
+    is_flexible = Column(Boolean, default=False) # Mode Bebas (True) atau Urut (False)?
+    # ---------------------
 
     allowed_usernames = Column(Text, nullable=True)
     exams = relationship("Exam", back_populates="period", cascade="all, delete")

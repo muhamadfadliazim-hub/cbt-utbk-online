@@ -10,7 +10,7 @@ import pandas as pd
 import io
 import time
 import math
-import random # <--- PENTING
+import random 
 
 models.Base.metadata.create_all(bind=database.engine)
 app = FastAPI()
@@ -58,11 +58,12 @@ class ResetResultSchema(BaseModel):
     user_id: int
     exam_id: str
 
-# UPDATE SCHEMA CREATE PERIOD
+# UPDATE SCHEMA: TAMBAH is_flexible
 class PeriodCreateSchema(BaseModel):
     name: str
     allowed_usernames: Optional[str] = None 
-    is_random: bool = True # <--- Tambahan
+    is_random: bool = True 
+    is_flexible: bool = False # False = Urut, True = Bebas
 
 class MajorCreateSchema(BaseModel):
     university: str
@@ -126,7 +127,8 @@ def get_admin_periods(db: Session = Depends(get_db)):
             "is_active": p.is_active, 
             "allow_submit": p.allow_submit, 
             "allowed_usernames": p.allowed_usernames,
-            "is_random": p.is_random, # Tambahan kirim ke frontend
+            "is_random": p.is_random,
+            "is_flexible": p.is_flexible, # Kirim status ke frontend
             "exams": []
         }
         for e in p.exams:
@@ -138,13 +140,14 @@ def get_admin_periods(db: Session = Depends(get_db)):
 
 @app.post("/admin/periods")
 def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
-    # Simpan is_random dari input admin
+    # Simpan Preference Admin (Random & Flexible)
     new_period = models.ExamPeriod(
         name=data.name, 
         is_active=False, 
         allow_submit=True, 
         allowed_usernames=data.allowed_usernames,
-        is_random=data.is_random 
+        is_random=data.is_random,
+        is_flexible=data.is_flexible # Simpan mode bebas/urut
     )
     db.add(new_period); db.commit(); db.refresh(new_period)
     structure = [("PU", "Penalaran Umum", 30), ("PBM", "Pemahaman Bacaan & Menulis", 25), ("PPU", "Pengetahuan & Pemahaman Umum", 15), ("PK", "Pengetahuan Kuantitatif", 20), ("LBI", "Literasi Bahasa Indonesia", 42.5), ("LBE", "Literasi Bahasa Inggris", 20), ("PM", "Penalaran Matematika", 42.5)]
@@ -188,7 +191,7 @@ def reset_result(data: ResetResultSchema, db: Session = Depends(get_db)):
 @app.post("/upload-exam")
 async def upload_exam_manual(title: str = Form(...), duration: float = Form(...), description: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
-        p = models.ExamPeriod(name=f"Manual: {title}", is_active=False, allow_submit=True, is_random=False)
+        p = models.ExamPeriod(name=f"Manual: {title}", is_active=False, allow_submit=True, is_random=False, is_flexible=True)
         db.add(p); db.commit(); db.refresh(p)
         eid = f"MANUAL_{p.id}_{int(time.time())}"
         db.add(models.Exam(id=eid, period_id=p.id, code=description, title=title, description="Upload", duration=duration))
@@ -309,7 +312,7 @@ def download_exam_analysis(exam_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal download excel: {str(e)}")
 
-# --- UPDATE PENTING DI SINI: get_student_periods ---
+# --- LOGIKA UTAMA (FLEXIBLE vs SEQUENTIAL) ---
 @app.get("/student/periods")
 def get_student_periods(username: str = None, db: Session = Depends(get_db)):
     periods = db.query(models.ExamPeriod).filter_by(is_active=True).order_by(models.ExamPeriod.id.desc()).all()
@@ -332,30 +335,38 @@ def get_student_periods(username: str = None, db: Session = Depends(get_db)):
                 if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=e.id).first(): is_done = True
             exams_data.append({"id": e.id, "title": e.title, "duration": e.duration, "q_count": q_count, "is_done": is_done, "allow_submit": p.allow_submit})
         
-        # --- LOGIKA PENGACAKAN ---
+        # 1. PENGACAKAN (TETAP ADA)
         if user and p.is_random:
-            # Acak Konsisten per User & Periode
             seed_val = f"{user.id}_{p.id}_UTBK2024"
             rng = random.Random(seed_val)
             rng.shuffle(exams_data)
         else:
-            # Normal Sort
             order_map = {"PU":1, "PBM":2, "PPU":3, "PK":4, "LBI":5, "LBE":6, "PM":7}
             exams_data.sort(key=lambda x: order_map.get(x['id'].split('_')[-1], 99))
             
-        # --- BLOCKING TIME LOGIC ---
+        # 2. LOGIKA STATUS (LOCKED / OPEN / DONE)
         final_exams = []
         is_previous_done = True
         
         for ex in exams_data:
             status = "locked"
+            
+            # Jika sudah dikerjakan -> DONE
             if ex["is_done"]:
                 status = "done"
+            
+            # Jika MODE FLEXIBLE (Bebas) -> Semua OPEN (kecuali yang done)
+            elif p.is_flexible:
+                status = "open"
+            
+            # Jika MODE SEQUENTIAL (Urut) -> Hanya buka jika prev done
             elif is_previous_done:
                 status = "open"
             
             ex["status"] = status
             final_exams.append(ex)
+            
+            # Update untuk iterasi berikutnya (Hanya dipakai di sequential)
             is_previous_done = ex["is_done"]
 
         res.append({"id": p.id, "name": p.name, "exams": final_exams})
@@ -562,26 +573,17 @@ def stu_recap(uname: str, db: Session=Depends(get_db)):
     c1 = f"{u.choice1.university} - {u.choice1.name}" if u.choice1 else "-"
     c2 = f"{u.choice2.university} - {u.choice2.name}" if u.choice2 else "-"
     return {"is_released":released, "full_name":u.full_name, "choice1_label":c1, "choice1_pg":u.choice1.passing_grade if u.choice1 else 0, "choice2_label":c2, "choice2_pg":u.choice2.passing_grade if u.choice2 else 0, "reports":reps}
-# --- TAMBAHAN KHUSUS: INIT ADMIN OTOMATIS ---
+
 @app.get("/init-admin")
 def init_admin(db: Session = Depends(get_db)):
-    # 1. Cek apakah user 'admin' sudah ada?
     user = db.query(models.User).filter_by(username="admin").first()
-    
     if user:
-        # Jika sudah ada, paksa jadi admin dan reset password
         user.role = "admin"
         user.password = "123"
         db.commit()
         return {"message": "User 'admin' sudah ada. Role diupdate jadi ADMIN. Password: 123"}
     else:
-        # Jika belum ada, buat baru
-        new_admin = models.User(
-            username="admin",
-            full_name="Super Admin",
-            password="123",
-            role="admin"  # <--- INI KUNCINYA
-        )
+        new_admin = models.User(username="admin", full_name="Super Admin", password="123", role="admin")
         db.add(new_admin)
         db.commit()
         return {"message": "Sukses! Akun ADMIN berhasil dibuat. Login: admin / 123"}
