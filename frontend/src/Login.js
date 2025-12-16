@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { API_URL } from './config';
-import { LogIn, User, Lock, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+// HAPUS CheckCircle dari sini agar tidak error ESLint
+import { LogIn, User, Lock, Loader2, AlertCircle } from 'lucide-react';
 
 const Login = ({ onLogin }) => {
   const [username, setUsername] = useState('');
@@ -14,7 +15,7 @@ const Login = ({ onLogin }) => {
     setErrorMsg('');
 
     try {
-      // Logic pembersih URL agar tidak error
+      // 1. FIX URL: Hapus double slash jika ada
       const cleanUrl = `${API_URL}/login`.replace(/([^:]\/)\/+/g, "$1");
       
       const res = await fetch(cleanUrl, {
@@ -23,13 +24,14 @@ const Login = ({ onLogin }) => {
         body: JSON.stringify({ username, password })
       });
 
+      // 2. FIX JSON PARSE: Cek apakah response HTML atau JSON
       const textResponse = await res.text();
       let data;
       try {
         data = JSON.parse(textResponse);
       } catch (err) {
         console.error("Server Error HTML:", textResponse);
-        throw new Error("Gagal terhubung ke Backend. Cek config.js");
+        throw new Error("Gagal terhubung ke Backend. Pastikan URL benar.");
       }
 
       if (!res.ok) {
@@ -112,7 +114,7 @@ const Login = ({ onLogin }) => {
         </form>
         
         <div className="mt-8 pt-6 border-t border-gray-100 text-center">
-             <span className="text-[10px] text-gray-300 font-mono">v3.0.0 Production</span>
+             <span className="text-[10px] text-gray-300 font-mono">v3.0.1 Production (Fixed)</span>
         </div>
       </div>
     </div>
