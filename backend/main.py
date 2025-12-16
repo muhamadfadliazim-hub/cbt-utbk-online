@@ -562,3 +562,26 @@ def stu_recap(uname: str, db: Session=Depends(get_db)):
     c1 = f"{u.choice1.university} - {u.choice1.name}" if u.choice1 else "-"
     c2 = f"{u.choice2.university} - {u.choice2.name}" if u.choice2 else "-"
     return {"is_released":released, "full_name":u.full_name, "choice1_label":c1, "choice1_pg":u.choice1.passing_grade if u.choice1 else 0, "choice2_label":c2, "choice2_pg":u.choice2.passing_grade if u.choice2 else 0, "reports":reps}
+# --- TAMBAHAN KHUSUS: INIT ADMIN OTOMATIS ---
+@app.get("/init-admin")
+def init_admin(db: Session = Depends(get_db)):
+    # 1. Cek apakah user 'admin' sudah ada?
+    user = db.query(models.User).filter_by(username="admin").first()
+    
+    if user:
+        # Jika sudah ada, paksa jadi admin dan reset password
+        user.role = "admin"
+        user.password = "123"
+        db.commit()
+        return {"message": "User 'admin' sudah ada. Role diupdate jadi ADMIN. Password: 123"}
+    else:
+        # Jika belum ada, buat baru
+        new_admin = models.User(
+            username="admin",
+            full_name="Super Admin",
+            password="123",
+            role="admin"  # <--- INI KUNCINYA
+        )
+        db.add(new_admin)
+        db.commit()
+        return {"message": "Sukses! Akun ADMIN berhasil dibuat. Login: admin / 123"}
