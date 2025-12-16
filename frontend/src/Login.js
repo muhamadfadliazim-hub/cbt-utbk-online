@@ -109,7 +109,13 @@ const Login = ({ onLogin }) => {
         </form>
         
         <div className="mt-6 text-center text-sm text-gray-400">
-          Belum punya akun? <a href="#" onClick={(e) => { e.preventDefault(); alert("Silakan hubungi Admin untuk pendaftaran."); }} className="text-indigo-600 font-bold hover:underline">Daftar Disini</a>
+          Belum punya akun? 
+          <button 
+            onClick={() => alert("Silakan hubungi Admin untuk pendaftaran.")} 
+            className="text-indigo-600 font-bold hover:underline ml-1 bg-transparent border-none cursor-pointer"
+          >
+            Daftar Disini
+          </button>
         </div>
       </div>
     </div>
