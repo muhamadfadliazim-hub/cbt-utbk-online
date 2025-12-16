@@ -1,7 +1,8 @@
 // frontend/src/config.js
 
-export const API_URL = "https://cbt-utbk-online-production.up.railway.app";
+// Link Backend Railway Anda yang baru
+export const API_URL = "https://helpful-generosity-production-bfff.up.railway.app";
 
-// PERHATIKAN:
-// 1. Wajib pakai "https://" di depan.
-// 2. JANGAN pakai tanda garis miring (/) di paling belakang.
+// INGAT: 
+// 1. Jangan pakai tanda garis miring (/) di paling belakang.
+// 2. Pastikan pakai https://
