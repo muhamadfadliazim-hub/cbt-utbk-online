@@ -175,16 +175,16 @@ def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
     new_period = models.ExamPeriod(name=data.name, is_active=False, allow_submit=True, allowed_usernames=data.allowed_usernames, is_random=data.is_random, is_flexible=data.is_flexible, exam_type=data.exam_type)
     db.add(new_period); db.commit(); db.refresh(new_period)
     
-    # --- STRUKTUR UJIAN OTOMATIS (THE POWERFUL PART) ---
+    # --- STRUKTUR UJIAN SUPR LENGKAP ---
     structure = []
     
     if data.exam_type == "CPNS" or data.exam_type == "KEDINASAN":
-        # IPDN, STAN, STIS biasanya pakai SKD (TWK, TIU, TKP)
+        # Cocok untuk CPNS, STAN, STIS, IPDN
         structure = [("TWK", "Tes Wawasan Kebangsaan", 30), ("TIU", "Tes Intelegensia Umum", 30), ("TKP", "Tes Karakteristik Pribadi", 40)]
     
     elif data.exam_type == "TNI_POLRI":
-        # Umumnya Psikotes dan Akademik
-        structure = [("PSI", "Psikotes Kecerdasan", 60), ("AKD", "Tes Akademik (PU/MTK/ING)", 90), ("KEP", "Tes Kepribadian", 45)]
+        # Struktur umum tes akademik/psikotes TNI POLRI
+        structure = [("PSI", "Psikotes Kecerdasan", 60), ("PU", "Pengetahuan Umum", 40), ("BING", "Bahasa Inggris", 40), ("MTK", "Matematika", 60)]
     
     elif data.exam_type == "TOEFL":
         structure = [("LIS", "Listening Comprehension", 40), ("STR", "Structure & Written", 25), ("READ", "Reading Comprehension", 55)]
@@ -193,7 +193,7 @@ def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
         structure = [("LIS", "Listening", 30), ("READ", "Reading", 60), ("WRIT", "Writing", 60)]
         
     elif data.exam_type == "UMUM" or data.exam_type == "MANDIRI":
-        structure = [("UMUM", "Ujian Potensi Akademik", 60)]
+        structure = [("TPA", "Tes Potensi Akademik", 60), ("TBI", "Tes Bahasa Inggris", 40)]
         
     else: # Default UTBK SNBT
         structure = [
@@ -273,12 +273,7 @@ async def bulk_users(file: UploadFile=File(...), db:Session=Depends(get_db)):
         try:
             uname = str(r['username']).strip()
             if not db.query(models.User).filter_by(username=uname).first():
-                db.add(models.User(
-                    username=uname, 
-                    password=str(r['password']), 
-                    full_name=str(r['full_name']), 
-                    role=str(r.get('role', 'student'))
-                ))
+                db.add(models.User(username=uname, password=str(r['password']), full_name=str(r['full_name']), role=str(r.get('role', 'student'))))
                 count+=1
         except: pass
     db.commit()
@@ -365,7 +360,6 @@ def get_recap(period_id: Optional[int]=None, db: Session=Depends(get_db)):
         avg = sum(sc.values())/len(sc) if sc else 0
         stat = "LULUS" if u.choice1 and avg >= u.choice1.passing_grade else "TIDAK LULUS"
         row = {"id":u.id, "full_name":u.full_name, "username":u.username, "average":round(avg,2), "status":stat, "completed_exams":[{"exam_id":r.exam_id, "code":r.exam_id.split('_')[-1]} for r in urs]}
-        # Support dynamic columns based on scores present
         for code, score in sc.items(): row[code] = round(score, 2)
         res.append(row)
     return res
