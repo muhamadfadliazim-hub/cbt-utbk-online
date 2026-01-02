@@ -15,7 +15,7 @@ import random
 import os
 import uuid
 
-# --- SETUP FOLDER UPLOAD (PENTING UNTUK GAMBAR) ---
+# --- SETUP FOLDER UPLOAD ---
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
@@ -23,7 +23,6 @@ if not os.path.exists(UPLOAD_DIR):
 models.Base.metadata.create_all(bind=database.engine)
 app = FastAPI()
 
-# Mount folder agar gambar bisa diakses dari browser
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
 app.add_middleware(
@@ -120,7 +119,7 @@ def check_answer_correctness(question, user_ans):
         return key and user_ans == key.option_index
     return False
 
-# --- UTILS UPLOAD GAMBAR ---
+# --- UTILS UPLOAD ---
 @app.post("/upload-image")
 async def upload_image(file: UploadFile = File(...)):
     try:
@@ -129,10 +128,9 @@ async def upload_image(file: UploadFile = File(...)):
         path = os.path.join(UPLOAD_DIR, filename)
         with open(path, "wb") as buffer:
             buffer.write(await file.read())
-        # Return URL relatif
         return {"url": f"/static/{filename}"}
     except Exception as e:
-        raise HTTPException(500, f"Gagal upload: {str(e)}")
+        raise HTTPException(500, str(e))
 
 # --- LMS ENDPOINTS ---
 @app.get("/materials")
@@ -145,12 +143,14 @@ def get_materials(category: Optional[str] = None, db: Session = Depends(get_db))
 @app.post("/materials")
 def create_material(data: MaterialCreateSchema, db: Session = Depends(get_db)):
     m = models.Material(title=data.title, type=data.type, content_url=data.content_url, category=data.category, description=data.description)
-    db.add(m); db.commit()
+    db.add(m)
+    db.commit()
     return {"message": "Materi ditambahkan"}
 
 @app.delete("/materials/{mid}")
 def delete_material(mid: int, db: Session = Depends(get_db)):
-    db.query(models.Material).filter_by(id=mid).delete(); db.commit()
+    db.query(models.Material).filter_by(id=mid).delete()
+    db.commit()
     return {"message": "Dihapus"}
 
 # --- EXAM ENDPOINTS ---
@@ -175,17 +175,39 @@ def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
     new_period = models.ExamPeriod(name=data.name, is_active=False, allow_submit=True, allowed_usernames=data.allowed_usernames, is_random=data.is_random, is_flexible=data.is_flexible, exam_type=data.exam_type)
     db.add(new_period); db.commit(); db.refresh(new_period)
     
-    # STRUKTUR UJIAN DINAMIS
-    if data.exam_type == "CPNS":
-        structure = [("TWK","Tes Wawasan Kebangsaan",30), ("TIU","Tes Intelegensia Umum",30), ("TKP","Tes Karakteristik Pribadi",40)]
-    elif data.exam_type == "UMUM": # Ujian Mandiri / Mapel Tunggal
-        structure = [("UMUM","Ujian Utama",60)]
+    # --- STRUKTUR UJIAN OTOMATIS (THE POWERFUL PART) ---
+    structure = []
+    
+    if data.exam_type == "CPNS" or data.exam_type == "KEDINASAN":
+        # IPDN, STAN, STIS biasanya pakai SKD (TWK, TIU, TKP)
+        structure = [("TWK", "Tes Wawasan Kebangsaan", 30), ("TIU", "Tes Intelegensia Umum", 30), ("TKP", "Tes Karakteristik Pribadi", 40)]
+    
+    elif data.exam_type == "TNI_POLRI":
+        # Umumnya Psikotes dan Akademik
+        structure = [("PSI", "Psikotes Kecerdasan", 60), ("AKD", "Tes Akademik (PU/MTK/ING)", 90), ("KEP", "Tes Kepribadian", 45)]
+    
+    elif data.exam_type == "TOEFL":
+        structure = [("LIS", "Listening Comprehension", 40), ("STR", "Structure & Written", 25), ("READ", "Reading Comprehension", 55)]
+        
+    elif data.exam_type == "IELTS":
+        structure = [("LIS", "Listening", 30), ("READ", "Reading", 60), ("WRIT", "Writing", 60)]
+        
+    elif data.exam_type == "UMUM" or data.exam_type == "MANDIRI":
+        structure = [("UMUM", "Ujian Potensi Akademik", 60)]
+        
     else: # Default UTBK SNBT
-        structure = [("PU","Penalaran Umum",30), ("PBM","Pemahaman Bacaan",25), ("PPU","Pengetahuan Umum",15), ("PK","Pengetahuan Kuantitatif",20), ("LBI","Literasi B.Indo",42.5), ("LBE","Literasi B.Inggris",20), ("PM","Penalaran MTK",42.5)]
+        structure = [
+            ("PU", "Penalaran Umum", 30), ("PBM", "Pemahaman Bacaan & Menulis", 25), 
+            ("PPU", "Pengetahuan & Pemahaman Umum", 15), ("PK", "Pengetahuan Kuantitatif", 20), 
+            ("LBI", "Literasi Bahasa Indonesia", 42.5), ("LBE", "Literasi Bahasa Inggris", 20), 
+            ("PM", "Penalaran Matematika", 42.5)
+        ]
 
-    for c, t, d in structure: db.add(models.Exam(id=f"P{new_period.id}_{c}", period_id=new_period.id, code=c, title=t, description=data.exam_type, duration=d))
+    for c, t, d in structure: 
+        db.add(models.Exam(id=f"P{new_period.id}_{c}", period_id=new_period.id, code=c, title=t, description=data.exam_type, duration=d))
+    
     db.commit()
-    return {"message": f"Periode {data.exam_type} Berhasil Dibuat"}
+    return {"message": f"Periode {data.exam_type} Berhasil Dibuat dengan {len(structure)} Subtes!"}
 
 @app.post("/admin/exams/{exam_id}/manual-question")
 def add_manual_question(exam_id: str, data: QuestionCreateSchema, db: Session = Depends(get_db)):
@@ -222,9 +244,8 @@ def preview_exam(exam_id: str, db: Session = Depends(get_db)):
 def delete_single_question(qid: int, db: Session = Depends(get_db)):
     db.query(models.Question).filter_by(id=qid).delete(); db.commit(); return {"message":"Deleted"}
 
-# --- EXCEL UPLOAD HANDLERS (TEMPLATE 1, 2, 3) ---
-
-@app.post("/admin/majors/bulk") # Template Passing Grade
+# --- EXCEL UPLOAD HANDLERS ---
+@app.post("/admin/majors/bulk") 
 async def bulk_majors(file: UploadFile=File(...), db:Session=Depends(get_db)):
     df = pd.read_excel(io.BytesIO(await file.read()))
     df.columns = df.columns.str.lower().str.strip()
@@ -233,7 +254,7 @@ async def bulk_majors(file: UploadFile=File(...), db:Session=Depends(get_db)):
         try:
             univ = r.get('universitas') or r.get('university')
             name = r.get('prodi') or r.get('name') or r.get('jurusan')
-            pg = r.get('passing_grade') or r.get('pg') or r.get('passing_grade')
+            pg = r.get('passing_grade') or r.get('pg')
             if univ and name:
                 existing = db.query(models.Major).filter_by(university=str(univ), name=str(name)).first()
                 if existing: existing.passing_grade = float(pg or 0)
@@ -243,7 +264,7 @@ async def bulk_majors(file: UploadFile=File(...), db:Session=Depends(get_db)):
     db.commit()
     return {"message": f"{count} jurusan berhasil diproses"}
 
-@app.post("/admin/users/bulk") # Template Peserta
+@app.post("/admin/users/bulk")
 async def bulk_users(file: UploadFile=File(...), db:Session=Depends(get_db)):
     df = pd.read_excel(io.BytesIO(await file.read()))
     df.columns = df.columns.str.lower().str.strip()
@@ -252,22 +273,24 @@ async def bulk_users(file: UploadFile=File(...), db:Session=Depends(get_db)):
         try:
             uname = str(r['username']).strip()
             if not db.query(models.User).filter_by(username=uname).first():
-                db.add(models.User(username=uname, password=str(r['password']), full_name=str(r['full_name']), role='student'))
+                db.add(models.User(
+                    username=uname, 
+                    password=str(r['password']), 
+                    full_name=str(r['full_name']), 
+                    role=str(r.get('role', 'student'))
+                ))
                 count+=1
         except: pass
     db.commit()
     return {"message": f"{count} user berhasil ditambahkan"}
 
-@app.post("/admin/upload-questions/{exam_id}") # Template Soal
+@app.post("/admin/upload-questions/{exam_id}")
 async def upload_qs(exam_id:str, file: UploadFile=File(...), db:Session=Depends(get_db)):
     try:
         content = await file.read()
         df = pd.read_excel(io.BytesIO(content))
         df.columns = df.columns.str.strip().str.title()
-        
-        db.query(models.Question).filter_by(exam_id=exam_id).delete()
-        db.commit()
-        
+        db.query(models.Question).filter_by(exam_id=exam_id).delete(); db.commit()
         count=0
         for _, row in df.iterrows():
             tipe_asal = str(row.get('Tipe', 'PG')).upper().strip()
@@ -275,16 +298,13 @@ async def upload_qs(exam_id:str, file: UploadFile=File(...), db:Session=Depends(
             if 'ISIAN' in tipe_asal: q_type = 'short_answer'
             elif 'KOMPLEKS' in tipe_asal: q_type = 'complex'
             elif 'TABEL' in tipe_asal or 'BENAR' in tipe_asal: q_type = 'table_boolean'
-            
             img = str(row.get('Gambar')) if pd.notna(row.get('Gambar')) else None
-            
             q = models.Question(
                 exam_id=exam_id, text=str(row['Soal']), type=q_type, difficulty=float(row.get('Kesulitan', 1.0)),
                 image_url=img, reading_material=str(row.get('Bacaan')) if pd.notna(row.get('Bacaan')) else None,
                 explanation=str(row.get('Pembahasan')) if pd.notna(row.get('Pembahasan')) else None
             )
             db.add(q); db.commit()
-            
             kunci_raw = str(row.get('Kunci','')).strip().upper()
             if q_type == 'short_answer':
                 db.add(models.Option(question_id=q.id, option_index='KEY', label=kunci_raw, is_correct=True))
@@ -309,22 +329,19 @@ async def upload_qs(exam_id:str, file: UploadFile=File(...), db:Session=Depends(
 def get_student_periods(username: str = None, db: Session = Depends(get_db)):
     periods = db.query(models.ExamPeriod).filter_by(is_active=True).order_by(models.ExamPeriod.id.desc()).all()
     user = db.query(models.User).filter_by(username=username).first() if username else None
-    
     res = []
     for p in periods:
         if p.allowed_usernames and username:
             if username.lower() not in [u.strip().lower() for u in p.allowed_usernames.split(',')]: continue
-        
         exams_data = []
         for e in p.exams:
             is_done = False
             if user and db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=e.id).first(): is_done = True
             exams_data.append({"id": e.id, "title": e.title, "duration": e.duration, "is_done": is_done})
-        
         res.append({"id": p.id, "name": p.name, "exams": exams_data, "type": p.exam_type})
     return res
 
-# --- STANDARD AUTH, CONFIG & DOWNLOADS ---
+# --- STANDARD API ---
 @app.post("/login")
 def login(data: LoginSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
@@ -345,10 +362,11 @@ def get_recap(period_id: Optional[int]=None, db: Session=Depends(get_db)):
         urs = [r for r in u.results if r.exam_id.startswith(f"P{period_id}_")] if period_id else u.results
         if period_id and not urs: continue
         sc={r.exam_id.split('_')[-1]: r.irt_score for r in urs}
-        avg = sum(sc.values())/7 if sc else 0
+        avg = sum(sc.values())/len(sc) if sc else 0
         stat = "LULUS" if u.choice1 and avg >= u.choice1.passing_grade else "TIDAK LULUS"
         row = {"id":u.id, "full_name":u.full_name, "username":u.username, "average":round(avg,2), "status":stat, "completed_exams":[{"exam_id":r.exam_id, "code":r.exam_id.split('_')[-1]} for r in urs]}
-        for k in ["PU","PBM","PPU","PK","LBI","LBE","PM","TWK","TIU","TKP","UMUM"]: row[k]=round(sc.get(k,0),2)
+        # Support dynamic columns based on scores present
+        for code, score in sc.items(): row[code] = round(score, 2)
         res.append(row)
     return res
 
