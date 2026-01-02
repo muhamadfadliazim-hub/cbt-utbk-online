@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Eye, EyeOff, 
   ChevronDown, CheckCircle, XCircle, Download, Search, X, Filter, Clock, Key, 
-  Building2, PieChart, PenTool, BookOpen, Grid, LayoutDashboard, Menu, FileCode, Info, Save, Video, Link, Settings, Unlock, Music, Image
+  Building2, PieChart, PenTool, BookOpen, Grid, LayoutDashboard, Menu, FileCode, Info, Save, Video, Link, Settings, Unlock, Music, Image, Edit
 } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
@@ -10,10 +10,7 @@ import { API_URL } from './config';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// Daftar lengkap subtes
 const EXAM_CODES = ["PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM", "TWK", "TIU", "TKP", "UMUM", "PSI", "AKD", "KEP", "LIS", "STR", "READ"];
-
-// Mapping Subtes untuk LMS
 const LMS_SUBTESTS = {
     UTBK: ["PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM"],
     CPNS: ["TWK", "TIU", "TKP"],
@@ -26,32 +23,22 @@ const LMS_SUBTESTS = {
 
 const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
-  
-  // Data
   const [periods, setPeriods] = useState([]);
   const [users, setUsers] = useState([]);
   const [recap, setRecap] = useState([]);
   const [majors, setMajors] = useState([]); 
   const [materials, setMaterials] = useState([]);
-  
-  // Form State
   const [newPeriodName, setNewPeriodName] = useState('');
   const [examType, setExamType] = useState('UTBK');
   const [isRandom, setIsRandom] = useState(true); 
   const [isFlexible, setIsFlexible] = useState(false); 
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', role: 'student' });
   const [newMajor, setNewMajor] = useState({ university: '', name: '', passing_grade: '' });
-  
-  // LMS Form with Subtest Logic
   const [lmsCategory, setLmsCategory] = useState('UTBK');
   const [lmsSubtest, setLmsSubtest] = useState('');
   const [newMaterial, setNewMaterial] = useState({ title: '', type: 'pdf', content_url: '', description: '' });
-
-  // Config
   const [isReleased, setIsReleased] = useState(false);
   const [isMajorSelectionEnabled, setIsMajorSelectionEnabled] = useState(true);
-
-  // UI States
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewData, setPreviewData] = useState(null); 
   const [analysisData, setAnalysisData] = useState(null); 
@@ -68,16 +55,10 @@ const AdminDashboard = ({ onLogout }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
-
-  // Manual Question
   const [showManualInput, setShowManualInput] = useState(false);
   const [activeExamIdForManual, setActiveExamIdForManual] = useState(null);
-  const [manualQ, setManualQ] = useState({ 
-      text: '', type: 'multiple_choice', difficulty: 1.0, 
-      reading_material: '', explanation: '', 
-      label_true: 'Benar', label_false: 'Salah', 
-      image_url: '', audio_url: '', options: [] 
-  });
+  const [editingQuestionId, setEditingQuestionId] = useState(null);
+  const [manualQ, setManualQ] = useState({ text: '', type: 'multiple_choice', difficulty: 1.0, reading_material: '', explanation: '', label_true: 'Benar', label_false: 'Salah', image_url: '', audio_url: '', options: [] });
 
   const renderText = (text) => {
     if (!text) return null;
@@ -126,51 +107,33 @@ const AdminDashboard = ({ onLogout }) => {
   const handleCreatePeriod = () => { if(!newPeriodName)return; apiAction(`${API_URL}/admin/periods`, 'POST', { name: newPeriodName, allowed_usernames: selectedWhitelist.length>0?selectedWhitelist.join(','):null, is_random: isRandom, is_flexible: isFlexible, exam_type: examType }, ()=>{setNewPeriodName(''); setSelectedWhitelist([]); fetchData();}); };
   const updatePeriod = (id, data) => { apiAction(`${API_URL}/admin/periods/${id}`, 'PUT', data, fetchData); };
   const handleDeletePeriod = (id) => { if(window.confirm("Hapus?")) apiAction(`${API_URL}/admin/periods/${id}`, 'DELETE'); };
-  
   const handleAddUser = () => { apiAction(`${API_URL}/admin/users`, 'POST', newUser, ()=>{alert("User Added");setNewUser({...newUser, username:''});}); };
   const handleBulkDelete = () => { if(window.confirm("Hapus terpilih?")) apiAction(`${API_URL}/admin/users/delete-bulk`, 'POST', {user_ids:selectedIds}, ()=>setSelectedIds([])); };
   const handleBulkUpload = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/users/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchData();}) };
   const handleChangePassword = (uid) => { const p = prompt("Pass Baru:"); if(p) apiAction(`${API_URL}/admin/users/${uid}/password`, 'PUT', {new_password:p}, ()=>alert("Diganti")); };
-
   const handleAddMajor = () => { apiAction(`${API_URL}/majors`, 'POST', newMajor, ()=>{alert("Added");setNewMajor({university:'',name:'',passing_grade:''});}); };
   const handleDeleteMajor = (id) => { apiAction(`${API_URL}/majors/${id}`, 'DELETE'); };
   const handleBulkUploadMajors = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/majors/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchData();}) };
-
-  // LMS: Simpan Kategori sebagai "UTBK - PU" atau "CPNS - TIU"
-  const handleAddMaterial = () => { 
-      const finalCategory = lmsSubtest ? `${lmsCategory} - ${lmsSubtest}` : lmsCategory;
-      apiAction(`${API_URL}/materials`, 'POST', {...newMaterial, category: finalCategory}, ()=>{alert("Materi Added");setNewMaterial({...newMaterial, title:''});}); 
-  };
+  const handleAddMaterial = () => { const finalCategory = lmsSubtest ? `${lmsCategory} - ${lmsSubtest}` : lmsCategory; apiAction(`${API_URL}/materials`, 'POST', {...newMaterial, category: finalCategory}, ()=>{alert("Materi Added");setNewMaterial({...newMaterial, title:''});}); };
   const handleDeleteMaterial = (id) => { if(window.confirm("Hapus materi?")) apiAction(`${API_URL}/materials/${id}`, 'DELETE'); };
-
   const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}); };
   const handleDeleteQuestion = (qid) => { if(window.confirm("Hapus?")) fetch(`${API_URL}/admin/questions/${qid}`, { method: 'DELETE' }).then(() => { if (previewData) handlePreviewExam(previewData.id||activeExamIdForManual); fetchData(); }); };
   const handleUploadQuestion = (eid, f) => { const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchData();}); };
-
-  const handleDownloadPDF = () => {
-    if(recap.length===0) return alert("Data kosong");
-    const doc = new jsPDF('landscape'); doc.text("REKAP NILAI", 14, 15);
-    const tableColumn = ["Nama", "Username", ...EXAM_CODES, "Avg", "Status"];
-    const tableRows = recap.map(r => [r.full_name, r.username, ...EXAM_CODES.map(k=>r[k]||0), r.average, r.status]);
-    autoTable(doc, { head: [tableColumn], body: tableRows, startY: 20 });
-    doc.save('rekap.pdf');
-  };
+  const handleDownloadPDF = () => { if(recap.length===0) return alert("Data kosong"); const doc = new jsPDF('landscape'); doc.text("REKAP NILAI", 14, 15); const tableColumn = ["Nama", "Username", ...EXAM_CODES, "Avg", "Status"]; const tableRows = recap.map(r => [r.full_name, r.username, ...EXAM_CODES.map(k=>r[k]||0), r.average, r.status]); autoTable(doc, { head: [tableColumn], body: tableRows, startY: 20 }); doc.save('rekap.pdf'); };
   const handleDownloadExcel = () => window.open(`${API_URL}/admin/recap/download?period_id=${selectedRecapPeriod}`, '_blank');
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
   const handleShowAnalysis = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/analysis`).then(r => r.json()).then(d => { setAnalysisData(d); setActiveAnalysisId(eid); setShowAnalysis(true); }); };
   const handleDownloadAnalysisExcel = () => { if (activeAnalysisId) window.open(`${API_URL}/admin/exams/${activeAnalysisId}/analysis/download`, '_blank'); };
   const handleResetResult = (uid, eid) => { if(window.confirm("Reset?")) apiAction(`${API_URL}/admin/reset-result`, 'POST', {user_id:uid, exam_id:eid}, fetchRecap); };
   const handleViewStudentDetail = (d) => { setSelectedStudentDetail(d); setShowDetailModal(true); };
-
-  const toggleConfig = (k, v) => { const nv = !v; if(k==='release_announcement') setIsReleased(nv); if(k==='enable_major_selection') setIsMajorSelectionEnabled(nv); apiAction(`${API_URL}/config/${k}`, 'POST', {value:nv?"true":"false"}); };
+  const toggleConfig = (k, v) => { const nv = !v; apiAction(`${API_URL}/config/${k}`, 'POST', {value:nv?"true":"false"}); };
   const toggleUserWhitelist = (u) => { setSelectedWhitelist(selectedWhitelist.includes(u) ? selectedWhitelist.filter(x=>x!==u) : [...selectedWhitelist, u]); };
   const openEditAccess = (p) => { setEditingPeriodId(p.id); setEditAccessUsers(p.allowed_usernames ? p.allowed_usernames.split(',') : []); setShowEditAccessModal(true); };
   const toggleEditAccessUser = (u) => { setEditAccessUsers(editAccessUsers.includes(u) ? editAccessUsers.filter(x=>x!==u) : [...editAccessUsers, u]); };
   const saveEditAccess = () => { apiAction(`${API_URL}/admin/periods/${editingPeriodId}/users`, 'PUT', {allowed_usernames:editAccessUsers.join(',')}, ()=>{alert("Saved");setShowEditAccessModal(false);}); };
-
-  const openManualInput = (eid) => { setActiveExamIdForManual(eid); setManualQ({text:'',type:'multiple_choice',difficulty:1.0,reading_material:'',explanation:'',label_true:'Benar',label_false:'Salah',image_url:'', audio_url:'',options:[{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false}]}); setShowManualInput(true); };
+  const openManualInput = (eid, qData=null) => { setActiveExamIdForManual(eid); if(qData) { setEditingQuestionId(qData.id); setManualQ({ text: qData.text, type: qData.type, difficulty: 1.0, reading_material: qData.reading_material || '', explanation: qData.explanation || '', label_true: qData.label_true || 'Benar', label_false: qData.label_false || 'Salah', image_url: qData.image_url || '', audio_url: qData.audio_url || '', options: qData.options.map(o=>({label:o.label, is_correct:o.is_correct})) }); } else { setEditingQuestionId(null); setManualQ({text:'',type:'multiple_choice',difficulty:1.0,reading_material:'',explanation:'',label_true:'Benar',label_false:'Salah',image_url:'', audio_url:'',options:[{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false}]}); } setShowManualInput(true); };
   const handleOptionChange = (i, f, v) => { const o=[...manualQ.options]; o[i][f]=v; if(manualQ.type==='multiple_choice'&&f==='is_correct'&&v) o.forEach((x,idx)=>{if(idx!==i)x.is_correct=false}); setManualQ({...manualQ,options:o}); };
-  const saveManualQuestion = () => { if(!manualQ.text)return alert("Isi Soal!"); apiAction(`${API_URL}/admin/exams/${activeExamIdForManual}/manual-question`, 'POST', manualQ, ()=>{alert("Tersimpan!"); setShowManualInput(false); fetchData();}); };
+  const saveManualQuestion = () => { if(!manualQ.text)return alert("Isi Soal!"); if(editingQuestionId) { apiAction(`${API_URL}/admin/questions/${editingQuestionId}`, 'PUT', manualQ, ()=>{ alert("Update Berhasil!"); setShowManualInput(false); if(previewData) handlePreviewExam(previewData.id || activeExamIdForManual); else fetchData(); }); } else { apiAction(`${API_URL}/admin/exams/${activeExamIdForManual}/manual-question`, 'POST', manualQ, ()=>{ alert("Tersimpan!"); setShowManualInput(false); fetchData(); }); } };
 
   const SidebarItem = ({ id, icon: Icon, label }) => (
       <button onClick={()=>setTab(id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${tab===id ? 'bg-indigo-600 text-white font-semibold shadow-lg shadow-indigo-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
@@ -183,6 +146,7 @@ const AdminDashboard = ({ onLogout }) => {
       <aside className={`bg-slate-900 text-white w-72 flex flex-col fixed h-full z-30 transition-transform duration-300 border-r border-slate-800 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
           <div className="p-6 border-b border-slate-800 flex items-center gap-3"><div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-600/20"><Building2 size={24} className="text-white"/></div><div><h1 className="font-bold text-lg tracking-tight">EduPrime</h1><span className="text-xs text-slate-500 font-medium px-2 py-0.5 bg-slate-800 rounded-full">Admin Pro</span></div></div>
           <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
+              <div className="px-4 pb-2 pt-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Main Menu</div>
               <SidebarItem id="periods" icon={FileText} label="Bank Soal" />
               <SidebarItem id="lms" icon={BookOpen} label="Materi & LMS" />
               <SidebarItem id="users" icon={Users} label="Data Peserta" />
@@ -201,55 +165,25 @@ const AdminDashboard = ({ onLogout }) => {
 
         {tab === 'periods' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex justify-between items-center">
-                    <div><h2 className="text-3xl font-bold text-slate-800">Bank Soal & Ujian</h2><p className="text-slate-500 mt-1">Kelola paket ujian dan konfigurasi.</p></div>
-                    <button onClick={handleDownloadTemplate} className="bg-white border border-slate-200 text-slate-700 px-5 py-2.5 rounded-xl font-bold hover:bg-slate-50 flex items-center gap-2"><Download size={18}/> Template</button>
-                </div>
-                {/* CREATE EXAM CARD */}
-                <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-emerald-500"></div>
-                    <h3 className="font-bold text-lg mb-6 text-slate-800 flex items-center gap-2"><PenTool size={20} className="text-indigo-600"/> Buat Paket Ujian Baru</h3>
+                <div className="flex justify-between items-center"><div><h2 className="text-3xl font-bold text-slate-800">Bank Soal</h2><p className="text-slate-500 mt-1">Kelola paket ujian.</p></div><button onClick={handleDownloadTemplate} className="bg-white border text-slate-700 px-5 py-2.5 rounded-xl font-bold hover:bg-slate-50 flex gap-2"><Download size={18}/> Template</button></div>
+                <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200">
+                    <h3 className="font-bold text-lg mb-6 text-slate-800 flex items-center gap-2"><PenTool size={20} className="text-indigo-600"/> Buat Paket Baru</h3>
                     <div className="grid md:grid-cols-12 gap-6 items-end">
-                        <div className="md:col-span-4"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Nama Paket</label><input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-semibold" placeholder="Contoh: Tryout Nasional 1" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/></div>
-                        <div className="md:col-span-3"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Kategori</label><select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-semibold cursor-pointer" value={examType} onChange={e=>setExamType(e.target.value)}><option value="UTBK">UTBK SNBT</option><option value="CPNS">SKD CPNS</option><option value="KEDINASAN">Sekolah Kedinasan</option><option value="TNI_POLRI">TNI / POLRI</option><option value="TOEFL">TOEFL</option><option value="IELTS">IELTS</option><option value="UMUM">Ujian Mandiri</option></select></div>
-                        <div className="md:col-span-3 flex gap-6 pb-3">
-                            <label className="flex items-center gap-3 text-sm font-bold text-slate-700 cursor-pointer"><input type="checkbox" checked={isRandom} onChange={e=>setIsRandom(e.target.checked)} className="w-5 h-5 accent-indigo-600"/> Acak Soal</label>
-                            <label className="flex items-center gap-3 text-sm font-bold text-slate-700 cursor-pointer"><input type="checkbox" checked={isFlexible} onChange={e=>setIsFlexible(e.target.checked)} className="w-5 h-5 accent-indigo-600"/> Fleksibel</label>
-                        </div>
-                        <div className="md:col-span-2"><button onClick={handleCreatePeriod} className="w-full bg-indigo-600 text-white p-3 rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200">Buat</button></div>
+                        <div className="md:col-span-4"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Nama Paket</label><input className="w-full p-3 bg-slate-50 border rounded-xl" placeholder="Contoh: Tryout 1" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/></div>
+                        <div className="md:col-span-3"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Kategori</label><select className="w-full p-3 bg-slate-50 border rounded-xl cursor-pointer" value={examType} onChange={e=>setExamType(e.target.value)}><option value="UTBK">UTBK SNBT</option><option value="CPNS">SKD CPNS</option><option value="KEDINASAN">Sekolah Kedinasan</option><option value="TNI_POLRI">TNI / POLRI</option><option value="TOEFL">TOEFL</option><option value="IELTS">IELTS</option><option value="UMUM">Ujian Mandiri</option></select></div>
+                        <div className="md:col-span-3 flex gap-6 pb-3"><label className="flex items-center gap-3 text-sm font-bold text-slate-700 cursor-pointer"><input type="checkbox" checked={isRandom} onChange={e=>setIsRandom(e.target.checked)} className="w-5 h-5 accent-indigo-600"/> Acak</label><label className="flex items-center gap-3 text-sm font-bold text-slate-700 cursor-pointer"><input type="checkbox" checked={isFlexible} onChange={e=>setIsFlexible(e.target.checked)} className="w-5 h-5 accent-indigo-600"/> Fleksibel</label></div>
+                        <div className="md:col-span-2"><button onClick={handleCreatePeriod} className="w-full bg-indigo-600 text-white p-3 rounded-xl font-bold hover:bg-indigo-700">Buat</button></div>
                     </div>
                 </div>
-                {/* LIST PERIODS */}
                 <div className="grid gap-6">
                     {periods.map(p=>(
-                        <div key={p.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-all duration-300">
+                        <div key={p.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                             <div className="p-6 flex justify-between items-center bg-white relative">
-                                <div>
-                                    <div className="flex items-center gap-3 mb-2"><h3 className="font-bold text-xl text-slate-800">{p.name}</h3><span className="px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wide uppercase bg-slate-100 text-slate-600">{p.exam_type}</span></div>
-                                    <div className="text-xs text-slate-500 font-medium flex gap-4"><span className="flex items-center gap-1"><Grid size={12}/> {p.exams.length} Subtes</span></div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <button onClick={()=>updatePeriod(p.id, {is_active: !p.is_active})} className={`p-2.5 rounded-xl border transition ${p.is_active?'bg-emerald-50 border-emerald-200 text-emerald-600':'bg-white border-slate-200 text-slate-400 hover:border-slate-300'}`}><Eye size={18}/></button>
-                                    <button onClick={()=>updatePeriod(p.id, {allow_submit: !p.allow_submit})} className={`p-2.5 rounded-xl border transition ${p.allow_submit?'bg-indigo-50 border-indigo-200 text-indigo-600':'bg-white border-slate-200 text-slate-400 hover:border-slate-300'}`}><Lock size={18}/></button>
-                                    <button onClick={()=>handleDeletePeriod(p.id)} className="p-2.5 bg-white border border-slate-200 text-slate-400 rounded-xl hover:bg-rose-50 hover:text-rose-600 transition"><Trash2 size={18}/></button>
-                                    <button onClick={()=>setExpandedPeriod(expandedPeriod===p.id?null:p.id)} className="p-2.5 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition"><ChevronDown size={20}/></button>
-                                </div>
+                                <div><div className="flex items-center gap-3 mb-2"><h3 className="font-bold text-xl text-slate-800">{p.name}</h3><span className="px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wide uppercase bg-slate-100 text-slate-600">{p.exam_type}</span></div><div className="text-xs text-slate-500 font-medium flex gap-4"><span className="flex items-center gap-1"><Grid size={12}/> {p.exams.length} Subtes</span></div></div>
+                                <div className="flex items-center gap-2"><button onClick={()=>updatePeriod(p.id, {is_active: !p.is_active})} className={`p-2.5 rounded-xl border transition ${p.is_active?'bg-emerald-50 text-emerald-600':'bg-white text-slate-400'}`}><Eye size={18}/></button><button onClick={()=>updatePeriod(p.id, {allow_submit: !p.allow_submit})} className={`p-2.5 rounded-xl border transition ${p.allow_submit?'bg-indigo-50 text-indigo-600':'bg-white text-slate-400'}`}><Lock size={18}/></button><button onClick={()=>handleDeletePeriod(p.id)} className="p-2.5 bg-white border text-slate-400 rounded-xl hover:text-rose-600"><Trash2 size={18}/></button><button onClick={()=>setExpandedPeriod(expandedPeriod===p.id?null:p.id)} className="p-2.5 bg-slate-100 text-slate-600 rounded-xl"><ChevronDown size={20}/></button></div>
                             </div>
                             {expandedPeriod===p.id && (
-                                <div className="p-6 border-t border-slate-100 bg-slate-50/50 grid gap-3">
-                                    {p.exams.map(e=>(
-                                        <div key={e.id} className="flex justify-between items-center p-4 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 transition">
-                                            <div><div className="font-bold text-slate-800">{e.title}</div><div className="text-xs text-slate-500 font-medium flex items-center gap-2"><Clock size={12}/> {e.duration} Menit &bull; {e.q_count} Soal</div></div>
-                                            <div className="flex gap-2">
-                                                <button onClick={()=>openEditAccess(p)} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-200"><Key size={14}/></button>
-                                                <button onClick={()=>openManualInput(e.id)} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700"><PenTool size={14}/></button>
-                                                <button onClick={()=>handlePreviewExam(e.id)} className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50"><Search size={14}/></button>
-                                                <button onClick={()=>handleShowAnalysis(e.id)} className="px-3 py-1.5 bg-white border border-slate-200 text-purple-600 rounded-lg text-xs font-bold hover:bg-purple-50"><PieChart size={14}/></button>
-                                                <label className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 cursor-pointer flex items-center gap-1"><Upload size={14}/> Excel <input type="file" hidden onChange={ev=>handleUploadQuestion(e.id,ev.target.files[0])}/></label>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                <div className="p-6 border-t border-slate-100 bg-slate-50/50 grid gap-3">{p.exams.map(e=>(<div key={e.id} className="flex justify-between items-center p-4 rounded-xl bg-white border border-slate-200"><div><div className="font-bold text-slate-800">{e.title}</div><div className="text-xs text-slate-500 font-medium flex items-center gap-2"><Clock size={12}/> {e.duration} Menit &bull; {e.q_count} Soal</div></div><div className="flex gap-2"><button onClick={()=>openEditAccess(p)} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold"><Key size={14}/></button><button onClick={()=>openManualInput(e.id)} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold"><PenTool size={14}/></button><button onClick={()=>handlePreviewExam(e.id)} className="px-3 py-1.5 bg-white border text-slate-600 rounded-lg text-xs font-bold"><Search size={14}/></button><button onClick={()=>handleShowAnalysis(e.id)} className="px-3 py-1.5 bg-white border text-purple-600 rounded-lg text-xs font-bold"><PieChart size={14}/></button><label className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold cursor-pointer flex gap-1"><Upload size={14}/> Excel <input type="file" hidden onChange={ev=>handleUploadQuestion(e.id,ev.target.files[0])}/></label></div></div>))}</div>
                             )}
                         </div>
                     ))}
@@ -259,108 +193,81 @@ const AdminDashboard = ({ onLogout }) => {
 
         {tab === 'lms' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                <div className="flex justify-between items-center"><div><h2 className="text-3xl font-bold text-slate-800">Learning Management System</h2><p className="text-slate-500 mt-1">Upload materi belajar pendukung.</p></div></div>
-                <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
+                <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
                     <div className="grid md:grid-cols-4 gap-6 items-end">
                         <div className="md:col-span-2"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Judul Materi</label><input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl" value={newMaterial.title} onChange={e=>setNewMaterial({...newMaterial, title:e.target.value})}/></div>
-                        
-                        {/* PILIH KATEGORI UTAMA */}
                         <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Kategori</label><select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer" value={lmsCategory} onChange={e=>setLmsCategory(e.target.value)}>{Object.keys(LMS_SUBTESTS).map(k=><option key={k} value={k}>{k}</option>)}</select></div>
-                        
-                        {/* PILIH SUBTES BERDASARKAN KATEGORI */}
                         <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Subtes</label><select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer" value={lmsSubtest} onChange={e=>setLmsSubtest(e.target.value)}><option value="">-- Pilih --</option>{LMS_SUBTESTS[lmsCategory]?.map(s=><option key={s} value={s}>{s}</option>)}</select></div>
-                        
                         <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Tipe</label><select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer" value={newMaterial.type} onChange={e=>setNewMaterial({...newMaterial, type:e.target.value})}><option value="pdf">PDF</option><option value="video">Video</option><option value="link">Link</option></select></div>
-                        
                         <div className="md:col-span-3"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">URL</label><input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl" placeholder="https://..." value={newMaterial.content_url} onChange={e=>setNewMaterial({...newMaterial, content_url:e.target.value})}/></div>
-                        
-                        <button onClick={handleAddMaterial} className="w-full bg-indigo-600 text-white p-3 rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200">Simpan Materi</button>
+                        <button onClick={handleAddMaterial} className="w-full bg-indigo-600 text-white p-3 rounded-xl font-bold hover:bg-indigo-700">Simpan Materi</button>
                     </div>
                 </div>
-                
                 <div className="grid md:grid-cols-3 gap-6">
-                    {materials.map(m=>(
-                        <div key={m.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition relative group">
-                            <button onClick={()=>handleDeleteMaterial(m.id)} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500 transition"><Trash2 size={18}/></button>
-                            <span className="text-[10px] px-2.5 py-1 rounded-lg font-bold mb-3 inline-block tracking-wide uppercase bg-indigo-50 text-indigo-700">{m.category}</span>
-                            <h4 className="font-bold text-slate-800 text-lg flex items-center gap-2 mb-2">{m.type==='pdf'?<FileText className="text-rose-500"/>:m.type==='video'?<Video className="text-red-600"/>:<Link className="text-blue-500"/>} {m.title}</h4>
-                            <a href={m.content_url} target="_blank" rel="noreferrer" className="flex items-center justify-center w-full py-2.5 rounded-xl bg-slate-50 text-indigo-600 font-bold text-sm border border-slate-200 hover:bg-indigo-600 hover:text-white transition mt-4">Buka</a>
-                        </div>
-                    ))}
+                    {materials.map(m=>(<div key={m.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><button onClick={()=>handleDeleteMaterial(m.id)} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500"><Trash2 size={18}/></button><span className="text-[10px] px-2.5 py-1 rounded-lg font-bold mb-3 inline-block tracking-wide uppercase bg-indigo-50 text-indigo-700">{m.category}</span><h4 className="font-bold text-slate-800 text-lg flex items-center gap-2 mb-2">{m.type==='pdf'?<FileText className="text-rose-500"/>:m.type==='video'?<Video className="text-red-600"/>:<Link className="text-blue-500"/>} {m.title}</h4><a href={m.content_url} target="_blank" rel="noreferrer" className="flex items-center justify-center w-full py-2.5 rounded-xl bg-slate-50 text-indigo-600 font-bold text-sm border border-slate-200 hover:bg-indigo-600 hover:text-white transition mt-4">Buka</a></div>))}
                 </div>
             </div>
         )}
 
-        {/* --- MODAL-MODAL YANG SEBELUMNYA "HILANG" --- */}
-
-        {/* 1. Modal Analisis */}
-        {showAnalysis && analysisData && (
-             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-             <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col">
-                 <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-xl font-bold">Analisis Butir Soal</h3></div><div className="flex items-center gap-2"><button onClick={handleDownloadAnalysisExcel} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2"><Download size={14}/> Excel</button><button onClick={()=>setShowAnalysis(false)} className="bg-gray-200 p-1.5 rounded hover:bg-gray-300"><X size={18}/></button></div></div>
-                 <div className="flex-1 overflow-y-auto p-6"><table className="w-full text-sm text-left border rounded-lg"><thead className="bg-indigo-50 text-indigo-900 font-bold"><tr><th className="p-3">No</th><th className="p-3">Soal</th><th className="p-3 text-center">Diff</th><th className="p-3 text-center">Benar</th><th className="p-3 text-center">%</th></tr></thead><tbody>{analysisData.stats.map((item, idx) => (<tr key={item.id} className="hover:bg-gray-50 border-b"><td className="p-3 text-center">{idx + 1}</td><td className="p-3 text-gray-700 min-w-[200px]">{renderText(item.text)}</td><td className="p-3 text-center text-blue-600">{item.difficulty}</td><td className="p-3 text-center text-green-600">{item.correct}/{item.attempts}</td><td className="p-3 text-center">{item.percentage}%</td></tr>))}</tbody></table></div>
-             </div></div>
+        {tab === 'users' && (
+            <div className="space-y-6">
+                <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-slate-800">Manajemen Peserta</h2>{selectedIds.length > 0 && <button onClick={handleBulkDelete} className="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2"><Trash2 size={16}/> Hapus Terpilih</button>}</div>
+                <div className="bg-white p-6 rounded-xl border shadow-sm flex flex-col md:flex-row gap-4 mb-6"><input className="border p-2 rounded-lg flex-1" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input className="border p-2 rounded-lg flex-1" placeholder="Nama Lengkap" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input className="border p-2 rounded-lg flex-1" placeholder="Password" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><button onClick={handleAddUser} className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2"><Plus size={16}/> Tambah</button></div>
+                <div className="mb-4"><label className="text-indigo-600 font-bold text-sm cursor-pointer flex items-center gap-2"><Upload size={16}/> Upload Excel Peserta <input type="file" hidden onChange={handleBulkUpload}/></label></div>
+                <div className="bg-white rounded-xl shadow-sm border overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-700 font-bold"><tr><th className="p-4 w-10"><input type="checkbox" onChange={e=>setSelectedIds(e.target.checked?users.map(u=>u.id):[])}/></th><th className="p-4">Nama</th><th className="p-4">Username</th><th className="p-4">Aksi</th></tr></thead><tbody>{users.map(u=>(<tr key={u.id} className="border-t hover:bg-slate-50"><td className="p-4"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={()=>{selectedIds.includes(u.id)?setSelectedIds(selectedIds.filter(i=>i!==u.id)):setSelectedIds([...selectedIds,u.id])}}/></td><td className="p-4 font-bold">{u.full_name}</td><td className="p-4 text-slate-500">{u.username}</td><td className="p-4"><button onClick={()=>handleChangePassword(u.id)} className="text-indigo-600 font-bold text-xs"><Key size={14}/></button></td></tr>))}</tbody></table></div>
+            </div>
         )}
 
-        {/* 2. Modal Akses (Edit Access) */}
+        {tab === 'majors' && (
+             <div className="space-y-6">
+                <h2 className="text-2xl font-bold text-slate-800">Data Jurusan & Passing Grade</h2>
+                <div className="bg-white p-6 rounded-xl border shadow-sm mb-6 flex flex-col md:flex-row gap-4 items-end"><div className="flex-1 w-full"><label className="text-xs font-bold text-slate-500 block mb-1">Universitas</label><input className="w-full p-2 border rounded-lg" value={newMajor.university} onChange={e=>setNewMajor({...newMajor, university:e.target.value})}/></div><div className="flex-1 w-full"><label className="text-xs font-bold text-slate-500 block mb-1">Prodi</label><input className="w-full p-2 border rounded-lg" value={newMajor.name} onChange={e=>setNewMajor({...newMajor, name:e.target.value})}/></div><div className="w-32"><label className="text-xs font-bold text-slate-500 block mb-1">PG</label><input className="w-full p-2 border rounded-lg" type="number" value={newMajor.passing_grade} onChange={e=>setNewMajor({...newMajor, passing_grade:e.target.value})}/></div><button onClick={handleAddMajor} className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold">Simpan</button></div>
+                <div className="mb-4"><label className="text-indigo-600 font-bold text-sm cursor-pointer flex items-center gap-2"><Upload size={16}/> Upload Excel Jurusan <input type="file" hidden onChange={handleBulkUploadMajors}/></label></div>
+                <div className="bg-white rounded-xl shadow-sm border overflow-hidden h-[500px] overflow-y-auto"><table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-700 font-bold sticky top-0"><tr><th className="p-4">Universitas</th><th className="p-4">Jurusan</th><th className="p-4">PG</th><th className="p-4">Aksi</th></tr></thead><tbody>{majors.map(m=>(<tr key={m.id} className="border-t hover:bg-slate-50"><td className="p-4 font-bold">{m.university}</td><td className="p-4">{m.name}</td><td className="p-4"><span className="bg-blue-50 text-blue-600 px-2 py-1 rounded font-bold">{m.passing_grade}</span></td><td className="p-4"><button onClick={()=>handleDeleteMajor(m.id)} className="text-rose-500"><Trash2 size={16}/></button></td></tr>))}</tbody></table></div>
+             </div>
+        )}
+
+        {tab === 'recap' && (<div className="overflow-x-auto pb-20"><div className="flex flex-col md:flex-row justify-between items-end mb-6 gap-4"><div><h2 className="text-2xl font-bold">Rekap Nilai</h2><div className="flex items-center gap-2 mt-2"><Filter size={16} className="text-gray-500"/><select className="p-2 border rounded w-full md:w-auto" value={selectedRecapPeriod} onChange={e=>setSelectedRecapPeriod(e.target.value)}><option value="">-- Semua Periode --</option>{periods.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div></div><div className="flex flex-wrap gap-2 w-full md:w-auto"><button onClick={handleDownloadPDF} className="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded shadow text-sm font-bold hover:bg-red-700"><FileCode size={16}/> PDF</button><button onClick={handleDownloadExcel} className="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 bg-white border rounded shadow text-sm font-bold"><Download size={16}/> Excel</button><button onClick={()=>toggleConfig('release_announcement', isReleased)} className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 text-white rounded shadow text-sm font-bold ${isReleased?'bg-green-600':'bg-orange-500'}`}>{isReleased?<Unlock size={16}/>:<Lock size={16}/>} {isReleased?'Tutup':'Rilis'}</button></div></div><div className="md:hidden space-y-4">{recap.map(r => (<div key={r.id} className="bg-white p-4 rounded-lg shadow border border-gray-200"><div className="flex justify-between items-start mb-3"><div><div className="font-bold text-gray-800 text-lg flex items-center gap-2">{r.full_name} <button onClick={()=>handleViewStudentDetail(r)} className="text-blue-600 bg-blue-50 p-1 rounded-full"><Info size={16}/></button></div><div className="text-sm text-gray-500">{r.username}</div></div><div className="text-right"><div className="text-xs text-gray-400 font-bold mb-1">RATA-RATA</div><div className="text-xl font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded inline-block">{r.average}</div></div></div><div className="grid grid-cols-4 gap-2 mb-4">{EXAM_CODES.map(k => (<div key={k} className="text-center bg-gray-50 p-2 rounded"><div className="text-[10px] font-bold text-gray-500">{k}</div><div className="font-bold text-gray-700">{r[k]||0}</div></div>))}</div><div className="flex justify-between items-center border-t pt-3"><div>{getStatusBadge(r.status)}</div><div className="flex gap-1 flex-wrap justify-end max-w-[50%]">{r.completed_exams.map(e => (<button key={e.exam_id} onClick={()=>handleResetResult(r.id,e.exam_id)} className="px-2 py-1 bg-red-100 text-red-600 text-[10px] rounded font-bold border border-red-200">Reset {e.code}</button>))}</div></div></div>))}</div><div className="hidden md:block bg-white shadow rounded overflow-hidden border overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-indigo-900 text-indigo-100"><tr><th className="p-3" rowSpan="2">Nama</th><th className="p-2 text-center bg-indigo-800" colSpan="7">Skor</th><th className="p-3 text-center bg-blue-900" rowSpan="2">Avg</th><th className="p-3 bg-indigo-800" rowSpan="2">Ket</th><th className="p-3 bg-red-900" rowSpan="2">Reset</th></tr><tr>{EXAM_CODES.map(s=><th key={s} className="p-1 text-center text-xs bg-indigo-700">{s}</th>)}</tr></thead><tbody className="divide-y">{recap.map((r,i)=>(<tr key={i} className="hover:bg-gray-50"><td className="p-3"><div className="flex items-center gap-2"><button onClick={()=>handleViewStudentDetail(r)} className="text-blue-600 hover:text-blue-800 bg-blue-50 p-1 rounded transition"><Info size={16}/></button><div><div className="font-bold text-gray-800">{r.full_name}</div><div className="text-xs text-gray-400 font-normal">{r.username}</div></div></div></td>{EXAM_CODES.map(k=><td key={k} className="p-2 text-center text-gray-600">{r[k]||0}</td>)}<td className="p-3 text-center font-bold text-blue-700 bg-blue-50">{r.average}</td><td className="p-3">{getStatusBadge(r.status)}</td><td className="p-3 text-center">{r.completed_exams.map(e=><button key={e.exam_id} onClick={()=>handleResetResult(r.id,e.exam_id)} className="px-2 py-1 bg-red-100 text-red-600 text-[10px] rounded border border-red-200 m-0.5 hover:bg-red-600 hover:text-white">{e.code}×</button>)}</td></tr>))}</tbody></table></div></div>)}
+
         {showEditAccessModal && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">
-                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><h3 className="font-bold">Edit Akses Peserta</h3><button onClick={()=>setShowEditAccessModal(false)}><X/></button></div>
+                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><h3 className="font-bold">Edit Akses</h3><button onClick={()=>setShowEditAccessModal(false)}><X/></button></div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-2">{users.filter(u=>u.role==='student').map(u=>(<label key={u.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 border rounded cursor-pointer"><input type="checkbox" checked={editAccessUsers.includes(u.username)} onChange={()=>toggleEditAccessUser(u.username)}/><div><div className="font-bold text-sm">{u.full_name}</div><div className="text-xs text-gray-400">{u.username}</div></div></label>))}</div>
-                    <div className="p-4 border-t text-right"><button onClick={saveEditAccess} className="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-bold">Simpan Akses</button></div>
+                    <div className="p-4 border-t text-right"><button onClick={saveEditAccess} className="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-bold">Simpan</button></div>
                 </div>
             </div>
         )}
 
-        {/* 3. Modal User (Whitelist) saat buat Paket */}
+        {showDetailModal && selectedStudentDetail && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col h-[70vh]">
+                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-lg font-bold text-indigo-900">Rincian</h3><p className="text-sm text-gray-500">{selectedStudentDetail.full_name}</p></div><button onClick={()=>setShowDetailModal(false)}><X/></button></div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4">{EXAM_CODES.map(code => {const wrongList = selectedStudentDetail.details ? selectedStudentDetail.details[code] : null; return (<div key={code} className="border rounded-lg p-4 bg-gray-50"><div className="flex justify-between items-center mb-2"><span className="font-bold text-indigo-800">{code}</span>{wrongList ? (<span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded font-bold">Salah {wrongList.split(',').length}</span>) : (<span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded font-bold">Benar Semua</span>)}</div><div className="text-sm text-gray-700">{wrongList ? (<div><span className="font-bold text-red-600 mr-2">No Salah:</span><span className="font-mono tracking-widest">{wrongList.replace(/,/g, ', ')}</span></div>) : <span className="italic text-gray-400">-</span>}</div></div>);})}</div>
+                </div>
+            </div>
+        )}
+
         {showUserModal && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">
-                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><h3 className="font-bold">Pilih Peserta Khusus</h3><button onClick={()=>setShowUserModal(false)}><X/></button></div>
+                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><h3 className="font-bold">Pilih Peserta</h3><button onClick={()=>setShowUserModal(false)}><X/></button></div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-2">{users.filter(u=>u.role==='student').map(u=>(<label key={u.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 border rounded cursor-pointer"><input type="checkbox" checked={selectedWhitelist.includes(u.username)} onChange={()=>toggleUserWhitelist(u.username)}/><div><div className="font-bold text-sm">{u.full_name}</div><div className="text-xs text-gray-400">{u.username}</div></div></label>))}</div>
                     <div className="p-4 border-t text-right"><button onClick={()=>setShowUserModal(false)} className="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-bold">Selesai</button></div>
                 </div>
             </div>
         )}
 
-        {/* 4. Modal Detail Jawaban Siswa */}
-        {showDetailModal && selectedStudentDetail && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col h-[70vh]">
-                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-lg font-bold text-indigo-900">Rincian Jawaban</h3><p className="text-sm text-gray-500">{selectedStudentDetail.full_name}</p></div><button onClick={()=>setShowDetailModal(false)}><X/></button></div>
-                    <div className="flex-1 overflow-y-auto p-6 space-y-4">{EXAM_CODES.map(code => {const wrongList = selectedStudentDetail.details ? selectedStudentDetail.details[code] : null; return (<div key={code} className="border rounded-lg p-4 bg-gray-50"><div className="flex justify-between items-center mb-2"><span className="font-bold text-indigo-800">{code}</span>{wrongList ? (<span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded font-bold">Salah {wrongList.split(',').length}</span>) : (<span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded font-bold">Benar Semua</span>)}</div><div className="text-sm text-gray-700">{wrongList ? (<div><span className="font-bold text-red-600 mr-2">No Salah:</span><span className="font-mono tracking-widest">{wrongList.replace(/,/g, ', ')}</span></div>) : <span className="italic text-gray-400">-</span>}</div></div>);})}</div>
-                </div>
-            </div>
+        {showAnalysis && analysisData && (
+             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+             <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col">
+                 <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-xl font-bold">Analisis</h3></div><div className="flex items-center gap-2"><button onClick={handleDownloadAnalysisExcel} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2"><Download size={14}/> Excel</button><button onClick={()=>setShowAnalysis(false)} className="bg-gray-200 p-1.5 rounded hover:bg-gray-300"><X size={18}/></button></div></div>
+                 <div className="flex-1 overflow-y-auto p-6"><div className="overflow-x-auto"><table className="w-full text-sm text-left border rounded-lg"><thead className="bg-indigo-50 text-indigo-900 font-bold"><tr><th className="p-3 border-b">No</th><th className="p-3 border-b">Soal</th><th className="p-3 border-b text-center">Diff</th><th className="p-3 border-b text-center">Benar</th><th className="p-3 border-b text-center">%</th></tr></thead><tbody>{analysisData.stats.map((item, idx) => (<tr key={item.id} className="hover:bg-gray-50 border-b"><td className="p-3 text-center">{idx + 1}</td><td className="p-3 text-gray-700 min-w-[200px]">{renderText(item.text)}</td><td className="p-3 text-center text-blue-600">{item.difficulty}</td><td className="p-3 text-center text-green-600">{item.correct}/{item.attempts}</td><td className="p-3 text-center">{item.percentage}%</td></tr>))}</tbody></table></div></div>
+             </div></div>
         )}
 
-        {/* ... (TAB LAIN SAMA - RECAP, PREVIEW, INPUT SOAL) ... */}
-        {tab === 'recap' && (<div className="overflow-x-auto pb-20"><div className="flex flex-col md:flex-row justify-between items-end mb-6 gap-4"><div><h2 className="text-2xl font-bold">Rekap Nilai</h2><div className="flex items-center gap-2 mt-2"><Filter size={16} className="text-gray-500"/><select className="p-2 border rounded w-full md:w-auto" value={selectedRecapPeriod} onChange={e=>setSelectedRecapPeriod(e.target.value)}><option value="">-- Semua Periode --</option>{periods.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div></div><div className="flex flex-wrap gap-2 w-full md:w-auto">
-            <button onClick={handleDownloadPDF} className="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded shadow text-sm font-bold hover:bg-red-700"><FileCode size={16}/> PDF</button>
-            <button onClick={handleDownloadExcel} className="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 bg-white border rounded shadow text-sm font-bold"><Download size={16}/> Excel</button>
-            <button onClick={()=>toggleConfig('release_announcement', isReleased)} className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 text-white rounded shadow text-sm font-bold ${isReleased?'bg-green-600':'bg-orange-500'}`}>{isReleased?<Unlock size={16}/>:<Lock size={16}/>} {isReleased?'Tutup':'Rilis'}</button></div></div>
-            
-            <div className="md:hidden space-y-4">
-                {recap.map(r => (
-                    <div key={r.id} className="bg-white p-4 rounded-lg shadow border border-gray-200">
-                        <div className="flex justify-between items-start mb-3"><div><div className="font-bold text-gray-800 text-lg flex items-center gap-2">{r.full_name} <button onClick={()=>handleViewStudentDetail(r)} className="text-blue-600 bg-blue-50 p-1 rounded-full"><Info size={16}/></button></div><div className="text-sm text-gray-500">{r.username}</div></div><div className="text-right"><div className="text-xs text-gray-400 font-bold mb-1">RATA-RATA</div><div className="text-xl font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded inline-block">{r.average}</div></div></div>
-                        <div className="grid grid-cols-4 gap-2 mb-4">{EXAM_CODES.map(k => (<div key={k} className="text-center bg-gray-50 p-2 rounded"><div className="text-[10px] font-bold text-gray-500">{k}</div><div className="font-bold text-gray-700">{r[k]||0}</div></div>))}</div>
-                        <div className="flex justify-between items-center border-t pt-3"><div>{getStatusBadge(r.status)}</div><div className="flex gap-1 flex-wrap justify-end max-w-[50%]">{r.completed_exams.map(e => (<button key={e.exam_id} onClick={()=>handleResetResult(r.id,e.exam_id)} className="px-2 py-1 bg-red-100 text-red-600 text-[10px] rounded font-bold border border-red-200">Reset {e.code}</button>))}</div></div>
-                    </div>
-                ))}
-            </div>
-
-            <div className="hidden md:block bg-white shadow rounded overflow-hidden border overflow-x-auto">
-            <table className="w-full text-sm text-left"><thead className="bg-indigo-900 text-white"><tr><th className="p-3" rowSpan="2">Nama</th><th className="p-2 text-center bg-indigo-800" colSpan="7">Skor IRT</th><th className="p-3 text-center bg-blue-900" rowSpan="2">Avg</th><th className="p-3 bg-indigo-800" rowSpan="2">Ket</th><th className="p-3 bg-red-900" rowSpan="2">Reset</th></tr>
-            <tr>{EXAM_CODES.map(s=><th key={s} className="p-1 text-center text-xs bg-indigo-700">{s}</th>)}</tr>
-            </thead><tbody className="divide-y">{recap.map((r,i)=>(<tr key={i} className="hover:bg-gray-50">
-            <td className="p-3"><div className="flex items-center gap-2"><button onClick={()=>handleViewStudentDetail(r)} className="text-blue-600 hover:text-blue-800 bg-blue-50 p-1 rounded transition" title="Lihat Rincian Jawaban Salah"><Info size={16}/></button><div><div className="font-bold text-gray-800">{r.full_name}</div><div className="text-xs text-gray-400 font-normal">{r.username}</div></div></div></td>
-            {EXAM_CODES.map(k=><td key={k} className="p-2 text-center text-gray-600">{r[k]||0}</td>)}
-            <td className="p-3 text-center font-bold text-blue-700 bg-blue-50">{r.average}</td><td className="p-3">{getStatusBadge(r.status)}</td><td className="p-3 text-center">{r.completed_exams.map(e=><button key={e.exam_id} onClick={()=>handleResetResult(r.id,e.exam_id)} className="px-2 py-1 bg-red-100 text-red-600 text-[10px] rounded border border-red-200 m-0.5 hover:bg-red-600 hover:text-white">{e.code}×</button>)}</td></tr>))}</tbody></table></div></div>)}
-
-        {/* MODAL PREVIEW & INPUT SOAL (Sama seperti sebelumnya) */}
         {showPreview && previewData && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden">
                     <div className="p-4 border-b flex justify-between items-center bg-slate-50">
                         <h3 className="font-bold text-lg">{previewData.title}</h3>
@@ -369,7 +276,10 @@ const AdminDashboard = ({ onLogout }) => {
                     <div className="flex-1 overflow-y-auto p-8 space-y-8">
                         {previewData.questions.map((q,i)=>(
                             <div key={q.id} className="p-6 border rounded-xl hover:shadow-md transition relative group bg-white">
-                                <button onClick={()=>handleDeleteQuestion(q.id)} className="absolute top-4 right-4 text-rose-400 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition"><Trash2 size={18}/></button>
+                                <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition">
+                                    <button onClick={()=>{setShowPreview(false); openManualInput(activeExamIdForManual, q)}} className="p-2 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100" title="Edit Soal"><Edit size={16}/></button>
+                                    <button onClick={()=>handleDeleteQuestion(q.id)} className="p-2 bg-rose-50 text-rose-600 rounded hover:bg-rose-100" title="Hapus Soal"><Trash2 size={16}/></button>
+                                </div>
                                 <div className="font-bold text-indigo-900 mb-3">No. {i+1} <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[10px] ml-2 uppercase">{q.type}</span></div>
                                 {q.image_url && <img src={`${API_URL}${q.image_url}`} alt="Soal" className="max-h-40 rounded border shadow-sm mb-4"/>}
                                 {q.reading_material && <div className="p-4 bg-amber-50 rounded-lg border-l-4 border-amber-300 text-sm mb-4 leading-relaxed italic text-slate-700">{renderText(q.reading_material)}</div>}
@@ -397,6 +307,7 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
+        {/* MODAL INPUT SOAL (EDITOR) */}
         {showManualInput && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-200">
                 <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">

@@ -160,6 +160,19 @@ def add_q(eid: str, d: QuestionCreateSchema, db: Session = Depends(get_db)):
         db.add(models.Option(question_id=q.id, label=o.label, option_index=oid, is_correct=o.is_correct))
     db.commit(); return {"message": "Saved"}
 
+@app.put("/admin/questions/{qid}")
+def edit_q(qid: int, d: QuestionCreateSchema, db: Session = Depends(get_db)):
+    q = db.query(models.Question).filter_by(id=qid).first()
+    if not q: raise HTTPException(404)
+    q.text, q.type, q.difficulty, q.reading_material, q.explanation = d.text, d.type, d.difficulty, d.reading_material, d.explanation
+    q.label_true, q.label_false, q.image_url, q.audio_url = d.label_true, d.label_false, d.image_url, d.audio_url
+    db.query(models.Option).filter_by(question_id=qid).delete()
+    idx_map = ["A","B","C","D","E"]
+    for i, o in enumerate(d.options):
+        oid = idx_map[i] if i<5 and d.type in ["multiple_choice","complex"] else str(i+1)
+        db.add(models.Option(question_id=q.id, label=o.label, option_index=oid, is_correct=o.is_correct))
+    db.commit(); return {"message": "Updated"}
+
 # UTILS
 @app.get("/majors")
 def get_mj(db: Session = Depends(get_db)): return db.query(models.Major).all()
@@ -175,6 +188,8 @@ def get_usr(db: Session = Depends(get_db)): return db.query(models.User).all()
 def add_usr(u: UserCreateSchema, db: Session = Depends(get_db)): db.add(models.User(username=u.username, password=u.password, full_name=u.full_name, role=u.role)); db.commit(); return {"message":"OK"}
 @app.delete("/admin/users/{uid}")
 def del_usr(uid:int, db:Session=Depends(get_db)): db.query(models.User).filter_by(id=uid).delete(); db.commit(); return {"message":"OK"}
+@app.post("/admin/users/delete-bulk")
+def del_bulk(d:BulkDeleteSchema, db:Session=Depends(get_db)): db.query(models.User).filter(models.User.id.in_(d.user_ids)).delete(synchronize_session=False); db.commit(); return {"message":"OK"}
 @app.post("/admin/reset-result")
 def rst(d: ResetResultSchema, db: Session = Depends(get_db)): db.query(models.ExamResult).filter_by(user_id=d.user_id, exam_id=d.exam_id).delete(); db.commit(); return {"message": "Reset"}
 @app.get("/student/periods")
@@ -211,83 +226,17 @@ def get_c(k:str, db:Session=Depends(get_db)): c=db.query(models.SystemConfig).fi
 @app.post("/config/{key}")
 def set_c(k:str, d:ConfigSchema, db:Session=Depends(get_db)): 
     c=db.query(models.SystemConfig).filter_by(key=k).first()
-    val = str(d.value) # Fix syntax error from previous version
+    val = str(d.value) 
     if c: c.value=val
     else: db.add(models.SystemConfig(key=k,value=val))
     db.commit(); return {"message":"OK"}
-
-# PREVIEW & DELETE QUESTION
 @app.get("/admin/exams/{eid}/preview")
 def prev(eid: str, db: Session = Depends(get_db)):
     exam = db.query(models.Exam).filter_by(id=eid).options(joinedload(models.Exam.questions).joinedload(models.Question.options)).first()
-    qs = [{"id":q.id, "type":q.type, "text":q.text, "image_url":q.image_url, "audio_url":q.audio_url, "options":[{"id":o.option_index, "label":o.label, "is_correct":o.is_correct} for o in q.options]} for q in exam.questions]
-    return {"title": exam.title, "questions": qs}
+    qs = [{"id":q.id, "type":q.type, "text":q.text, "image_url":q.image_url, "audio_url":q.audio_url, "reading_material":q.reading_material, "explanation":q.explanation, "label_true":q.label_true, "label_false":q.label_false, "options":[{"id":o.option_index, "label":o.label, "is_correct":o.is_correct} for o in q.options]} for q in exam.questions]
+    return {"id": exam.id, "title": exam.title, "questions": qs}
 @app.delete("/admin/questions/{qid}")
 def del_q(qid: int, db: Session = Depends(get_db)): db.query(models.Question).filter_by(id=qid).delete(); db.commit(); return {"message":"Deleted"}
-
-# EXCEL
-@app.post("/admin/majors/bulk") 
-async def bm(file: UploadFile=File(...), db:Session=Depends(get_db)):
-    df = pd.read_excel(io.BytesIO(await file.read())); df.columns = df.columns.str.lower().str.strip(); c=0
-    for _,r in df.iterrows():
-        try:
-            u,n,p = r.get('universitas') or r.get('university'), r.get('prodi') or r.get('name'), r.get('passing_grade') or r.get('pg')
-            if u and n: db.add(models.Major(university=str(u), name=str(n), passing_grade=float(p or 0))); c+=1
-        except: pass
-    db.commit(); return {"message": f"{c} OK"}
-@app.post("/admin/users/bulk")
-async def bu(file: UploadFile=File(...), db:Session=Depends(get_db)):
-    df = pd.read_excel(io.BytesIO(await file.read())); df.columns = df.columns.str.lower().str.strip(); c=0
-    for _,r in df.iterrows():
-        try: db.add(models.User(username=str(r['username']), password=str(r['password']), full_name=str(r['full_name']))); c+=1
-        except: pass
-    db.commit(); return {"message": f"{c} OK"}
-@app.post("/admin/upload-questions/{eid}")
-async def uq(eid:str, file: UploadFile=File(...), db:Session=Depends(get_db)):
-    df = pd.read_excel(io.BytesIO(await file.read())); df.columns = df.columns.str.strip().str.title(); db.query(models.Question).filter_by(exam_id=eid).delete(); db.commit(); c=0
-    for _, r in df.iterrows():
-        t = str(r.get('Tipe', 'PG')).upper()
-        qt = 'multiple_choice'
-        if 'ISIAN' in t: qt='short_answer'
-        elif 'TABEL' in t: qt='table_boolean'
-        elif 'KOMPLEKS' in t: qt='complex'
-        q = models.Question(exam_id=eid, text=str(r['Soal']), type=qt, difficulty=float(r.get('Kesulitan', 1)), image_url=str(r.get('Gambar')) if pd.notna(r.get('Gambar')) else None, audio_url=str(r.get('Audio')) if pd.notna(r.get('Audio')) else None, reading_material=str(r.get('Bacaan')) if pd.notna(r.get('Bacaan')) else None, explanation=str(r.get('Pembahasan')) if pd.notna(r.get('Pembahasan')) else None)
-        db.add(q); db.commit()
-        k = str(r.get('Kunci','')).strip().upper()
-        if qt=='short_answer': db.add(models.Option(question_id=q.id, option_index='KEY', label=k, is_correct=True))
-        elif qt=='table_boolean':
-            keys = [x.strip() for x in k.split(',')]
-            for i, col in enumerate(['Opsia','Opsib','Opsic','Opsid','Opsie']):
-                if pd.notna(r.get(col)): db.add(models.Option(question_id=q.id, option_index=str(i+1), label=str(r[col]), is_correct=(i<len(keys) and keys[i]=='B')))
-        else:
-            vk = [x.strip() for x in k.split(',')]
-            for char, col in [('A','Opsia'),('B','Opsib'),('C','Opsic'),('D','Opsid'),('E','Opsie')]:
-                if pd.notna(r.get(col)): db.add(models.Option(question_id=q.id, option_index=char, label=str(r[col]), is_correct=(char in vk)))
-        c+=1
-    db.commit(); return {"message": f"{c} OK"}
-
-@app.get("/admin/recap")
-def grecap(pid: Optional[int]=None, db: Session=Depends(get_db)):
-    users = db.query(models.User).filter_by(role='student').options(joinedload(models.User.results), joinedload(models.User.choice1)).all()
-    res=[]
-    for u in users:
-        urs = [r for r in u.results if r.exam_id.startswith(f"P{pid}_")] if pid else u.results
-        if pid and not urs: continue
-        sc={r.exam_id.split('_')[-1]: r.irt_score for r in urs}
-        avg = sum(sc.values())/len(sc) if sc else 0
-        stat = "LULUS" if u.choice1 and avg >= u.choice1.passing_grade else "TIDAK LULUS"
-        row = {"id":u.id, "full_name":u.full_name, "username":u.username, "average":round(avg,2), "status":stat, "completed_exams":[{"exam_id":r.exam_id, "code":r.exam_id.split('_')[-1]} for r in urs]}
-        for k,v in sc.items(): row[k]=round(v,2)
-        res.append(row)
-    return res
-
-@app.get("/admin/recap/download")
-def dl_rec(pid: Optional[int]=None, db: Session=Depends(get_db)):
-    d = grecap(pid, db)
-    df = pd.DataFrame([{k:v for k,v in r.items() if k!='completed_exams'} for r in d])
-    out = io.BytesIO(); df.to_excel(out, index=False); out.seek(0)
-    return StreamingResponse(out, headers={'Content-Disposition': 'attachment; filename="rekap.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-
 @app.get("/admin/exams/{eid}/analysis")
 def get_analysis(eid: str, db: Session = Depends(get_db)):
     exam = db.query(models.Exam).filter_by(id=eid).options(joinedload(models.Exam.questions)).first()
@@ -296,7 +245,6 @@ def get_analysis(eid: str, db: Session = Depends(get_db)):
     for q in exam.questions:
         stats.append({"id": q.id, "text": q.text, "difficulty": q.difficulty, "correct": q.total_correct, "attempts": q.total_attempts, "percentage": round((q.total_correct/q.total_attempts*100) if q.total_attempts>0 else 0)})
     return {"title": exam.title, "stats": stats}
-
 @app.get("/admin/exams/{eid}/analysis/download")
 def dl_analysis(eid: str, db: Session = Depends(get_db)):
     data = get_analysis(eid, db)
@@ -304,11 +252,50 @@ def dl_analysis(eid: str, db: Session = Depends(get_db)):
     out = io.BytesIO(); df.to_excel(out, index=False); out.seek(0)
     return StreamingResponse(out, headers={'Content-Disposition': 'attachment; filename="analisis.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
-@app.get("/admin/download-template")
-def dl_tmp():
-    df = pd.DataFrame([{"Soal":"Cth", "OpsiA":"A", "OpsiB":"B", "Kunci":"A", "Kesulitan":1, "Gambar":"", "Audio":"", "Tipe":"PG"}])
-    out=io.BytesIO(); df.to_excel(out, index=False); out.seek(0)
-    return StreamingResponse(out, headers={'Content-Disposition': 'attachment; filename="template.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+# EXCEL HANDLERS
+@app.post("/admin/majors/bulk") 
+async def bm(file: UploadFile=File(...), db:Session=Depends(get_db)):
+    try:
+        df = pd.read_excel(io.BytesIO(await file.read())); df.columns = df.columns.str.lower().str.strip(); c=0
+        for _,r in df.iterrows():
+            u,n,p = r.get('universitas') or r.get('university'), r.get('prodi') or r.get('name'), r.get('passing_grade') or r.get('pg')
+            if u and n: db.add(models.Major(university=str(u), name=str(n), passing_grade=float(p or 0))); c+=1
+        db.commit(); return {"message": f"{c} OK"}
+    except: return {"message": "Error"}
+@app.post("/admin/users/bulk")
+async def bu(file: UploadFile=File(...), db:Session=Depends(get_db)):
+    try:
+        df = pd.read_excel(io.BytesIO(await file.read())); df.columns = df.columns.str.lower().str.strip(); c=0
+        for _,r in df.iterrows():
+            if not db.query(models.User).filter_by(username=str(r['username'])).first():
+                db.add(models.User(username=str(r['username']), password=str(r['password']), full_name=str(r['full_name']))); c+=1
+        db.commit(); return {"message": f"{c} OK"}
+    except: return {"message": "Error"}
+@app.post("/admin/upload-questions/{eid}")
+async def uq(eid:str, file: UploadFile=File(...), db:Session=Depends(get_db)):
+    try:
+        content = await file.read(); df = pd.read_excel(io.BytesIO(content)); df.columns = df.columns.str.strip().str.title(); db.query(models.Question).filter_by(exam_id=eid).delete(); db.commit(); c=0
+        for _, r in df.iterrows():
+            t = str(r.get('Tipe', 'PG')).upper()
+            qt = 'multiple_choice'
+            if 'ISIAN' in t: qt='short_answer'
+            elif 'TABEL' in t: qt='table_boolean'
+            elif 'KOMPLEKS' in t: qt='complex'
+            q = models.Question(exam_id=eid, text=str(r['Soal']), type=qt, difficulty=float(r.get('Kesulitan', 1)), image_url=str(r.get('Gambar')) if pd.notna(r.get('Gambar')) else None, audio_url=str(r.get('Audio')) if pd.notna(r.get('Audio')) else None, reading_material=str(r.get('Bacaan')) if pd.notna(r.get('Bacaan')) else None, explanation=str(r.get('Pembahasan')) if pd.notna(r.get('Pembahasan')) else None)
+            db.add(q); db.commit()
+            k = str(r.get('Kunci','')).strip().upper()
+            if qt=='short_answer': db.add(models.Option(question_id=q.id, option_index='KEY', label=k, is_correct=True))
+            elif qt=='table_boolean':
+                keys = [x.strip() for x in k.split(',')]
+                for i, col in enumerate(['Opsia','Opsib','Opsic','Opsid','Opsie']):
+                    if pd.notna(r.get(col)): db.add(models.Option(question_id=q.id, option_index=str(i+1), label=str(r[col]), is_correct=(i<len(keys) and keys[i]=='B')))
+            else:
+                vk = [x.strip() for x in k.split(',')]
+                for char, col in [('A','Opsia'),('B','Opsib'),('C','Opsic'),('D','Opsid'),('E','Opsie')]:
+                    if pd.notna(r.get(col)): db.add(models.Option(question_id=q.id, option_index=char, label=str(r[col]), is_correct=(char in vk)))
+            c+=1
+        db.commit(); return {"message": f"{c} OK"}
+    except Exception as e: return {"message": f"Error: {str(e)}"}
 
 @app.get("/init-admin")
 def ini():
