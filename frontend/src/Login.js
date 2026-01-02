@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { API_URL } from './config';
-// HAPUS CheckCircle dari sini agar tidak error ESLint
-import { LogIn, User, Lock, Loader2, AlertCircle } from 'lucide-react';
+import { LogIn, User, Lock, Loader2, AlertCircle, ArrowRight, BookOpen } from 'lucide-react';
 
 const Login = ({ onLogin }) => {
   const [username, setUsername] = useState('');
@@ -13,112 +12,90 @@ const Login = ({ onLogin }) => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg('');
-
     try {
-      // 1. FIX URL: Hapus double slash jika ada
       const cleanUrl = `${API_URL}/login`.replace(/([^:]\/)\/+/g, "$1");
-      
       const res = await fetch(cleanUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
-
-      // 2. FIX JSON PARSE: Cek apakah response HTML atau JSON
       const textResponse = await res.text();
       let data;
-      try {
-        data = JSON.parse(textResponse);
-      } catch (err) {
-        console.error("Server Error HTML:", textResponse);
-        throw new Error("Gagal terhubung ke Backend. Pastikan URL benar.");
-      }
-
-      if (!res.ok) {
-        throw new Error(data.detail || data.message || "Login Gagal");
-      }
-
+      try { data = JSON.parse(textResponse); } catch (err) { throw new Error("Gagal menghubungi server."); }
+      if (!res.ok) throw new Error(data.detail || "Login Gagal");
       onLogin(data);
-
-    } catch (err) {
-      console.error("Login Error:", err);
-      setErrorMsg(err.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { setErrorMsg(err.message); } finally { setLoading(false); }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 font-sans">
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border-t-4 border-indigo-600">
-        
-        {/* Header Cantik */}
-        <div className="text-center mb-8">
-          <div className="bg-indigo-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm animate-pulse">
-            <LogIn className="text-indigo-600" size={40} />
+    <div className="min-h-screen flex bg-slate-50 font-sans">
+      {/* BAGIAN KIRI: BRANDING */}
+      <div className="hidden lg:flex w-1/2 bg-indigo-900 items-center justify-center relative overflow-hidden">
+        <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
+        <div className="relative z-10 text-white p-12 max-w-lg">
+          <div className="bg-white/10 w-16 h-16 rounded-2xl flex items-center justify-center mb-6 backdrop-blur-sm border border-white/20">
+            <BookOpen size={32} />
           </div>
-          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Simulasi SNBT</h1>
-          <p className="text-gray-500 text-sm mt-2">Sistem Ujian Berbasis Komputer</p>
+          <h1 className="text-5xl font-extrabold mb-6 leading-tight">Simulasi CBT <br/><span className="text-indigo-300">SNBT & CPNS</span></h1>
+          <p className="text-indigo-200 text-lg leading-relaxed">
+            Platform latihan ujian berbasis komputer terlengkap dengan sistem penilaian IRT (Item Response Theory) dan analisis mendalam.
+          </p>
+          <div className="mt-8 flex gap-4">
+            <div className="flex flex-col">
+                <span className="font-bold text-3xl">10k+</span>
+                <span className="text-sm text-indigo-300">Soal Latihan</span>
+            </div>
+            <div className="w-px bg-indigo-700 h-12"></div>
+            <div className="flex flex-col">
+                <span className="font-bold text-3xl">99%</span>
+                <span className="text-sm text-indigo-300">Akurasi Sistem</span>
+            </div>
+          </div>
         </div>
+      </div>
 
-        {/* Alert Error */}
-        {errorMsg && (
-          <div className="bg-red-50 text-red-700 p-4 rounded-xl mb-6 text-sm flex items-start gap-3 border border-red-200 shadow-sm">
-            <AlertCircle size={20} className="shrink-0 mt-0.5" />
-            <span className="font-medium">{errorMsg}</span>
+      {/* BAGIAN KANAN: FORM */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
+        <div className="w-full max-w-md bg-white p-10 rounded-3xl shadow-xl border border-slate-100">
+          <div className="mb-10">
+            <h2 className="text-3xl font-bold text-slate-800">Selamat Datang 👋</h2>
+            <p className="text-slate-500 mt-2">Masuk ke akun Anda untuk memulai sesi latihan.</p>
           </div>
-        )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1.5 ml-1">Username</label>
-            <div className="relative group">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="text-gray-400 group-focus-within:text-indigo-500 transition-colors" size={20} />
-              </div>
-              <input 
-                type="text" 
-                className="block w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none bg-gray-50 focus:bg-white"
-                placeholder="Masukkan username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-              />
+          {errorMsg && (
+            <div className="bg-rose-50 text-rose-600 p-4 rounded-xl mb-6 text-sm flex items-center gap-3 border border-rose-100 animate-pulse">
+              <AlertCircle size={20} /> {errorMsg}
             </div>
-          </div>
+          )}
 
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1.5 ml-1">Password</label>
-            <div className="relative group">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="text-gray-400 group-focus-within:text-indigo-500 transition-colors" size={20} />
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700">Username</label>
+              <div className="relative">
+                <User className="absolute left-4 top-3.5 text-slate-400" size={20} />
+                <input type="text" className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none font-medium text-slate-700" placeholder="Username Anda" value={username} onChange={(e) => setUsername(e.target.value)} required />
               </div>
-              <input 
-                type="password" 
-                className="block w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none bg-gray-50 focus:bg-white"
-                placeholder="Masukkan password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
             </div>
-          </div>
 
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-lg hover:bg-indigo-700 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {loading ? <Loader2 className="animate-spin" size={24}/> : "Masuk Sistem"}
-          </button>
-        </form>
-        
-        <div className="mt-8 pt-6 border-t border-gray-100 text-center">
-             <span className="text-[10px] text-gray-300 font-mono">v3.0.1 Production (Fixed)</span>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700">Password</label>
+              <div className="relative">
+                <Lock className="absolute left-4 top-3.5 text-slate-400" size={20} />
+                <input type="password" className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none font-medium text-slate-700" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              </div>
+            </div>
+
+            <button type="submit" disabled={loading} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-indigo-700 transition-all shadow-lg hover:shadow-indigo-200 disabled:opacity-70 flex items-center justify-center gap-2 group">
+              {loading ? <Loader2 className="animate-spin" size={24}/> : <>Masuk Sekarang <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/></>}
+            </button>
+          </form>
+          
+          <div className="mt-8 text-center">
+            <p className="text-sm text-slate-400">Versi Aplikasi v4.0.0 PRO</p>
+          </div>
         </div>
       </div>
     </div>
   );
 };
-
 export default Login;
