@@ -100,24 +100,29 @@ class QuestionCreateSchema(BaseModel):
 
 def check_answer_correctness(question, user_ans):
     if not user_ans: return False
-    if question.type == 'table_boolean' and isinstance(user_ans, dict):
+    
+    if question.type == 'table_boolean':
+        if not isinstance(user_ans, dict): return False
         for opt in question.options:
             student_choice = user_ans.get(str(opt.option_index))
             correct_choice = "B" if opt.is_correct else "S"
             if student_choice != correct_choice: return False
         return True
+    
     elif question.type == 'short_answer':
         key = next((o for o in question.options if o.is_correct), None)
         if key and user_ans:
             return str(user_ans).strip().lower() == key.label.strip().lower()
+        return False
+        
     elif question.type == 'complex':
-        correct = {o.option_index for o in question.options if o.is_correct}
+        correct_indices = {o.option_index for o in question.options if o.is_correct}
         user_set = set(user_ans) if isinstance(user_ans, list) else {user_ans}
-        return user_set == correct
-    else:
+        return user_set == correct_indices
+        
+    else: # multiple_choice
         key = next((o for o in question.options if o.is_correct), None)
-        return key and user_ans == key.option_index
-    return False
+        return key and str(user_ans) == str(key.option_index)
 
 # --- UTILS UPLOAD ---
 @app.post("/upload-image")
@@ -197,14 +202,17 @@ def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
 def add_manual_question(exam_id: str, data: QuestionCreateSchema, db: Session = Depends(get_db)):
     exam = db.query(models.Exam).filter_by(id=exam_id).first()
     if not exam: raise HTTPException(404, "Exam not found")
+    
     q = models.Question(
         exam_id=exam_id, text=data.text, type=data.type, difficulty=data.difficulty,
         reading_material=data.reading_material, explanation=data.explanation,
         label_true=data.label_true, label_false=data.label_false, image_url=data.image_url
     )
     db.add(q); db.commit(); db.refresh(q)
+    
     idx_map = ["A", "B", "C", "D", "E"]
     for i, opt in enumerate(data.options):
+        # Default index A-E for MC, otherwise 1-5
         opt_idx = idx_map[i] if i < len(idx_map) and data.type in ["multiple_choice","complex"] else str(i+1)
         db.add(models.Option(question_id=q.id, label=opt.label, option_index=opt_idx, is_correct=opt.is_correct))
     db.commit()
@@ -217,6 +225,7 @@ def preview_exam(exam_id: str, db: Session = Depends(get_db)):
     q_data = []
     for q in exam.questions:
         opts = [{"id": o.option_index, "label": o.label, "is_correct": o.is_correct} for o in q.options]
+        # Sort options for consistent display (A, B, C...)
         opts.sort(key=lambda x: x["id"])
         q_data.append({"id":q.id, "type":q.type, "text":q.text, "reading_material":q.reading_material, "options":opts, "explanation":q.explanation, "label_true":q.label_true, "label_false":q.label_false, "image_url":q.image_url})
     q_data.sort(key=lambda x: x["id"])
@@ -229,9 +238,9 @@ def delete_single_question(qid: int, db: Session = Depends(get_db)):
 # --- EXCEL HANDLERS ---
 @app.post("/admin/majors/bulk") 
 async def bulk_majors(file: UploadFile=File(...), db:Session=Depends(get_db)):
-    df = pd.read_excel(io.BytesIO(await file.read())); df.columns = df.columns.str.lower().str.strip(); count=0
-    for _,r in df.iterrows():
-        try:
+    try:
+        df = pd.read_excel(io.BytesIO(await file.read())); df.columns = df.columns.str.lower().str.strip(); count=0
+        for _,r in df.iterrows():
             univ = r.get('universitas') or r.get('university')
             name = r.get('prodi') or r.get('name') or r.get('jurusan')
             pg = r.get('passing_grade') or r.get('pg')
@@ -240,20 +249,20 @@ async def bulk_majors(file: UploadFile=File(...), db:Session=Depends(get_db)):
                 if existing: existing.passing_grade = float(pg or 0)
                 else: db.add(models.Major(university=str(univ), name=str(name), passing_grade=float(pg or 0)))
                 count+=1
-        except: pass
-    db.commit(); return {"message": f"{count} jurusan"}
+        db.commit(); return {"message": f"{count} jurusan"}
+    except Exception as e: return {"message": f"Error: {str(e)}"}
 
 @app.post("/admin/users/bulk")
 async def bulk_users(file: UploadFile=File(...), db:Session=Depends(get_db)):
-    df = pd.read_excel(io.BytesIO(await file.read())); df.columns = df.columns.str.lower().str.strip(); count=0
-    for _,r in df.iterrows():
-        try:
+    try:
+        df = pd.read_excel(io.BytesIO(await file.read())); df.columns = df.columns.str.lower().str.strip(); count=0
+        for _,r in df.iterrows():
             uname = str(r['username']).strip()
             if not db.query(models.User).filter_by(username=uname).first():
                 db.add(models.User(username=uname, password=str(r['password']), full_name=str(r['full_name']), role='student'))
                 count+=1
-        except: pass
-    db.commit(); return {"message": f"{count} user"}
+        db.commit(); return {"message": f"{count} user"}
+    except Exception as e: return {"message": f"Error: {str(e)}"}
 
 @app.post("/admin/upload-questions/{exam_id}")
 async def upload_qs(exam_id:str, file: UploadFile=File(...), db:Session=Depends(get_db)):
@@ -311,34 +320,41 @@ def get_exam(exam_id: str, db: Session = Depends(get_db)):
     q_data.sort(key=lambda x: x['id'])
     return {"id": exam.id, "title": exam.title, "duration": exam.duration, "questions": q_data}
 
-# --- SMART SCORING ---
 @app.post("/exams/{exam_id}/submit")
 def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
-    if not user: raise HTTPException(404)
-    if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first(): return {"message": "Submitted"}
+    if not user: raise HTTPException(404, "User not found")
     
+    if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first():
+        return {"message": "Already submitted"}
+
     exam = db.query(models.Exam).filter_by(id=exam_id).options(joinedload(models.Exam.period)).first()
     questions = db.query(models.Question).filter_by(exam_id=exam_id).all()
     exam_type = exam.period.exam_type
     
     correct, earned = 0, 0.0
-    # SCORING LOGIC
+    
     if exam_type in ["CPNS", "KEDINASAN"]:
         for q in questions:
-            if check_answer_correctness(q, data.answers.get(str(q.id))): correct += 1; earned += 5
-        score = earned # Simple Sum
+            if check_answer_correctness(q, data.answers.get(str(q.id))): 
+                correct += 1; earned += 5
+        score = earned 
+        
     elif exam_type == "UTBK":
         for q in questions:
-            if check_answer_correctness(q, data.answers.get(str(q.id))): correct += 1; earned += q.difficulty
+            if check_answer_correctness(q, data.answers.get(str(q.id))): 
+                correct += 1; earned += q.difficulty
         total_w = sum(q.difficulty for q in questions)
         score = 200 + ((earned/total_w)*800) if total_w > 0 else 200
-    else: # Default %
+        
+    else: 
         for q in questions:
-            if check_answer_correctness(q, data.answers.get(str(q.id))): correct += 1
+            if check_answer_correctness(q, data.answers.get(str(q.id))): 
+                correct += 1
         score = (correct / len(questions) * 100) if questions else 0
 
-    db.add(models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct, wrong_count=len(questions)-correct, irt_score=score)); db.commit()
+    db.add(models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct, wrong_count=len(questions)-correct, irt_score=score))
+    db.commit()
     return {"message": "Saved", "score": score}
 
 @app.get("/student/exams/{exam_id}/review")
@@ -355,7 +371,6 @@ def review(exam_id: str, username: str, db: Session = Depends(get_db)):
     q_data.sort(key=lambda x: x['id'])
     return {"title": exam.title, "questions": q_data, "score": res.irt_score}
 
-# --- AUTH & CONFIG ---
 @app.post("/login")
 def login(data: LoginSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
@@ -363,10 +378,21 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
         return {"message": "OK", "username": user.username, "name": user.full_name, "role": user.role, "choice1_id":user.choice1_id, "choice2_id":user.choice2_id, "pilihan1":user.choice1.name if user.choice1 else "", "pg1":user.choice1.passing_grade if user.choice1 else 0}
     raise HTTPException(400, "Login Gagal")
 
+# --- PERBAIKAN SINTAKS CONFIG ---
 @app.get("/config/{key}")
-def get_cfg(k:str, db:Session=Depends(get_db)): c=db.query(models.SystemConfig).filter_by(key=k).first(); return {"value":c.value if c else "false"}
+def get_cfg(k:str, db:Session=Depends(get_db)): 
+    c=db.query(models.SystemConfig).filter_by(key=k).first()
+    return {"value":c.value if c else "false"}
+
 @app.post("/config/{key}")
-def set_cfg(k:str, d:ConfigSchema, db:Session=Depends(get_db)): c=db.query(models.SystemConfig).filter_by(key=k).first(); (c.value=d.value) if c else db.add(models.SystemConfig(key=k,value=d.value)); db.commit(); return {"message":"OK"}
+def set_cfg(k:str, d:ConfigSchema, db:Session=Depends(get_db)): 
+    c=db.query(models.SystemConfig).filter_by(key=k).first()
+    if c:
+        c.value=d.value
+    else:
+        db.add(models.SystemConfig(key=k,value=d.value))
+    db.commit()
+    return {"message":"OK"}
 
 @app.get("/admin/recap")
 def get_recap(period_id: Optional[int]=None, db: Session=Depends(get_db)):
