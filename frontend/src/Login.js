@@ -35,7 +35,7 @@ const Login = ({ onLogin }) => {
           <div className="bg-white/10 w-16 h-16 rounded-2xl flex items-center justify-center mb-6 backdrop-blur-sm border border-white/20">
             <BookOpen size={32} />
           </div>
-          <h1 className="text-5xl font-extrabold mb-6 leading-tight">Simulasi CBT <br/><span className="text-indigo-300">SNBT & CPNS</span></h1>
+          <h1 className="text-5xl font-extrabold mb-6 leading-tight">Simulasi CBT <br/><span className="text-indigo-300">SNBT UTBK</span></h1>
           <p className="text-indigo-200 text-lg leading-relaxed">
             Platform latihan ujian berbasis komputer terlengkap dengan sistem penilaian IRT dan analisis mendalam.
           </p>

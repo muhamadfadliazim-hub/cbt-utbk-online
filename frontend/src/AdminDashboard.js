@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, 
   ChevronDown, CheckCircle, XCircle, Download, Search, X, Filter, Clock, Key, 
-  Building2, PieChart, PenTool, BookOpen, Grid, LayoutDashboard, Menu, FileCode, Info 
+  Building2, PieChart, PenTool, BookOpen, Grid, LayoutDashboard, Menu, FileCode, Info, Save 
 } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
@@ -14,19 +14,26 @@ const EXAM_ORDER = ["PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM"];
 
 const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
+  
+  // DATA STATES (Diinisialisasi dengan Array Kosong [] agar tidak crash)
   const [periods, setPeriods] = useState([]);
-  const [newPeriodName, setNewPeriodName] = useState('');
-  // HAPUS allowedUsers & setAllowedUsers DARI SINI
   const [users, setUsers] = useState([]);
   const [recap, setRecap] = useState([]);
   const [majors, setMajors] = useState([]); 
+  
+  // FORM STATES
+  const [newPeriodName, setNewPeriodName] = useState('');
+  const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', role: 'student' });
+  const [newMajor, setNewMajor] = useState({ university: '', name: '', passing_grade: '' });
+  
+  // SETTINGS STATES
   const [isReleased, setIsReleased] = useState(false);
   const [isMajorSelectionEnabled, setIsMajorSelectionEnabled] = useState(true);
-  
   const [isRandom, setIsRandom] = useState(true); 
   const [isFlexible, setIsFlexible] = useState(false); 
   const [examType, setExamType] = useState('UTBK');
 
+  // UI STATES
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewData, setPreviewData] = useState(null); 
   const [analysisData, setAnalysisData] = useState(null); 
@@ -41,15 +48,15 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedStudentDetail, setSelectedStudentDetail] = useState(null);
   const [selectedWhitelist, setSelectedWhitelist] = useState([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', role: 'student' });
-  const [newMajor, setNewMajor] = useState({ university: '', name: '', passing_grade: '' }); 
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
+  // MANUAL INPUT STATES
   const [showManualInput, setShowManualInput] = useState(false);
   const [activeExamIdForManual, setActiveExamIdForManual] = useState(null);
   const [manualQ, setManualQ] = useState({ text: '', type: 'multiple_choice', difficulty: 1.0, reading_material: '', explanation: '', label_true: 'Benar', label_false: 'Salah', options: [] });
 
+  // --- HELPER RENDER TEXT ---
   const renderText = (text) => {
     if (!text) return null;
     return text.split(/(\$.*?\$)/).map((part, index) => {
@@ -58,13 +65,25 @@ const AdminDashboard = ({ onLogout }) => {
     });
   };
 
-  const fetchPeriods = useCallback(() => { fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(setPeriods); }, []);
-  const fetchUsers = useCallback(() => { fetch(`${API_URL}/admin/users`).then(r=>r.json()).then(setUsers); }, []);
-  const fetchMajors = useCallback(() => { fetch(`${API_URL}/majors`).then(r=>r.json()).then(setMajors); }, []);
+  // --- DATA FETCHING (Dijamin Aman dari Crash) ---
+  const fetchPeriods = useCallback(() => { 
+      fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(d => setPeriods(Array.isArray(d) ? d : [])); 
+  }, []);
+  
+  const fetchUsers = useCallback(() => { 
+      fetch(`${API_URL}/admin/users`).then(r=>r.json()).then(d => setUsers(Array.isArray(d) ? d : [])); 
+  }, []);
+  
+  const fetchMajors = useCallback(() => { 
+      fetch(`${API_URL}/majors`).then(r=>r.json()).then(d => setMajors(Array.isArray(d) ? d : [])); 
+  }, []);
   
   const fetchRecap = useCallback(() => {
       const url = selectedRecapPeriod ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap`;
-      fetch(url).then(r=>r.json()).then(setRecap);
+      fetch(url)
+        .then(r=>r.json())
+        .then(d => setRecap(Array.isArray(d) ? d : []))
+        .catch(() => setRecap([])); // Safety catch
   }, [selectedRecapPeriod]);
 
   const fetchData = useCallback(() => {
@@ -75,54 +94,42 @@ const AdminDashboard = ({ onLogout }) => {
       fetch(`${API_URL}/config/enable_major_selection`).then(r=>r.json()).then(d=>setIsMajorSelectionEnabled(d.value==='true'));
   }, [fetchPeriods, fetchUsers, fetchMajors]);
 
+  // Load Data on Mount & Tab Change
   useEffect(() => { fetchData(); }, [fetchData]);
-  useEffect(() => { if(tab==='recap') fetchRecap(); }, [tab, fetchRecap]);
+  useEffect(() => { if(tab === 'recap') fetchRecap(); }, [tab, fetchRecap]);
 
+  // --- ACTIONS ---
   const apiAction = (url, method, body, onSuccess) => {
       fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
       .then(r=>r.json()).then(d=>{ if(onSuccess) onSuccess(d); else fetchData(); }).catch(e=>alert(e.message));
   };
 
+  // Preview & Delete Question
   const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}); };
-  
-  const handleDeleteQuestion = (qid) => { 
-      if(window.confirm("Hapus soal ini?")) {
-          fetch(`${API_URL}/admin/questions/${qid}`, { method: 'DELETE' })
-          .then(() => { 
-              if (previewData) handlePreviewExam(previewData.id || activeExamIdForManual); 
-              fetchPeriods(); 
-          }); 
-      }
-  };
+  const handleDeleteQuestion = (qid) => { if(window.confirm("Hapus soal ini?")) fetch(`${API_URL}/admin/questions/${qid}`, { method: 'DELETE' }).then(() => { if (previewData) handlePreviewExam(previewData.id || activeExamIdForManual); fetchPeriods(); }); };
 
-  const handleCreatePeriod = () => { 
-      if(!newPeriodName)return; 
-      // HAPUS LOGIC allowedUsers LAMA, CUKUP PAKAI selectedWhitelist
-      apiAction(`${API_URL}/admin/periods`, 'POST', { 
-          name: newPeriodName, 
-          allowed_usernames: selectedWhitelist.length > 0 ? selectedWhitelist.join(',') : null, 
-          is_random: isRandom, 
-          is_flexible: isFlexible, 
-          exam_type: examType 
-      }, ()=>{setNewPeriodName(''); setSelectedWhitelist([]); fetchData();}); 
-  };
-
+  // Periods Management
+  const handleCreatePeriod = () => { if(!newPeriodName)return; apiAction(`${API_URL}/admin/periods`, 'POST', { name: newPeriodName, allowed_usernames: selectedWhitelist.length>0 ? selectedWhitelist.join(',') : null, is_random: isRandom, is_flexible: isFlexible, exam_type: examType }, ()=>{setNewPeriodName(''); setSelectedWhitelist([]); fetchData();}); };
   const handleDeletePeriod = (id) => { if(window.confirm("Hapus?")) apiAction(`${API_URL}/admin/periods/${id}`, 'DELETE'); };
   const togglePeriodActive = (id, s) => apiAction(`${API_URL}/admin/periods/${id}/toggle`, 'POST', {is_active:!s});
   const togglePeriodSubmit = (id, s) => apiAction(`${API_URL}/admin/periods/${id}/toggle-submit`, 'POST', {is_active:!s});
   
+  // User Management
   const handleAddUser = () => { apiAction(`${API_URL}/admin/users`, 'POST', newUser, ()=>{alert("User Added");fetchUsers();setNewUser({...newUser, username:''});}); };
   const handleBulkDelete = () => { if(window.confirm("Hapus terpilih?")) apiAction(`${API_URL}/admin/users/delete-bulk`, 'POST', {user_ids:selectedIds}, fetchUsers); };
   const handleBulkUpload = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/users/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchUsers();}) };
   const handleChangePassword = (uid) => { const p = prompt("Pass Baru:"); if(p) apiAction(`${API_URL}/admin/users/${uid}/password`, 'PUT', {new_password:p}, ()=>alert("Diganti")); };
 
-  const handleAddMajor = () => { apiAction(`${API_URL}/majors`, 'POST', newMajor, ()=>{alert("Jurusan Added");fetchMajors();}); };
-  const handleDeleteMajor = (id) => { apiAction(`${API_URL}/majors/${id}`, 'DELETE', {}, fetchMajors); };
+  // Major Management
+  const handleAddMajor = () => { apiAction(`${API_URL}/majors`, 'POST', newMajor, ()=>{alert("Jurusan Added");fetchMajors();setNewMajor({university:'',name:'',passing_grade:''});}); };
+  const handleDeleteMajor = (id) => { if(window.confirm("Hapus Jurusan?")) apiAction(`${API_URL}/majors/${id}`, 'DELETE', {}, fetchMajors); };
   const handleBulkUploadMajors = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/majors/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchMajors();}) };
 
   const handleUploadQuestion = (eid, f) => { const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchPeriods();}); };
 
+  // PDF & Excel
   const handleDownloadPDF = () => {
+    if (recap.length === 0) { alert("Tidak ada data rekap untuk didownload."); return; }
     const doc = new jsPDF('landscape'); 
     doc.text("REKAP NILAI UTBK", 14, 15);
     const tableColumn = ["Nama", "Username", ...EXAM_ORDER, "Avg", "Status"];
@@ -136,7 +143,7 @@ const AdminDashboard = ({ onLogout }) => {
   
   const handleShowAnalysis = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/analysis`).then(r => r.json()).then(d => { setAnalysisData(d); setActiveAnalysisId(eid); setShowAnalysis(true); }); };
   const handleDownloadAnalysisExcel = () => { if (activeAnalysisId) window.open(`${API_URL}/admin/exams/${activeAnalysisId}/analysis/download`, '_blank'); };
-  const handleResetResult = (uid, eid) => { if(window.confirm("Reset?")) apiAction(`${API_URL}/admin/reset-result`, 'POST', {user_id:uid, exam_id:eid}, fetchRecap); };
+  const handleResetResult = (uid, eid) => { if(window.confirm("Reset Hasil Ujian Ini?")) apiAction(`${API_URL}/admin/reset-result`, 'POST', {user_id:uid, exam_id:eid}, fetchRecap); };
   const handleViewStudentDetail = (d) => { setSelectedStudentDetail(d); setShowDetailModal(true); };
 
   const toggleConfig = (k, v) => {
@@ -147,9 +154,7 @@ const AdminDashboard = ({ onLogout }) => {
   };
 
   const toggleUserWhitelist = (u) => { setSelectedWhitelist(selectedWhitelist.includes(u) ? selectedWhitelist.filter(x=>x!==u) : [...selectedWhitelist, u]); };
-  
   const openEditAccess = (p) => { setEditingPeriodId(p.id); setEditAccessUsers(p.allowed_usernames ? p.allowed_usernames.split(',') : []); setShowEditAccessModal(true); };
-  
   const toggleEditAccessUser = (u) => { setEditAccessUsers(editAccessUsers.includes(u) ? editAccessUsers.filter(x=>x!==u) : [...editAccessUsers, u]); };
   const saveEditAccess = () => { apiAction(`${API_URL}/admin/periods/${editingPeriodId}/users`, 'PUT', {allowed_usernames:editAccessUsers.join(',')}, ()=>{alert("Saved");setShowEditAccessModal(false);fetchPeriods();}); };
 
