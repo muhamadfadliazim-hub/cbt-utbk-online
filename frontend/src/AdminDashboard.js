@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, 
-  ChevronDown, CheckCircle, XCircle, Download, Search, X, Filter, Clock, Key, 
-  Building2, PieChart, PenTool, BookOpen, Grid, LayoutDashboard, Menu, FileCode, Info, Save, Image, Video, Link 
+  Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Eye, EyeOff, 
+  ChevronDown, CheckCircle, XCircle, Download, Search, X, Clock, Key, 
+  Building2, PieChart, PenTool, BookOpen, Grid, LayoutDashboard, Menu, FileCode, Info, Save, Video, Link 
 } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
@@ -15,26 +15,31 @@ const EXAM_ORDER = ["PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM", "TWK", "TIU", 
 const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
   
-  // DATA
+  // Data States
   const [periods, setPeriods] = useState([]);
   const [users, setUsers] = useState([]);
   const [recap, setRecap] = useState([]);
   const [majors, setMajors] = useState([]); 
-  const [materials, setMaterials] = useState([]);
+  const [materials, setMaterials] = useState([]); // LMS Materials
   
-  // STATES
+  // Form States
   const [newPeriodName, setNewPeriodName] = useState('');
-  const [examType, setExamType] = useState('UTBK');
-  const [isRandom, setIsRandom] = useState(true); 
-  const [isFlexible, setIsFlexible] = useState(false); 
-  
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', role: 'student' });
   const [newMajor, setNewMajor] = useState({ university: '', name: '', passing_grade: '' });
-  const [newMaterial, setNewMaterial] = useState({ title:'', type:'pdf', content_url:'', category:'UTBK', description:'' });
+  const [newMaterial, setNewMaterial] = useState({ title: '', type: 'pdf', content_url: '', category: 'UTBK', description: '' });
+  
+  // Settings States
+  const [isReleased, setIsReleased] = useState(false);
+  const [isMajorSelectionEnabled, setIsMajorSelectionEnabled] = useState(true);
+  const [isRandom, setIsRandom] = useState(true); 
+  const [isFlexible, setIsFlexible] = useState(false); 
+  const [examType, setExamType] = useState('UTBK');
 
+  // UI States
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewData, setPreviewData] = useState(null); 
   const [analysisData, setAnalysisData] = useState(null); 
+  const [activeAnalysisId, setActiveAnalysisId] = useState(null); 
   const [showPreview, setShowPreview] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false); 
   const [showUserModal, setShowUserModal] = useState(false);
@@ -48,10 +53,15 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
-  // MANUAL INPUT
+  // Manual Input Question State
   const [showManualInput, setShowManualInput] = useState(false);
   const [activeExamIdForManual, setActiveExamIdForManual] = useState(null);
-  const [manualQ, setManualQ] = useState({ text: '', type: 'multiple_choice', difficulty: 1.0, reading_material: '', explanation: '', label_true: 'Benar', label_false: 'Salah', image_url: '', options: [] });
+  const [manualQ, setManualQ] = useState({ 
+      text: '', type: 'multiple_choice', difficulty: 1.0, 
+      reading_material: '', explanation: '', 
+      label_true: 'Benar', label_false: 'Salah', 
+      image_url: '', options: [] 
+  });
 
   const renderText = (text) => {
     if (!text) return null;
@@ -61,18 +71,22 @@ const AdminDashboard = ({ onLogout }) => {
     });
   };
 
-  // FETCHING
-  const fetchData = useCallback(() => { 
-      fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(d=>setPeriods(Array.isArray(d)?d:[])); 
-      fetch(`${API_URL}/admin/users`).then(r=>r.json()).then(d=>setUsers(Array.isArray(d)?d:[])); 
-      fetch(`${API_URL}/majors`).then(r=>r.json()).then(d=>setMajors(Array.isArray(d)?d:[])); 
-      fetch(`${API_URL}/materials`).then(r=>r.json()).then(d=>setMaterials(Array.isArray(d)?d:[])); 
-  }, []);
+  // --- DATA FETCHING ---
+  const fetchPeriods = useCallback(() => { fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(d=>setPeriods(Array.isArray(d)?d:[])); }, []);
+  const fetchUsers = useCallback(() => { fetch(`${API_URL}/admin/users`).then(r=>r.json()).then(d=>setUsers(Array.isArray(d)?d:[])); }, []);
+  const fetchMajors = useCallback(() => { fetch(`${API_URL}/majors`).then(r=>r.json()).then(d=>setMajors(Array.isArray(d)?d:[])); }, []);
+  const fetchMaterials = useCallback(() => { fetch(`${API_URL}/materials`).then(r=>r.json()).then(d=>setMaterials(Array.isArray(d)?d:[])); }, []);
   
   const fetchRecap = useCallback(() => {
       const url = selectedRecapPeriod ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap`;
       fetch(url).then(r=>r.json()).then(d=>setRecap(Array.isArray(d)?d:[]));
   }, [selectedRecapPeriod]);
+
+  const fetchData = useCallback(() => {
+      fetchPeriods(); fetchUsers(); fetchMajors(); fetchMaterials();
+      fetch(`${API_URL}/config/release`).then(r=>r.json()).then(d=>setIsReleased(d.value==='true'));
+      fetch(`${API_URL}/config/enable_major_selection`).then(r=>r.json()).then(d=>setIsMajorSelectionEnabled(d.value==='true'));
+  }, [fetchPeriods, fetchUsers, fetchMajors, fetchMaterials]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { if(tab === 'recap') fetchRecap(); }, [tab, fetchRecap]);
@@ -82,6 +96,7 @@ const AdminDashboard = ({ onLogout }) => {
       .then(r=>r.json()).then(d=>{ if(onSuccess) onSuccess(d); else fetchData(); }).catch(e=>alert(e.message));
   };
 
+  // --- HANDLERS ---
   const handleUploadImage = async (e) => {
       const file = e.target.files[0]; if(!file) return;
       const fd = new FormData(); fd.append('file', file);
@@ -90,27 +105,33 @@ const AdminDashboard = ({ onLogout }) => {
       setManualQ({...manualQ, image_url: data.url});
   };
 
-  // HANDLERS
+  // Periods
   const handleCreatePeriod = () => { if(!newPeriodName)return; apiAction(`${API_URL}/admin/periods`, 'POST', { name: newPeriodName, allowed_usernames: selectedWhitelist.length>0?selectedWhitelist.join(','):null, is_random: isRandom, is_flexible: isFlexible, exam_type: examType }, ()=>{setNewPeriodName(''); setSelectedWhitelist([]); fetchData();}); };
   const handleDeletePeriod = (id) => { if(window.confirm("Hapus?")) apiAction(`${API_URL}/admin/periods/${id}`, 'DELETE'); };
   const togglePeriodActive = (id, s) => apiAction(`${API_URL}/admin/periods/${id}/toggle`, 'POST', {is_active:!s});
   const togglePeriodSubmit = (id, s) => apiAction(`${API_URL}/admin/periods/${id}/toggle-submit`, 'POST', {is_active:!s});
   
+  // Users
   const handleAddUser = () => { apiAction(`${API_URL}/admin/users`, 'POST', newUser, ()=>{alert("User Added");setNewUser({...newUser, username:''});}); };
-  const handleBulkDelete = () => { if(window.confirm("Hapus?")) apiAction(`${API_URL}/admin/users/delete-bulk`, 'POST', {user_ids:selectedIds}, ()=>setSelectedIds([])); };
+  const handleBulkDelete = () => { if(window.confirm("Hapus terpilih?")) apiAction(`${API_URL}/admin/users/delete-bulk`, 'POST', {user_ids:selectedIds}, ()=>setSelectedIds([])); };
   const handleBulkUpload = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/users/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchData();}) };
-  
+  const handleChangePassword = (uid) => { const p = prompt("Pass Baru:"); if(p) apiAction(`${API_URL}/admin/users/${uid}/password`, 'PUT', {new_password:p}, ()=>alert("Diganti")); };
+
+  // Majors
   const handleAddMajor = () => { apiAction(`${API_URL}/majors`, 'POST', newMajor, ()=>{alert("Added");setNewMajor({university:'',name:'',passing_grade:''});}); };
   const handleDeleteMajor = (id) => { apiAction(`${API_URL}/majors/${id}`, 'DELETE'); };
   const handleBulkUploadMajors = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/majors/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchData();}) };
 
+  // Materials (LMS)
   const handleAddMaterial = () => { apiAction(`${API_URL}/materials`, 'POST', newMaterial, ()=>{alert("Materi Added");setNewMaterial({...newMaterial, title:''});}); };
   const handleDeleteMaterial = (id) => { if(window.confirm("Hapus materi?")) apiAction(`${API_URL}/materials/${id}`, 'DELETE'); };
 
+  // Questions
   const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}); };
   const handleDeleteQuestion = (qid) => { if(window.confirm("Hapus?")) fetch(`${API_URL}/admin/questions/${qid}`, { method: 'DELETE' }).then(() => { if (previewData) handlePreviewExam(previewData.id||activeExamIdForManual); fetchData(); }); };
   const handleUploadQuestion = (eid, f) => { const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchData();}); };
 
+  // Downloads
   const handleDownloadPDF = () => {
     if(recap.length===0) return alert("Data kosong");
     const doc = new jsPDF('landscape'); doc.text("REKAP NILAI", 14, 15);
@@ -119,16 +140,34 @@ const AdminDashboard = ({ onLogout }) => {
     autoTable(doc, { head: [tableColumn], body: tableRows, startY: 20 });
     doc.save('rekap.pdf');
   };
+  const handleDownloadExcel = () => window.open(`${API_URL}/admin/recap/download?period_id=${selectedRecapPeriod}`, '_blank');
+  const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
+  const handleShowAnalysis = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/analysis`).then(r => r.json()).then(d => { setAnalysisData(d); setActiveAnalysisId(eid); setShowAnalysis(true); }); };
+  const handleDownloadAnalysisExcel = () => { if (activeAnalysisId) window.open(`${API_URL}/admin/exams/${activeAnalysisId}/analysis/download`, '_blank'); };
+  const handleResetResult = (uid, eid) => { if(window.confirm("Reset?")) apiAction(`${API_URL}/admin/reset-result`, 'POST', {user_id:uid, exam_id:eid}, fetchRecap); };
+  const handleViewStudentDetail = (d) => { setSelectedStudentDetail(d); setShowDetailModal(true); };
 
-  const openManualInput = (eid) => { setActiveExamIdForManual(eid); setManualQ({text:'',type:'multiple_choice',difficulty:1.0,reading_material:'',explanation:'',label_true:'Benar',label_false:'Salah',image_url:'',options:[{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false}]}); setShowManualInput(true); };
-  const handleOptionChange = (i, f, v) => { const o=[...manualQ.options]; o[i][f]=v; if(manualQ.type==='multiple_choice'&&f==='is_correct'&&v) o.forEach((x,idx)=>{if(idx!==i)x.is_correct=false}); setManualQ({...manualQ,options:o}); };
-  const saveManualQuestion = () => { if(!manualQ.text)return alert("Isi Soal!"); apiAction(`${API_URL}/admin/exams/${activeExamIdForManual}/manual-question`, 'POST', manualQ, ()=>{alert("Tersimpan!"); setShowManualInput(false); fetchData();}); };
-
-  // ACCESS CONTROL
+  // Access & Config
+  const toggleConfig = (k, v) => {
+      const nv = !v; 
+      if(k==='release_announcement') setIsReleased(nv); 
+      if(k==='enable_major_selection') setIsMajorSelectionEnabled(nv);
+      apiAction(`${API_URL}/config/${k}`, 'POST', {value:nv?"true":"false"});
+  };
   const toggleUserWhitelist = (u) => { setSelectedWhitelist(selectedWhitelist.includes(u) ? selectedWhitelist.filter(x=>x!==u) : [...selectedWhitelist, u]); };
   const openEditAccess = (p) => { setEditingPeriodId(p.id); setEditAccessUsers(p.allowed_usernames ? p.allowed_usernames.split(',') : []); setShowEditAccessModal(true); };
   const toggleEditAccessUser = (u) => { setEditAccessUsers(editAccessUsers.includes(u) ? editAccessUsers.filter(x=>x!==u) : [...editAccessUsers, u]); };
   const saveEditAccess = () => { apiAction(`${API_URL}/admin/periods/${editingPeriodId}/users`, 'PUT', {allowed_usernames:editAccessUsers.join(',')}, ()=>{alert("Saved");setShowEditAccessModal(false);}); };
+
+  // Manual Input Modal
+  const openManualInput = (eid) => { setActiveExamIdForManual(eid); setManualQ({text:'',type:'multiple_choice',difficulty:1.0,reading_material:'',explanation:'',label_true:'Benar',label_false:'Salah',image_url:'',options:[{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false}]}); setShowManualInput(true); };
+  const handleOptionChange = (i, f, v) => { const o=[...manualQ.options]; o[i][f]=v; if(manualQ.type==='multiple_choice'&&f==='is_correct'&&v) o.forEach((x,idx)=>{if(idx!==i)x.is_correct=false}); setManualQ({...manualQ,options:o}); };
+  const saveManualQuestion = () => { if(!manualQ.text)return alert("Isi Soal!"); apiAction(`${API_URL}/admin/exams/${activeExamIdForManual}/manual-question`, 'POST', manualQ, ()=>{alert("Tersimpan!"); setShowManualInput(false); fetchData();}); };
+
+  const getStatusBadge = (s) => {
+      if (s && s.startsWith('LULUS')) return <span className="text-green-600 font-bold text-xs flex items-center gap-1"><CheckCircle size={12}/> {s}</span>;
+      return <span className="text-red-600 font-bold text-xs flex items-center gap-1"><XCircle size={12}/> TIDAK LULUS</span>;
+  };
 
   const SidebarItem = ({ id, icon: Icon, label }) => (
       <button onClick={()=>setTab(id)} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${tab===id ? 'bg-white/10 text-white font-bold' : 'text-slate-400 hover:bg-white/5'}`}><Icon size={20}/> <span>{label}</span></button>
@@ -157,7 +196,7 @@ const AdminDashboard = ({ onLogout }) => {
                     <h3 className="font-bold text-lg mb-4 text-indigo-900 border-b pb-2">Buat Ujian (CPNS/UTBK/Mandiri)</h3>
                     <div className="grid md:grid-cols-12 gap-4 items-end">
                         <div className="md:col-span-4"><label className="text-xs font-bold text-slate-500">Nama Paket</label><input className="w-full p-2.5 bg-slate-50 border rounded-lg" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/></div>
-                        <div className="md:col-span-2"><label className="text-xs font-bold text-slate-500">Tipe</label><select className="w-full p-2.5 bg-slate-50 border rounded-lg" value={examType} onChange={e=>setExamType(e.target.value)}><option value="UTBK">UTBK</option><option value="CPNS">CPNS</option><option value="MANDIRI">Mandiri</option></select></div>
+                        <div className="md:col-span-2"><label className="text-xs font-bold text-slate-500">Tipe</label><select className="w-full p-2.5 bg-slate-50 border rounded-lg" value={examType} onChange={e=>setExamType(e.target.value)}><option value="UTBK">UTBK</option><option value="CPNS">CPNS</option><option value="UMUM">Mandiri</option></select></div>
                         <div className="md:col-span-4 flex gap-4"><label className="flex items-center gap-2 text-xs font-bold"><input type="checkbox" checked={isRandom} onChange={e=>setIsRandom(e.target.checked)}/> Acak</label><label className="flex items-center gap-2 text-xs font-bold"><input type="checkbox" checked={isFlexible} onChange={e=>setIsFlexible(e.target.checked)}/> Fleksibel</label></div>
                         <div className="md:col-span-2"><button onClick={handleCreatePeriod} className="w-full bg-indigo-600 text-white p-2.5 rounded-lg font-bold">Buat</button></div>
                     </div>
@@ -171,8 +210,8 @@ const AdminDashboard = ({ onLogout }) => {
                 <h2 className="text-2xl font-bold">Materi & LMS</h2>
                 <div className="bg-white p-6 rounded-xl border shadow-sm grid md:grid-cols-4 gap-4 items-end">
                     <div className="md:col-span-2"><label className="text-xs font-bold">Judul Materi</label><input className="w-full p-2 border rounded" value={newMaterial.title} onChange={e=>setNewMaterial({...newMaterial, title:e.target.value})}/></div>
-                    <div><label className="text-xs font-bold">Kategori</label><select className="w-full p-2 border rounded" value={newMaterial.category} onChange={e=>setNewMaterial({...newMaterial, category:e.target.value})}><option value="UTBK">UTBK</option><option value="CPNS">CPNS</option><option value="MANDIRI">Mandiri</option></select></div>
-                    <div><label className="text-xs font-bold">Tipe</label><select className="w-full p-2 border rounded" value={newMaterial.type} onChange={e=>setNewMaterial({...newMaterial, type:e.target.value})}><option value="pdf">PDF</option><option value="video">Video (YouTube)</option><option value="link">Link</option></select></div>
+                    <div><label className="text-xs font-bold">Kategori</label><select className="w-full p-2 border rounded" value={newMaterial.category} onChange={e=>setNewMaterial({...newMaterial, category:e.target.value})}><option value="UTBK">UTBK</option><option value="CPNS">CPNS</option><option value="UMUM">Mandiri</option></select></div>
+                    <div><label className="text-xs font-bold">Tipe</label><select className="w-full p-2 border rounded" value={newMaterial.type} onChange={e=>setNewMaterial({...newMaterial, type:e.target.value})}><option value="pdf">PDF</option><option value="video">Video</option><option value="link">Link</option></select></div>
                     <div className="md:col-span-3"><label className="text-xs font-bold">URL / Link</label><input className="w-full p-2 border rounded" placeholder="https://..." value={newMaterial.content_url} onChange={e=>setNewMaterial({...newMaterial, content_url:e.target.value})}/></div>
                     <button onClick={handleAddMaterial} className="bg-indigo-600 text-white p-2 rounded font-bold"><Plus className="inline" size={16}/> Tambah</button>
                 </div>
@@ -180,7 +219,7 @@ const AdminDashboard = ({ onLogout }) => {
                     {materials.map(m=>(
                         <div key={m.id} className="bg-white p-4 rounded-xl border shadow-sm relative">
                             <button onClick={()=>handleDeleteMaterial(m.id)} className="absolute top-2 right-2 text-rose-500"><Trash2 size={16}/></button>
-                            <span className={`text-[10px] px-2 py-1 rounded font-bold ${m.category==='CPNS'?'bg-amber-100 text-amber-800':'bg-indigo-100 text-indigo-800'}`}>{m.category}</span>
+                            <span className={`text-[10px] px-2 py-1 rounded font-bold mb-2 inline-block ${m.category==='CPNS'?'bg-amber-100 text-amber-800':'bg-indigo-100 text-indigo-800'}`}>{m.category}</span>
                             <h4 className="font-bold mt-2 flex items-center gap-2">{m.type==='pdf'?<FileText size={16}/>:m.type==='video'?<Video size={16}/>:<Link size={16}/>} {m.title}</h4>
                             <a href={m.content_url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 underline mt-2 block truncate">{m.content_url}</a>
                         </div>
@@ -218,7 +257,7 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
-        {/* ... (TAB USERS, MAJORS, RECAP SAMA SEPERTI SEBELUMNYA) ... */}
+        {/* ... (TAB USERS, MAJORS, RECAP - KODE SUDAH BENAR) ... */}
         {tab === 'majors' && (
             <div><h2 className="text-2xl font-bold mb-6">Manajemen Jurusan</h2>
             <div className="bg-white p-6 rounded shadow mb-6 border-l-4 border-indigo-500"><div className="flex flex-col md:flex-row gap-2 items-end"><div className="flex-1 w-full"><label className="text-xs font-bold text-gray-500">Universitas</label><input className="w-full p-2 border rounded" placeholder="UI" value={newMajor.university} onChange={e=>setNewMajor({...newMajor, university:e.target.value})}/></div><div className="flex-[2] w-full"><label className="text-xs font-bold text-gray-500">Jurusan</label><input className="w-full p-2 border rounded" placeholder="Kedokteran" value={newMajor.name} onChange={e=>setNewMajor({...newMajor, name:e.target.value})}/></div><div className="w-full md:w-32"><label className="text-xs font-bold text-gray-500">PG</label><input type="number" step="0.01" className="w-full p-2 border rounded" placeholder="650" value={newMajor.passing_grade} onChange={e=>setNewMajor({...newMajor, passing_grade:e.target.value})}/></div><button onClick={handleAddMajor} className="w-full md:w-auto bg-green-600 text-white px-6 py-2 rounded font-bold h-[42px] flex items-center justify-center gap-2"><Plus size={16}/> Simpan</button></div><div className="mt-4 pt-4 border-t"><label className="text-blue-600 cursor-pointer text-sm hover:underline font-bold flex items-center gap-2"><Upload size={16}/> Upload Excel Jurusan<input type="file" hidden accept=".xlsx" onChange={handleBulkUploadMajors}/></label></div></div>
@@ -286,6 +325,44 @@ const AdminDashboard = ({ onLogout }) => {
                  <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-xl font-bold">Analisis</h3></div><div className="flex items-center gap-2"><button onClick={handleDownloadAnalysisExcel} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2"><Download size={14}/> Excel</button><button onClick={()=>setShowAnalysis(false)} className="bg-gray-200 p-1.5 rounded hover:bg-gray-300"><X size={18}/></button></div></div>
                  <div className="flex-1 overflow-y-auto p-6"><div className="overflow-x-auto"><table className="w-full text-sm text-left border rounded-lg"><thead className="bg-indigo-50 text-indigo-900 font-bold"><tr><th className="p-3 border-b">No</th><th className="p-3 border-b">Soal</th><th className="p-3 border-b text-center">Diff</th><th className="p-3 border-b text-center">Benar</th><th className="p-3 border-b text-center">%</th></tr></thead><tbody>{analysisData.stats.map((item, idx) => (<tr key={item.id} className="hover:bg-gray-50 border-b"><td className="p-3 text-center">{idx + 1}</td><td className="p-3 text-gray-700 min-w-[200px]">{renderText(item.text)}</td><td className="p-3 text-center text-blue-600">{item.difficulty}</td><td className="p-3 text-center text-green-600">{item.correct}/{item.attempts}</td><td className="p-3 text-center">{item.percentage}%</td></tr>))}</tbody></table></div></div>
              </div></div>
+        )}
+
+        {showPreview && previewData && (
+            <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden">
+                    <div className="p-4 border-b flex justify-between items-center bg-slate-50">
+                        <h3 className="font-bold text-lg">{previewData.title}</h3>
+                        <button onClick={()=>setShowPreview(false)} className="p-2 hover:bg-slate-200 rounded-full"><X/></button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                        {previewData.questions.map((q,i)=>(
+                            <div key={q.id} className="p-6 border rounded-xl hover:shadow-md transition relative group bg-white">
+                                <button onClick={()=>handleDeleteQuestion(q.id)} className="absolute top-4 right-4 text-rose-400 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition"><Trash2 size={18}/></button>
+                                <div className="font-bold text-indigo-900 mb-3">No. {i+1} <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[10px] ml-2 uppercase">{q.type}</span></div>
+                                {q.image_url && <img src={`${API_URL}${q.image_url}`} alt="Soal" className="max-h-64 mb-4 rounded border"/>}
+                                {q.reading_material && <div className="p-4 bg-amber-50 rounded-lg border-l-4 border-amber-300 text-sm mb-4 leading-relaxed italic text-slate-700">{renderText(q.reading_material)}</div>}
+                                <div className="text-lg mb-4 text-slate-800">{renderText(q.text)}</div>
+                                
+                                {q.type === 'table_boolean' ? (
+                                    <table className="w-full text-sm border mt-2">
+                                        <thead><tr className="bg-slate-50"><th>Pernyataan</th><th>{q.label_true}</th><th>{q.label_false}</th></tr></thead>
+                                        <tbody>{q.options.map(o=><tr key={o.id} className="border-t"><td className="p-2">{renderText(o.label)}</td><td className="text-center">{o.is_correct?'✓':''}</td><td className="text-center">{!o.is_correct?'✓':''}</td></tr>)}</tbody>
+                                    </table>
+                                ) : (
+                                    <div className="ml-4 space-y-2">
+                                        {q.options.map((o,idx)=>(
+                                            <div key={idx} className={`p-2 rounded flex gap-2 ${o.is_correct?'bg-emerald-50 border border-emerald-100 font-semibold text-emerald-800':''}`}>
+                                                <span className="w-6 text-center opacity-50">{String.fromCharCode(65+idx)}</span> {renderText(o.label)} {o.is_correct&&<CheckCircle size={16} className="text-emerald-600"/>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {q.explanation && <div className="mt-4 p-4 bg-blue-50 text-blue-900 rounded-lg text-sm"><strong>Pembahasan:</strong> {renderText(q.explanation)}</div>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
         )}
       </main>
     </div>
