@@ -21,10 +21,8 @@ class User(Base):
     full_name = Column(String)
     password = Column(String)
     role = Column(String, default="student")
-    
     choice1_id = Column(Integer, ForeignKey("majors.id", ondelete="SET NULL"), nullable=True)
     choice2_id = Column(Integer, ForeignKey("majors.id", ondelete="SET NULL"), nullable=True)
-
     results = relationship("ExamResult", back_populates="user", cascade="all, delete")
     choice1 = relationship("Major", foreign_keys=[choice1_id])
     choice2 = relationship("Major", foreign_keys=[choice2_id])
@@ -35,12 +33,9 @@ class ExamPeriod(Base):
     name = Column(String) 
     is_active = Column(Boolean, default=False)
     allow_submit = Column(Boolean, default=True)
-    
-    # --- FITUR LENGKAP ---
-    is_random = Column(Boolean, default=True)   # Acak Urutan?
-    is_flexible = Column(Boolean, default=False) # Mode Bebas (True) atau Urut (False)?
-    # ---------------------
-
+    is_random = Column(Boolean, default=True)
+    is_flexible = Column(Boolean, default=False)
+    exam_type = Column(String, default="UTBK")
     allowed_usernames = Column(Text, nullable=True)
     exams = relationship("Exam", back_populates="period", cascade="all, delete")
 
@@ -64,14 +59,17 @@ class Question(Base):
     reading_material = Column(Text, nullable=True)
     image_url = Column(String, nullable=True)
     
+    # --- FITUR BARU ---
+    explanation = Column(Text, nullable=True) # Pembahasan
+    label_true = Column(String, default="Benar") # Label Kolom Kiri (Tabel)
+    label_false = Column(String, default="Salah") # Label Kolom Kanan (Tabel)
+    # ------------------
+    
     reading_label = Column(String, nullable=True) 
     citation = Column(String, nullable=True)
-    
     difficulty = Column(Float, default=1.0)
     total_attempts = Column(Integer, default=0)
     total_correct = Column(Integer, default=0)
-    label_true = Column(String, default="Benar") 
-    label_false = Column(String, default="Salah")
     
     exam = relationship("Exam", back_populates="questions")
     options = relationship("Option", back_populates="question", cascade="all, delete")
