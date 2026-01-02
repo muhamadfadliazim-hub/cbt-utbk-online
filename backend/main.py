@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, delete
 from pydantic import BaseModel
@@ -11,9 +12,18 @@ import io
 import time
 import math
 import random 
+import os
+import uuid
+
+# SETUP UPLOAD FOLDER
+UPLOAD_DIR = "uploads"
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
 
 models.Base.metadata.create_all(bind=database.engine)
 app = FastAPI()
+
+app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,29 +63,19 @@ class PeriodCreateSchema(BaseModel):
     name: str; allowed_usernames: Optional[str] = None; is_random: bool = True; is_flexible: bool = False; exam_type: str = "UTBK"
 class MajorCreateSchema(BaseModel):
     university: str; name: str; passing_grade: float
+class MaterialCreateSchema(BaseModel):
+    title: str; type: str; content_url: str; category: str; description: Optional[str] = None
 
-# --- SCHEMA UPDATE FOR MANUAL INPUT ---
 class OptionCreate(BaseModel):
-    label: str
-    is_correct: bool
-
+    label: str; is_correct: bool
 class QuestionCreateSchema(BaseModel):
-    text: str
-    type: str = "multiple_choice"
-    difficulty: float = 1.0
-    reading_material: Optional[str] = None
-    explanation: Optional[str] = None # NEW
-    label_true: Optional[str] = "Benar"
-    label_false: Optional[str] = "Salah"
-    options: List[OptionCreate]
-# --------------------------------------
+    text: str; type: str = "multiple_choice"; difficulty: float = 1.0; reading_material: Optional[str] = None; explanation: Optional[str] = None; label_true: Optional[str] = "Benar"; label_false: Optional[str] = "Salah"; image_url: Optional[str] = None; options: List[OptionCreate]
 
 def check_answer_correctness(question, user_ans):
     if not user_ans: return False
     if question.type == 'table_boolean' and isinstance(user_ans, dict):
         for opt in question.options:
             student_choice = user_ans.get(str(opt.option_index))
-            # Logika Table: is_correct=True artinya Kolom 1 (Benar), False artinya Kolom 2 (Salah)
             correct_choice = "B" if opt.is_correct else "S"
             if student_choice != correct_choice: return False
         return True
@@ -92,21 +92,36 @@ def check_answer_correctness(question, user_ans):
         return key and user_ans == key.option_index
     return False
 
-# --- ENDPOINTS ---
-@app.get("/config/{key}")
-def get_config(key: str, db: Session = Depends(get_db)):
-    cfg = db.query(models.SystemConfig).filter_by(key=key).first()
-    default = "true" if key == "enable_major_selection" else "false"
-    return {"value": cfg.value if cfg else default}
+# --- UTILS ---
+@app.post("/upload-image")
+async def upload_image(file: UploadFile = File(...)):
+    ext = file.filename.split(".")[-1]
+    filename = f"{uuid.uuid4()}.{ext}"
+    path = os.path.join(UPLOAD_DIR, filename)
+    with open(path, "wb") as buffer:
+        buffer.write(await file.read())
+    return {"url": f"/static/{filename}"}
 
-@app.post("/config/{key}")
-def set_config(key: str, data: ConfigSchema, db: Session = Depends(get_db)):
-    cfg = db.query(models.SystemConfig).filter_by(key=key).first()
-    if not cfg: db.add(models.SystemConfig(key=key, value=data.value))
-    else: cfg.value = data.value
-    db.commit()
-    return {"message": "Updated"}
+# --- LMS ENDPOINTS ---
+@app.get("/materials")
+def get_materials(category: Optional[str] = None, db: Session = Depends(get_db)):
+    q = db.query(models.Material)
+    if category and category != "ALL":
+        q = q.filter(models.Material.category == category)
+    return q.all()
 
+@app.post("/materials")
+def create_material(data: MaterialCreateSchema, db: Session = Depends(get_db)):
+    m = models.Material(title=data.title, type=data.type, content_url=data.content_url, category=data.category, description=data.description)
+    db.add(m); db.commit()
+    return {"message": "Materi ditambahkan"}
+
+@app.delete("/materials/{mid}")
+def delete_material(mid: int, db: Session = Depends(get_db)):
+    db.query(models.Material).filter_by(id=mid).delete(); db.commit()
+    return {"message": "Dihapus"}
+
+# --- EXAM ENDPOINTS ---
 @app.get("/admin/periods")
 def get_admin_periods(db: Session = Depends(get_db)):
     periods = db.query(models.ExamPeriod).order_by(models.ExamPeriod.id.desc()).options(joinedload(models.ExamPeriod.exams).joinedload(models.Exam.questions)).all()
@@ -128,13 +143,17 @@ def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
     new_period = models.ExamPeriod(name=data.name, is_active=False, allow_submit=True, allowed_usernames=data.allowed_usernames, is_random=data.is_random, is_flexible=data.is_flexible, exam_type=data.exam_type)
     db.add(new_period); db.commit(); db.refresh(new_period)
     
-    if data.exam_type == "CPNS": structure = [("TWK","Tes Wawasan Kebangsaan",30), ("TIU","Tes Intelegensia Umum",30), ("TKP","Tes Karakteristik Pribadi",40)]
-    elif data.exam_type == "UMUM": structure = [("UMUM","Ujian Utama",60)]
-    else: structure = [("PU","Penalaran Umum",30), ("PBM","Pemahaman Bacaan",25), ("PPU","Pengetahuan Umum",15), ("PK","Pengetahuan Kuantitatif",20), ("LBI","Literasi B.Indo",42.5), ("LBE","Literasi B.Inggris",20), ("PM","Penalaran MTK",42.5)]
+    # STRUKTUR DINAMIS BERDASARKAN TIPE
+    if data.exam_type == "CPNS":
+        structure = [("TWK","Tes Wawasan Kebangsaan",30), ("TIU","Tes Intelegensia Umum",30), ("TKP","Tes Karakteristik Pribadi",40)]
+    elif data.exam_type == "UMUM":
+        structure = [("UMUM","Ujian Utama",60)]
+    else: # Default UTBK
+        structure = [("PU","Penalaran Umum",30), ("PBM","Pemahaman Bacaan",25), ("PPU","Pengetahuan Umum",15), ("PK","Pengetahuan Kuantitatif",20), ("LBI","Literasi B.Indo",42.5), ("LBE","Literasi B.Inggris",20), ("PM","Penalaran MTK",42.5)]
 
-    for c, t, d in structure: db.add(models.Exam(id=f"P{new_period.id}_{c}", period_id=new_period.id, code=c, title=t, description="Standard", duration=d))
+    for c, t, d in structure: db.add(models.Exam(id=f"P{new_period.id}_{c}", period_id=new_period.id, code=c, title=t, description=data.exam_type, duration=d))
     db.commit()
-    return {"message": "Created"}
+    return {"message": f"Periode {data.exam_type} Berhasil Dibuat"}
 
 @app.post("/admin/exams/{exam_id}/manual-question")
 def add_manual_question(exam_id: str, data: QuestionCreateSchema, db: Session = Depends(get_db)):
@@ -144,7 +163,7 @@ def add_manual_question(exam_id: str, data: QuestionCreateSchema, db: Session = 
     q = models.Question(
         exam_id=exam_id, text=data.text, type=data.type, difficulty=data.difficulty,
         reading_material=data.reading_material, explanation=data.explanation,
-        label_true=data.label_true, label_false=data.label_false
+        label_true=data.label_true, label_false=data.label_false, image_url=data.image_url
     )
     db.add(q); db.commit(); db.refresh(q)
     
@@ -155,12 +174,6 @@ def add_manual_question(exam_id: str, data: QuestionCreateSchema, db: Session = 
     db.commit()
     return {"message": "Saved"}
 
-@app.delete("/admin/questions/{qid}")
-def delete_single_question(qid: int, db: Session = Depends(get_db)):
-    q = db.query(models.Question).filter_by(id=qid).first()
-    if q: db.delete(q); db.commit()
-    return {"message": "Deleted"}
-
 @app.get("/admin/exams/{exam_id}/preview")
 def preview_exam(exam_id: str, db: Session = Depends(get_db)):
     exam = db.query(models.Exam).filter_by(id=exam_id).options(joinedload(models.Exam.questions).joinedload(models.Question.options)).first()
@@ -169,9 +182,13 @@ def preview_exam(exam_id: str, db: Session = Depends(get_db)):
     for q in exam.questions:
         opts = [{"id": o.option_index, "label": o.label, "is_correct": o.is_correct} for o in q.options]
         opts.sort(key=lambda x: x["id"])
-        q_data.append({"id":q.id, "type":q.type, "text":q.text, "reading_material":q.reading_material, "options":opts, "explanation":q.explanation, "label_true":q.label_true, "label_false":q.label_false})
+        q_data.append({"id":q.id, "type":q.type, "text":q.text, "reading_material":q.reading_material, "options":opts, "explanation":q.explanation, "label_true":q.label_true, "label_false":q.label_false, "image_url":q.image_url})
     q_data.sort(key=lambda x: x["id"])
     return {"title": exam.title, "questions": q_data}
+
+@app.delete("/admin/questions/{qid}")
+def delete_single_question(qid: int, db: Session = Depends(get_db)):
+    db.query(models.Question).filter_by(id=qid).delete(); db.commit(); return {"message":"Deleted"}
 
 # --- STUDENT SIDE ---
 @app.get("/student/periods")
@@ -190,11 +207,6 @@ def get_student_periods(username: str = None, db: Session = Depends(get_db)):
             if user and db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=e.id).first(): is_done = True
             exams_data.append({"id": e.id, "title": e.title, "duration": e.duration, "is_done": is_done})
         
-        if user and p.is_random:
-            random.Random(f"{user.id}_{p.id}").shuffle(exams_data)
-        else:
-            exams_data.sort(key=lambda x: x['id']) # Simplified sort
-            
         final_exams, prev_done = [], True
         for ex in exams_data:
             status = "locked"
@@ -212,9 +224,9 @@ def get_exam_questions_student(exam_id: str, db: Session = Depends(get_db)):
     if not exam: raise HTTPException(404)
     q_data = []
     for q in exam.questions:
-        opts = [{"id": o.option_index, "label": o.label} for o in q.options] # NO EXPLANATION HERE
+        opts = [{"id": o.option_index, "label": o.label} for o in q.options] 
         opts.sort(key=lambda x: x['id'])
-        q_data.append({"id":q.id, "type":q.type, "text":q.text, "reading_material":q.reading_material, "options":opts, "label_true":q.label_true, "label_false":q.label_false})
+        q_data.append({"id":q.id, "type":q.type, "text":q.text, "reading_material":q.reading_material, "options":opts, "label_true":q.label_true, "label_false":q.label_false, "image_url":q.image_url})
     q_data.sort(key=lambda x: x['id'])
     return {"id": exam.id, "title": exam.title, "duration": exam.duration, "questions": q_data}
 
@@ -222,97 +234,166 @@ def get_exam_questions_student(exam_id: str, db: Session = Depends(get_db)):
 def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
     if not user: raise HTTPException(404)
-    if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first():
-        return {"message": "Submitted"}
-    
+    if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first(): return {"message": "Submitted"}
     questions = db.query(models.Question).filter_by(exam_id=exam_id).all()
     correct, earned = 0, 0.0
     for q in questions:
-        if check_answer_correctness(q, data.answers.get(str(q.id))):
-            correct += 1; earned += q.difficulty
-            
-    # IRT Simple Calc
+        if check_answer_correctness(q, data.answers.get(str(q.id))): correct += 1; earned += q.difficulty
     total_w = sum(q.difficulty for q in questions)
     score = 200 + ((earned / total_w) * 800) if total_w > 0 else 200
-    
-    db.add(models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct, wrong_count=len(questions)-correct, irt_score=score))
-    db.commit()
+    db.add(models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct, wrong_count=len(questions)-correct, irt_score=score)); db.commit()
     return {"message": "Saved"}
 
-# --- NEW: STUDENT REVIEW (PEMBAHASAN) ---
 @app.get("/student/exams/{exam_id}/review")
 def review_exam(exam_id: str, username: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=username).first()
-    if not user: raise HTTPException(404)
-    # Cek apakah sudah submit?
-    result = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first()
-    if not result: raise HTTPException(403, "Selesaikan ujian dulu untuk melihat pembahasan.")
-    
+    res = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first()
+    if not res: raise HTTPException(403)
     exam = db.query(models.Exam).filter_by(id=exam_id).first()
     q_data = []
     for q in exam.questions:
         opts = [{"id": o.option_index, "label": o.label, "is_correct": o.is_correct} for o in q.options]
         opts.sort(key=lambda x: x['id'])
-        # KIRIM PEMBAHASAN DI SINI
-        q_data.append({
-            "id":q.id, "type":q.type, "text":q.text, "reading_material":q.reading_material, 
-            "options":opts, "explanation": q.explanation, # <--- INI DIA
-            "label_true":q.label_true, "label_false":q.label_false
-        })
+        q_data.append({"id":q.id, "type":q.type, "text":q.text, "reading_material":q.reading_material, "options":opts, "explanation":q.explanation, "label_true":q.label_true, "label_false":q.label_false, "image_url":q.image_url})
     q_data.sort(key=lambda x: x['id'])
-    return {"title": exam.title, "questions": q_data, "score": result.irt_score, "correct": result.correct_count}
+    return {"title": exam.title, "questions": q_data, "score": res.irt_score}
 
-# --- AUTH & UTILS ---
+# STANDAR: LOGIN, USERS, MAJORS, CONFIG, DLL SAMA SEPERTI SEBELUMNYA
 @app.post("/login")
 def login(data: LoginSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
     if user and user.password == data.password:
-        return {"message": "OK", "username": user.username, "name": user.full_name, "role": user.role}
+        return {"message": "OK", "username": user.username, "name": user.full_name, "role": user.role, "choice1_id":user.choice1_id, "choice2_id":user.choice2_id, "pilihan1":user.choice1.name if user.choice1 else "", "pg1":user.choice1.passing_grade if user.choice1 else 0}
     raise HTTPException(400, "Login Gagal")
 
-@app.get("/init-admin")
-def init_admin(db: Session = Depends(get_db)):
-    if not db.query(models.User).filter_by(username="admin").first():
-        db.add(models.User(username="admin", password="123", full_name="Admin", role="admin"))
-        db.commit()
-    return {"message": "Admin Ready"}
+@app.get("/config/{key}")
+def get_cfg(k:str, db:Session=Depends(get_db)): 
+    c=db.query(models.SystemConfig).filter_by(key=k).first(); return {"value":c.value if c else "false"}
+@app.post("/config/{key}")
+def set_cfg(k:str, d:ConfigSchema, db:Session=Depends(get_db)): 
+    c=db.query(models.SystemConfig).filter_by(key=k).first(); 
+    if c: c.value=d.value 
+    else: db.add(models.SystemConfig(key=k,value=d.value)); 
+    db.commit(); return {"message":"OK"}
 
-@app.put("/admin/periods/{pid}/users")
-def update_period_users(pid: int, data: UpdatePeriodUsersSchema, db: Session = Depends(get_db)):
-    p = db.query(models.ExamPeriod).filter_by(id=pid).first()
-    if p: p.allowed_usernames = data.allowed_usernames; db.commit()
-    return {"message": "OK"}
-
-@app.post("/admin/periods/{pid}/toggle")
-def toggle_period(pid: int, data: TogglePeriodSchema, db: Session = Depends(get_db)):
-    p = db.query(models.ExamPeriod).filter_by(id=pid).first()
-    if p: p.is_active = data.is_active; db.commit()
-    return {"message": "OK"}
-
-@app.post("/admin/periods/{pid}/toggle-submit")
-def toggle_period_submit(pid: int, data: TogglePeriodSchema, db: Session = Depends(get_db)):
-    p = db.query(models.ExamPeriod).filter_by(id=pid).first()
-    if p: p.allow_submit = data.is_active; db.commit()
-    return {"message": "OK"}
-
-@app.delete("/admin/periods/{pid}")
-def delete_period(pid: int, db: Session = Depends(get_db)):
-    db.query(models.ExamPeriod).filter_by(id=pid).delete(); db.commit()
-    return {"message": "OK"}
+@app.get("/majors")
+def get_majors(db: Session = Depends(get_db)): return db.query(models.Major).all()
+@app.post("/majors")
+def add_major(d: MajorCreateSchema, db: Session = Depends(get_db)): db.add(models.Major(university=d.university, name=d.name, passing_grade=d.passing_grade)); db.commit(); return {"message":"OK"}
+@app.delete("/majors/{mid}")
+def del_major(mid: int, db: Session = Depends(get_db)): db.query(models.Major).filter_by(id=mid).delete(); db.commit(); return {"message":"OK"}
+@app.post("/users/select-major")
+def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
+    u = db.query(models.User).filter_by(username=d.username).first()
+    if u: u.choice1_id, u.choice2_id = d.choice1_id, d.choice2_id; db.commit()
+    return {"message": "Saved"}
 
 @app.get("/admin/users")
 def get_users(db: Session = Depends(get_db)): return db.query(models.User).all()
 @app.post("/admin/users")
-def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
-    db.add(models.User(username=u.username, password=u.password, full_name=u.full_name, role=u.role)); db.commit(); return {"message": "OK"}
-@app.post("/admin/reset-result")
-def reset_result(data: ResetResultSchema, db: Session = Depends(get_db)):
-    db.query(models.ExamResult).filter_by(user_id=data.user_id, exam_id=data.exam_id).delete(); db.commit()
-    return {"message": "Reset"}
+def add_user(u: UserCreateSchema, db: Session = Depends(get_db)): db.add(models.User(username=u.username, password=u.password, full_name=u.full_name, role=u.role)); db.commit(); return {"message":"OK"}
+@app.put("/admin/users/{uid}/password")
+def upd_pass(uid:int, d:UserPasswordUpdateSchema, db:Session=Depends(get_db)): u=db.query(models.User).filter_by(id=uid).first(); u.password=d.new_password; db.commit(); return {"message":"OK"}
+@app.delete("/admin/users/{uid}")
+def del_user(uid:int, db:Session=Depends(get_db)): db.query(models.User).filter_by(id=uid).delete(); db.commit(); return {"message":"OK"}
+@app.post("/admin/users/delete-bulk")
+def del_bulk(d:BulkDeleteSchema, db:Session=Depends(get_db)): db.query(models.User).filter(models.User.id.in_(d.user_ids)).delete(synchronize_session=False); db.commit(); return {"message":"OK"}
+
+@app.get("/admin/recap")
+def get_recap(period_id: Optional[int]=None, db: Session=Depends(get_db)):
+    users = db.query(models.User).filter_by(role='student').options(joinedload(models.User.results), joinedload(models.User.choice1)).all()
+    res=[]
+    for u in users:
+        urs = [r for r in u.results if r.exam_id.startswith(f"P{period_id}_")] if period_id else u.results
+        if period_id and not urs: continue
+        sc={r.exam_id.split('_')[-1]: r.irt_score for r in urs}
+        avg = sum(sc.values())/7 if sc else 0
+        stat = "LULUS" if u.choice1 and avg >= u.choice1.passing_grade else "TIDAK LULUS"
+        row = {"id":u.id, "full_name":u.full_name, "username":u.username, "average":round(avg,2), "status":stat, "completed_exams":[{"exam_id":r.exam_id, "code":r.exam_id.split('_')[-1]} for r in urs]}
+        for k in ["PU","PBM","PPU","PK","LBI","LBE","PM","TWK","TIU","TKP","UMUM"]: row[k]=round(sc.get(k,0),2)
+        res.append(row)
+    return res
+
+@app.get("/admin/recap/download")
+def dl_recap(period_id: Optional[int]=None, db: Session=Depends(get_db)):
+    d = get_recap(period_id, db)
+    df = pd.DataFrame([{k:v for k,v in r.items() if k!='completed_exams'} for r in d])
+    out = io.BytesIO(); df.to_excel(out, index=False); out.seek(0)
+    return StreamingResponse(out, headers={'Content-Disposition': 'attachment; filename="rekap.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+# TEMPLATES (Excel Upload Placeholder)
+@app.post("/admin/majors/bulk")
+async def bulk_majors(file: UploadFile=File(...), db:Session=Depends(get_db)):
+    df = pd.read_excel(io.BytesIO(await file.read())); count=0
+    df.columns = df.columns.str.lower().str.strip()
+    for _,r in df.iterrows():
+        try:
+            # Mencoba membaca nama kolom yang mungkin variatif
+            univ = r.get('universitas') or r.get('university')
+            name = r.get('prodi') or r.get('name') or r.get('jurusan')
+            pg = r.get('passing_grade') or r.get('pg')
+            
+            if univ and name:
+                db.add(models.Major(university=str(univ), name=str(name), passing_grade=float(pg or 0)))
+                count+=1
+        except: pass
+    db.commit()
+    return {"message": f"{count} jurusan"}
+
+@app.post("/admin/users/bulk")
+async def bulk_users(file: UploadFile=File(...), db:Session=Depends(get_db)):
+    df = pd.read_excel(io.BytesIO(await file.read())); count=0
+    df.columns = df.columns.str.lower().str.strip()
+    for _,r in df.iterrows():
+        try:
+            if not db.query(models.User).filter_by(username=str(r['username'])).first():
+                db.add(models.User(username=str(r['username']), password=str(r['password']), full_name=str(r['full_name']), role='student'))
+                count+=1
+        except: pass
+    db.commit()
+    return {"message": f"{count} user"}
+
+@app.post("/admin/upload-questions/{exam_id}")
+async def upload_qs(exam_id:str, file: UploadFile=File(...), db:Session=Depends(get_db)):
+    try:
+        content = await file.read()
+        df = pd.read_excel(io.BytesIO(content))
+        # Normalisasi nama kolom
+        df.columns = df.columns.str.strip().str.title()
+        
+        db.query(models.Question).filter_by(exam_id=exam_id).delete(); db.commit()
+        count=0
+        for _, row in df.iterrows():
+            # Support image from Excel URL
+            img = str(row.get('Gambar')) if pd.notna(row.get('Gambar')) else None
+            
+            q = models.Question(
+                exam_id=exam_id, 
+                text=str(row['Soal']), 
+                type='multiple_choice', # Default PG dari excel
+                difficulty=float(row.get('Kesulitan', 1.0)),
+                image_url=img
+            )
+            db.add(q); db.commit()
+            
+            # Opsi & Kunci
+            key = str(row.get('Kunci','')).strip().upper()
+            for char, col in [('A','Opsia'),('B','Opsib'),('C','Opsic'),('D','Opsid'),('E','Opsie')]:
+                if pd.notna(row.get(col)):
+                    db.add(models.Option(question_id=q.id, option_index=char, label=str(row[col]), is_correct=(char==key)))
+            count+=1
+        db.commit()
+        return {"message": f"{count} soal diupload"}
+    except Exception as e: return {"message": str(e)}
+
 @app.get("/admin/download-template")
-def download_template_soal():
-    df = pd.DataFrame([{"Tipe":"PG","Soal":"Contoh"}])
-    output = io.BytesIO(); df.to_excel(output, index=False); output.seek(0)
-    return StreamingResponse(output, headers={'Content-Disposition': 'attachment; filename="template.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-@app.post("/upload-exam") # Placeholder for excel logic if needed
-def upload_placeholder(): return {"message":"Use manual input"}
+def dl_temp():
+    df = pd.DataFrame([{"Soal":"Contoh Soal", "OpsiA":"A", "OpsiB":"B", "OpsiC":"C", "OpsiD":"D", "OpsiE":"E", "Kunci":"A", "Kesulitan":1, "Gambar":""}])
+    out=io.BytesIO(); df.to_excel(out, index=False); out.seek(0)
+    return StreamingResponse(out, headers={'Content-Disposition': 'attachment; filename="template.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+@app.get("/init-admin")
+def init():
+    if not database.SessionLocal().query(models.User).filter_by(username="admin").first():
+        database.SessionLocal().add(models.User(username="admin", password="123", role="admin", full_name="Admin")); database.SessionLocal().commit()
+    return {"message":"OK"}

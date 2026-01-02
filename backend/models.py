@@ -27,6 +27,15 @@ class User(Base):
     choice1 = relationship("Major", foreign_keys=[choice1_id])
     choice2 = relationship("Major", foreign_keys=[choice2_id])
 
+class Material(Base):
+    __tablename__ = "materials"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String)
+    type = Column(String) # pdf, video, link
+    content_url = Column(String)
+    category = Column(String) # UTBK, CPNS, MANDIRI
+    description = Column(Text, nullable=True)
+
 class ExamPeriod(Base):
     __tablename__ = "exam_periods"
     id = Column(Integer, primary_key=True, index=True)
@@ -35,7 +44,7 @@ class ExamPeriod(Base):
     allow_submit = Column(Boolean, default=True)
     is_random = Column(Boolean, default=True)
     is_flexible = Column(Boolean, default=False)
-    exam_type = Column(String, default="UTBK")
+    exam_type = Column(String, default="UTBK") # UTBK, CPNS, MANDIRI
     allowed_usernames = Column(Text, nullable=True)
     exams = relationship("Exam", back_populates="period", cascade="all, delete")
 
@@ -57,14 +66,10 @@ class Question(Base):
     text = Column(Text)
     type = Column(String) 
     reading_material = Column(Text, nullable=True)
-    image_url = Column(String, nullable=True)
-    
-    # --- FITUR BARU ---
-    explanation = Column(Text, nullable=True) # Pembahasan
-    label_true = Column(String, default="Benar") # Label Kolom Kiri (Tabel)
-    label_false = Column(String, default="Salah") # Label Kolom Kanan (Tabel)
-    # ------------------
-    
+    image_url = Column(String, nullable=True) # SUPPORT GAMBAR
+    explanation = Column(Text, nullable=True) 
+    label_true = Column(String, default="Benar") 
+    label_false = Column(String, default="Salah") 
     reading_label = Column(String, nullable=True) 
     citation = Column(String, nullable=True)
     difficulty = Column(Float, default=1.0)
