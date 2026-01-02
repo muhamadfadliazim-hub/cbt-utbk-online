@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Eye, EyeOff, 
-  ChevronDown, CheckCircle, XCircle, Download, Search, X, Clock, Key, 
-  Building2, PieChart, PenTool, BookOpen, Grid, LayoutDashboard, Menu, FileCode, Info, Save, Video, Link 
+  Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, 
+  ChevronDown, CheckCircle, XCircle, Download, Search, X, Filter, Clock, Key, 
+  Building2, PieChart, PenTool, BookOpen, Grid, LayoutDashboard, Menu, FileCode, Info, Save, Image, Video, Link 
 } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
@@ -15,27 +15,23 @@ const EXAM_ORDER = ["PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM", "TWK", "TIU", 
 const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
   
-  // Data States
+  // DATA
   const [periods, setPeriods] = useState([]);
   const [users, setUsers] = useState([]);
   const [recap, setRecap] = useState([]);
   const [majors, setMajors] = useState([]); 
-  const [materials, setMaterials] = useState([]); // LMS Materials
+  const [materials, setMaterials] = useState([]);
   
-  // Form States
+  // STATES
   const [newPeriodName, setNewPeriodName] = useState('');
+  const [examType, setExamType] = useState('UTBK');
+  const [isRandom, setIsRandom] = useState(true); 
+  const [isFlexible, setIsFlexible] = useState(false); 
+  
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', role: 'student' });
   const [newMajor, setNewMajor] = useState({ university: '', name: '', passing_grade: '' });
   const [newMaterial, setNewMaterial] = useState({ title: '', type: 'pdf', content_url: '', category: 'UTBK', description: '' });
-  
-  // Settings States
-  const [isReleased, setIsReleased] = useState(false);
-  const [isMajorSelectionEnabled, setIsMajorSelectionEnabled] = useState(true);
-  const [isRandom, setIsRandom] = useState(true); 
-  const [isFlexible, setIsFlexible] = useState(false); 
-  const [examType, setExamType] = useState('UTBK');
 
-  // UI States
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewData, setPreviewData] = useState(null); 
   const [analysisData, setAnalysisData] = useState(null); 
@@ -53,15 +49,10 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
-  // Manual Input Question State
+  // MANUAL INPUT
   const [showManualInput, setShowManualInput] = useState(false);
   const [activeExamIdForManual, setActiveExamIdForManual] = useState(null);
-  const [manualQ, setManualQ] = useState({ 
-      text: '', type: 'multiple_choice', difficulty: 1.0, 
-      reading_material: '', explanation: '', 
-      label_true: 'Benar', label_false: 'Salah', 
-      image_url: '', options: [] 
-  });
+  const [manualQ, setManualQ] = useState({ text: '', type: 'multiple_choice', difficulty: 1.0, reading_material: '', explanation: '', label_true: 'Benar', label_false: 'Salah', image_url: '', options: [] });
 
   const renderText = (text) => {
     if (!text) return null;
@@ -71,22 +62,18 @@ const AdminDashboard = ({ onLogout }) => {
     });
   };
 
-  // --- DATA FETCHING ---
-  const fetchPeriods = useCallback(() => { fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(d=>setPeriods(Array.isArray(d)?d:[])); }, []);
-  const fetchUsers = useCallback(() => { fetch(`${API_URL}/admin/users`).then(r=>r.json()).then(d=>setUsers(Array.isArray(d)?d:[])); }, []);
-  const fetchMajors = useCallback(() => { fetch(`${API_URL}/majors`).then(r=>r.json()).then(d=>setMajors(Array.isArray(d)?d:[])); }, []);
-  const fetchMaterials = useCallback(() => { fetch(`${API_URL}/materials`).then(r=>r.json()).then(d=>setMaterials(Array.isArray(d)?d:[])); }, []);
+  // FETCHING
+  const fetchData = useCallback(() => { 
+      fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(d=>setPeriods(Array.isArray(d)?d:[])); 
+      fetch(`${API_URL}/admin/users`).then(r=>r.json()).then(d=>setUsers(Array.isArray(d)?d:[])); 
+      fetch(`${API_URL}/majors`).then(r=>r.json()).then(d=>setMajors(Array.isArray(d)?d:[])); 
+      fetch(`${API_URL}/materials`).then(r=>r.json()).then(d=>setMaterials(Array.isArray(d)?d:[])); 
+  }, []);
   
   const fetchRecap = useCallback(() => {
       const url = selectedRecapPeriod ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap`;
       fetch(url).then(r=>r.json()).then(d=>setRecap(Array.isArray(d)?d:[]));
   }, [selectedRecapPeriod]);
-
-  const fetchData = useCallback(() => {
-      fetchPeriods(); fetchUsers(); fetchMajors(); fetchMaterials();
-      fetch(`${API_URL}/config/release`).then(r=>r.json()).then(d=>setIsReleased(d.value==='true'));
-      fetch(`${API_URL}/config/enable_major_selection`).then(r=>r.json()).then(d=>setIsMajorSelectionEnabled(d.value==='true'));
-  }, [fetchPeriods, fetchUsers, fetchMajors, fetchMaterials]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { if(tab === 'recap') fetchRecap(); }, [tab, fetchRecap]);
@@ -96,7 +83,6 @@ const AdminDashboard = ({ onLogout }) => {
       .then(r=>r.json()).then(d=>{ if(onSuccess) onSuccess(d); else fetchData(); }).catch(e=>alert(e.message));
   };
 
-  // --- HANDLERS ---
   const handleUploadImage = async (e) => {
       const file = e.target.files[0]; if(!file) return;
       const fd = new FormData(); fd.append('file', file);
@@ -105,33 +91,28 @@ const AdminDashboard = ({ onLogout }) => {
       setManualQ({...manualQ, image_url: data.url});
   };
 
-  // Periods
+  // HANDLERS
   const handleCreatePeriod = () => { if(!newPeriodName)return; apiAction(`${API_URL}/admin/periods`, 'POST', { name: newPeriodName, allowed_usernames: selectedWhitelist.length>0?selectedWhitelist.join(','):null, is_random: isRandom, is_flexible: isFlexible, exam_type: examType }, ()=>{setNewPeriodName(''); setSelectedWhitelist([]); fetchData();}); };
   const handleDeletePeriod = (id) => { if(window.confirm("Hapus?")) apiAction(`${API_URL}/admin/periods/${id}`, 'DELETE'); };
   const togglePeriodActive = (id, s) => apiAction(`${API_URL}/admin/periods/${id}/toggle`, 'POST', {is_active:!s});
   const togglePeriodSubmit = (id, s) => apiAction(`${API_URL}/admin/periods/${id}/toggle-submit`, 'POST', {is_active:!s});
   
-  // Users
   const handleAddUser = () => { apiAction(`${API_URL}/admin/users`, 'POST', newUser, ()=>{alert("User Added");setNewUser({...newUser, username:''});}); };
   const handleBulkDelete = () => { if(window.confirm("Hapus terpilih?")) apiAction(`${API_URL}/admin/users/delete-bulk`, 'POST', {user_ids:selectedIds}, ()=>setSelectedIds([])); };
   const handleBulkUpload = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/users/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchData();}) };
   const handleChangePassword = (uid) => { const p = prompt("Pass Baru:"); if(p) apiAction(`${API_URL}/admin/users/${uid}/password`, 'PUT', {new_password:p}, ()=>alert("Diganti")); };
 
-  // Majors
   const handleAddMajor = () => { apiAction(`${API_URL}/majors`, 'POST', newMajor, ()=>{alert("Added");setNewMajor({university:'',name:'',passing_grade:''});}); };
   const handleDeleteMajor = (id) => { apiAction(`${API_URL}/majors/${id}`, 'DELETE'); };
   const handleBulkUploadMajors = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/majors/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchData();}) };
 
-  // Materials (LMS)
   const handleAddMaterial = () => { apiAction(`${API_URL}/materials`, 'POST', newMaterial, ()=>{alert("Materi Added");setNewMaterial({...newMaterial, title:''});}); };
   const handleDeleteMaterial = (id) => { if(window.confirm("Hapus materi?")) apiAction(`${API_URL}/materials/${id}`, 'DELETE'); };
 
-  // Questions
   const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}); };
   const handleDeleteQuestion = (qid) => { if(window.confirm("Hapus?")) fetch(`${API_URL}/admin/questions/${qid}`, { method: 'DELETE' }).then(() => { if (previewData) handlePreviewExam(previewData.id||activeExamIdForManual); fetchData(); }); };
   const handleUploadQuestion = (eid, f) => { const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchData();}); };
 
-  // Downloads
   const handleDownloadPDF = () => {
     if(recap.length===0) return alert("Data kosong");
     const doc = new jsPDF('landscape'); doc.text("REKAP NILAI", 14, 15);
@@ -144,10 +125,9 @@ const AdminDashboard = ({ onLogout }) => {
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
   const handleShowAnalysis = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/analysis`).then(r => r.json()).then(d => { setAnalysisData(d); setActiveAnalysisId(eid); setShowAnalysis(true); }); };
   const handleDownloadAnalysisExcel = () => { if (activeAnalysisId) window.open(`${API_URL}/admin/exams/${activeAnalysisId}/analysis/download`, '_blank'); };
-  const handleResetResult = (uid, eid) => { if(window.confirm("Reset?")) apiAction(`${API_URL}/admin/reset-result`, 'POST', {user_id:uid, exam_id:eid}, fetchRecap); };
+  const handleResetResult = (uid, eid) => { if(window.confirm("Reset Hasil Ujian Ini?")) apiAction(`${API_URL}/admin/reset-result`, 'POST', {user_id:uid, exam_id:eid}, fetchRecap); };
   const handleViewStudentDetail = (d) => { setSelectedStudentDetail(d); setShowDetailModal(true); };
 
-  // Access & Config
   const toggleConfig = (k, v) => {
       const nv = !v; 
       if(k==='release_announcement') setIsReleased(nv); 
@@ -159,7 +139,6 @@ const AdminDashboard = ({ onLogout }) => {
   const toggleEditAccessUser = (u) => { setEditAccessUsers(editAccessUsers.includes(u) ? editAccessUsers.filter(x=>x!==u) : [...editAccessUsers, u]); };
   const saveEditAccess = () => { apiAction(`${API_URL}/admin/periods/${editingPeriodId}/users`, 'PUT', {allowed_usernames:editAccessUsers.join(',')}, ()=>{alert("Saved");setShowEditAccessModal(false);}); };
 
-  // Manual Input Modal
   const openManualInput = (eid) => { setActiveExamIdForManual(eid); setManualQ({text:'',type:'multiple_choice',difficulty:1.0,reading_material:'',explanation:'',label_true:'Benar',label_false:'Salah',image_url:'',options:[{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false}]}); setShowManualInput(true); };
   const handleOptionChange = (i, f, v) => { const o=[...manualQ.options]; o[i][f]=v; if(manualQ.type==='multiple_choice'&&f==='is_correct'&&v) o.forEach((x,idx)=>{if(idx!==i)x.is_correct=false}); setManualQ({...manualQ,options:o}); };
   const saveManualQuestion = () => { if(!manualQ.text)return alert("Isi Soal!"); apiAction(`${API_URL}/admin/exams/${activeExamIdForManual}/manual-question`, 'POST', manualQ, ()=>{alert("Tersimpan!"); setShowManualInput(false); fetchData();}); };
@@ -196,12 +175,12 @@ const AdminDashboard = ({ onLogout }) => {
                     <h3 className="font-bold text-lg mb-4 text-indigo-900 border-b pb-2">Buat Ujian (CPNS/UTBK/Mandiri)</h3>
                     <div className="grid md:grid-cols-12 gap-4 items-end">
                         <div className="md:col-span-4"><label className="text-xs font-bold text-slate-500">Nama Paket</label><input className="w-full p-2.5 bg-slate-50 border rounded-lg" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/></div>
-                        <div className="md:col-span-2"><label className="text-xs font-bold text-slate-500">Tipe</label><select className="w-full p-2.5 bg-slate-50 border rounded-lg" value={examType} onChange={e=>setExamType(e.target.value)}><option value="UTBK">UTBK</option><option value="CPNS">CPNS</option><option value="UMUM">Mandiri</option></select></div>
+                        <div className="md:col-span-2"><label className="text-xs font-bold text-slate-500">Tipe</label><select className="w-full p-2.5 bg-slate-50 border rounded-lg" value={examType} onChange={e=>setExamType(e.target.value)}><option value="UTBK">UTBK</option><option value="CPNS">CPNS</option><option value="MANDIRI">Mandiri</option><option value="UMUM">Umum</option></select></div>
                         <div className="md:col-span-4 flex gap-4"><label className="flex items-center gap-2 text-xs font-bold"><input type="checkbox" checked={isRandom} onChange={e=>setIsRandom(e.target.checked)}/> Acak</label><label className="flex items-center gap-2 text-xs font-bold"><input type="checkbox" checked={isFlexible} onChange={e=>setIsFlexible(e.target.checked)}/> Fleksibel</label></div>
                         <div className="md:col-span-2"><button onClick={handleCreatePeriod} className="w-full bg-indigo-600 text-white p-2.5 rounded-lg font-bold">Buat</button></div>
                     </div>
                 </div>
-                <div className="space-y-4">{periods.map(p=>(<div key={p.id} className="bg-white rounded-2xl shadow-sm border overflow-hidden"><div className="p-5 flex justify-between items-center bg-slate-50"><div><h3 className="font-bold text-xl">{p.name}</h3><span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">{p.exam_type}</span></div><div className="flex gap-2"><button onClick={()=>togglePeriodActive(p.id, p.is_active)} className="p-2 border rounded"><Eye size={18}/></button><button onClick={()=>togglePeriodSubmit(p.id, p.allow_submit)} className={`p-2 border rounded ${p.allow_submit?'text-emerald-600':'text-rose-600'}`}><Lock size={18}/></button><button onClick={()=>handleDeletePeriod(p.id)} className="p-2 border text-rose-600"><Trash2 size={18}/></button><button onClick={()=>setExpandedPeriod(expandedPeriod===p.id?null:p.id)} className="p-2 bg-indigo-50 text-indigo-600 rounded"><ChevronDown size={20}/></button></div></div>{expandedPeriod===p.id && <div className="p-5 border-t bg-white grid gap-3">{p.exams.map(e=>(<div key={e.id} className="flex justify-between items-center p-3 rounded-xl border hover:bg-indigo-50 transition"><div><div className="font-bold">{e.title}</div><div className="text-xs text-slate-500">{e.duration}m | {e.q_count} Soal</div></div><div className="flex gap-2"><button onClick={()=>openEditAccess(p)} className="px-2 py-1 bg-gray-100 text-xs rounded"><Key size={12}/></button><button onClick={()=>openManualInput(e.id)} className="bg-indigo-600 text-white px-3 py-1.5 rounded text-xs font-bold"><PenTool size={12}/> Editor</button><label className="bg-emerald-600 text-white px-3 py-1.5 rounded text-xs font-bold cursor-pointer"><Upload size={12}/> Excel <input type="file" hidden onChange={ev=>handleUploadQuestion(e.id,ev.target.files[0])}/></label></div></div>))}</div>}</div>))}</div>
+                <div className="space-y-4">{periods.map(p=>(<div key={p.id} className="bg-white rounded-2xl shadow-sm border overflow-hidden"><div className="p-5 flex justify-between items-center bg-slate-50"><div><h3 className="font-bold text-xl">{p.name}</h3><span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">{p.exam_type}</span></div><div className="flex gap-2"><button onClick={()=>togglePeriodActive(p.id, p.is_active)} className="p-2 border rounded"><Eye size={18}/></button><button onClick={()=>togglePeriodSubmit(p.id, p.allow_submit)} className={`p-2 border rounded ${p.allow_submit?'text-emerald-600':'text-rose-600'}`}><Lock size={18}/></button><button onClick={()=>handleDeletePeriod(p.id)} className="p-2 border text-rose-600"><Trash2 size={18}/></button><button onClick={()=>setExpandedPeriod(expandedPeriod===p.id?null:p.id)} className="p-2 bg-indigo-50 text-indigo-600 rounded"><ChevronDown size={20}/></button></div></div>{expandedPeriod===p.id && <div className="p-5 border-t bg-white grid gap-3">{p.exams.map(e=>(<div key={e.id} className="flex justify-between items-center p-3 rounded-xl border hover:bg-indigo-50 transition"><div><div className="font-bold">{e.title}</div><div className="text-xs text-slate-500">{e.duration}m | {e.q_count} Soal</div></div><div className="flex gap-2"><button onClick={()=>openEditAccess(p)} className="px-2 py-1 bg-gray-100 text-xs rounded"><Key size={12}/></button><button onClick={()=>openManualInput(e.id)} className="bg-indigo-600 text-white px-3 py-1.5 rounded text-xs font-bold"><PenTool size={12}/> Editor</button><button onClick={()=>handlePreviewExam(e.id)} className="bg-white border text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold"><Search size={12}/> Preview</button><label className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer"><Upload size={12}/> Excel <input type="file" hidden onChange={ev=>handleUploadQuestion(e.id,ev.target.files[0])}/></label></div></div>))}</div>}</div>))}</div>
             </div>
         )}
 
@@ -210,7 +189,7 @@ const AdminDashboard = ({ onLogout }) => {
                 <h2 className="text-2xl font-bold">Materi & LMS</h2>
                 <div className="bg-white p-6 rounded-xl border shadow-sm grid md:grid-cols-4 gap-4 items-end">
                     <div className="md:col-span-2"><label className="text-xs font-bold">Judul Materi</label><input className="w-full p-2 border rounded" value={newMaterial.title} onChange={e=>setNewMaterial({...newMaterial, title:e.target.value})}/></div>
-                    <div><label className="text-xs font-bold">Kategori</label><select className="w-full p-2 border rounded" value={newMaterial.category} onChange={e=>setNewMaterial({...newMaterial, category:e.target.value})}><option value="UTBK">UTBK</option><option value="CPNS">CPNS</option><option value="UMUM">Mandiri</option></select></div>
+                    <div><label className="text-xs font-bold">Kategori</label><select className="w-full p-2 border rounded" value={newMaterial.category} onChange={e=>setNewMaterial({...newMaterial, category:e.target.value})}><option value="UTBK">UTBK</option><option value="CPNS">CPNS</option><option value="MANDIRI">Mandiri</option></select></div>
                     <div><label className="text-xs font-bold">Tipe</label><select className="w-full p-2 border rounded" value={newMaterial.type} onChange={e=>setNewMaterial({...newMaterial, type:e.target.value})}><option value="pdf">PDF</option><option value="video">Video</option><option value="link">Link</option></select></div>
                     <div className="md:col-span-3"><label className="text-xs font-bold">URL / Link</label><input className="w-full p-2 border rounded" placeholder="https://..." value={newMaterial.content_url} onChange={e=>setNewMaterial({...newMaterial, content_url:e.target.value})}/></div>
                     <button onClick={handleAddMaterial} className="bg-indigo-600 text-white p-2 rounded font-bold"><Plus className="inline" size={16}/> Tambah</button>
@@ -238,7 +217,7 @@ const AdminDashboard = ({ onLogout }) => {
                     </div>
                     <div className="flex-1 overflow-y-auto p-6 space-y-6">
                         <div className="bg-indigo-50 p-4 rounded text-sm text-indigo-800">
-                            <strong>Tips Matematika:</strong> Untuk rumus rumit, tulis di Word/Kertas, Screenshot, lalu <strong>Upload Gambar</strong> di bawah ini. Atau gunakan link <a href="https://hostmath.com/" target="_blank" rel="noreferrer" className="underline font-bold">Editor Rumus Online</a> lalu copy kodenya ke sini.
+                            <strong>Tips Matematika untuk Awam:</strong> Tulis rumus di Word/Kertas, Screenshot/Foto, lalu <strong>Upload Gambar</strong> di bawah ini. Atau gunakan <a href="https://hostmath.com/" target="_blank" rel="noreferrer" className="underline font-bold">Visual Editor Online</a> lalu copy kodenya ke sini.
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div><label className="text-xs font-bold">Tipe</label><select className="w-full p-2 border rounded" value={manualQ.type} onChange={e=>setManualQ({...manualQ, type:e.target.value})}><option value="multiple_choice">Pilihan Ganda</option><option value="complex">PG Kompleks</option><option value="table_boolean">Tabel</option><option value="short_answer">Isian</option></select></div>
@@ -248,16 +227,18 @@ const AdminDashboard = ({ onLogout }) => {
                         <div><label className="text-xs font-bold">Teks Soal</label><textarea className="w-full h-32 p-2 border rounded" value={manualQ.text} onChange={e=>setManualQ({...manualQ, text:e.target.value})}/></div>
                         <div className="border p-4 rounded bg-slate-50">
                             <h4 className="font-bold text-sm mb-2">Jawaban</h4>
+                            {manualQ.type === 'table_boolean' && <div className="flex gap-2 mb-2"><input className="w-1/2 p-2 border" placeholder="Label Kiri" value={manualQ.label_true} onChange={e=>setManualQ({...manualQ,label_true:e.target.value})}/><input className="w-1/2 p-2 border" placeholder="Label Kanan" value={manualQ.label_false} onChange={e=>setManualQ({...manualQ,label_false:e.target.value})}/></div>}
                             {manualQ.options.map((o,i)=>(<div key={i} className="flex gap-2 mb-2"><input className="flex-1 p-2 border rounded" value={o.label} onChange={e=>{const ops=[...manualQ.options];ops[i].label=e.target.value;setManualQ({...manualQ,options:ops})}}/><input type="checkbox" checked={o.is_correct} onChange={e=>{const ops=[...manualQ.options];ops[i].is_correct=e.target.checked; if(manualQ.type==='multiple_choice') ops.forEach((x,ix)=>{if(ix!==i)x.is_correct=false}); setManualQ({...manualQ,options:ops})}}/></div>))}
                             <button onClick={()=>setManualQ({...manualQ,options:[...manualQ.options,{label:'',is_correct:false}]})} className="text-xs bg-indigo-600 text-white px-2 py-1 rounded">+ Opsi</button>
                         </div>
+                        <div><label className="text-xs font-bold">Pembahasan</label><textarea className="w-full h-24 p-2 border rounded" value={manualQ.explanation} onChange={e=>setManualQ({...manualQ, explanation:e.target.value})}/></div>
                     </div>
                     <div className="p-4 border-t text-right"><button onClick={saveManualQuestion} className="bg-indigo-600 text-white px-6 py-2 rounded font-bold"><Save className="inline mr-2" size={16}/> Simpan Soal</button></div>
                 </div>
             </div>
         )}
 
-        {/* ... (TAB USERS, MAJORS, RECAP - KODE SUDAH BENAR) ... */}
+        {/* ... (TAB USERS, MAJORS, RECAP - SAMA SEPERTI SEBELUMNYA) ... */}
         {tab === 'majors' && (
             <div><h2 className="text-2xl font-bold mb-6">Manajemen Jurusan</h2>
             <div className="bg-white p-6 rounded shadow mb-6 border-l-4 border-indigo-500"><div className="flex flex-col md:flex-row gap-2 items-end"><div className="flex-1 w-full"><label className="text-xs font-bold text-gray-500">Universitas</label><input className="w-full p-2 border rounded" placeholder="UI" value={newMajor.university} onChange={e=>setNewMajor({...newMajor, university:e.target.value})}/></div><div className="flex-[2] w-full"><label className="text-xs font-bold text-gray-500">Jurusan</label><input className="w-full p-2 border rounded" placeholder="Kedokteran" value={newMajor.name} onChange={e=>setNewMajor({...newMajor, name:e.target.value})}/></div><div className="w-full md:w-32"><label className="text-xs font-bold text-gray-500">PG</label><input type="number" step="0.01" className="w-full p-2 border rounded" placeholder="650" value={newMajor.passing_grade} onChange={e=>setNewMajor({...newMajor, passing_grade:e.target.value})}/></div><button onClick={handleAddMajor} className="w-full md:w-auto bg-green-600 text-white px-6 py-2 rounded font-bold h-[42px] flex items-center justify-center gap-2"><Plus size={16}/> Simpan</button></div><div className="mt-4 pt-4 border-t"><label className="text-blue-600 cursor-pointer text-sm hover:underline font-bold flex items-center gap-2"><Upload size={16}/> Upload Excel Jurusan<input type="file" hidden accept=".xlsx" onChange={handleBulkUploadMajors}/></label></div></div>
@@ -270,7 +251,7 @@ const AdminDashboard = ({ onLogout }) => {
         {tab === 'recap' && (<div className="overflow-x-auto pb-20"><div className="flex flex-col md:flex-row justify-between items-end mb-6 gap-4"><div><h2 className="text-2xl font-bold">Rekap Nilai</h2><div className="flex items-center gap-2 mt-2"><Filter size={16} className="text-gray-500"/><select className="p-2 border rounded w-full md:w-auto" value={selectedRecapPeriod} onChange={e=>setSelectedRecapPeriod(e.target.value)}><option value="">-- Semua Periode --</option>{periods.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div></div><div className="flex flex-wrap gap-2 w-full md:w-auto">
             <button onClick={handleDownloadPDF} className="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded shadow text-sm font-bold hover:bg-red-700"><FileCode size={16}/> PDF</button>
             <button onClick={handleDownloadExcel} className="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 bg-white border rounded shadow text-sm font-bold"><Download size={16}/> Excel</button>
-            <button onClick={()=>apiAction(`${API_URL}/config/release`, 'POST', {value:!isReleased?"true":"false"})} className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 text-white rounded shadow text-sm font-bold ${isReleased?'bg-green-600':'bg-orange-500'}`}>{isReleased?<Unlock size={16}/>:<Lock size={16}/>} {isReleased?'Tutup':'Rilis'}</button></div></div>
+            <button onClick={()=>toggleConfig('release_announcement', isReleased)} className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 text-white rounded shadow text-sm font-bold ${isReleased?'bg-green-600':'bg-orange-500'}`}>{isReleased?<Unlock size={16}/>:<Lock size={16}/>} {isReleased?'Tutup':'Rilis'}</button></div></div>
             
             <div className="md:hidden space-y-4">
                 {recap.map(r => (
@@ -339,24 +320,16 @@ const AdminDashboard = ({ onLogout }) => {
                             <div key={q.id} className="p-6 border rounded-xl hover:shadow-md transition relative group bg-white">
                                 <button onClick={()=>handleDeleteQuestion(q.id)} className="absolute top-4 right-4 text-rose-400 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition"><Trash2 size={18}/></button>
                                 <div className="font-bold text-indigo-900 mb-3">No. {i+1} <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[10px] ml-2 uppercase">{q.type}</span></div>
-                                {q.image_url && <img src={`${API_URL}${q.image_url}`} alt="Soal" className="max-h-64 mb-4 rounded border"/>}
+                                {q.image_url && <img src={`${API_URL}${q.image_url}`} alt="Soal" className="max-h-40 rounded border shadow-sm mb-4"/>}
                                 {q.reading_material && <div className="p-4 bg-amber-50 rounded-lg border-l-4 border-amber-300 text-sm mb-4 leading-relaxed italic text-slate-700">{renderText(q.reading_material)}</div>}
                                 <div className="text-lg mb-4 text-slate-800">{renderText(q.text)}</div>
-                                
-                                {q.type === 'table_boolean' ? (
-                                    <table className="w-full text-sm border mt-2">
-                                        <thead><tr className="bg-slate-50"><th>Pernyataan</th><th>{q.label_true}</th><th>{q.label_false}</th></tr></thead>
-                                        <tbody>{q.options.map(o=><tr key={o.id} className="border-t"><td className="p-2">{renderText(o.label)}</td><td className="text-center">{o.is_correct?'✓':''}</td><td className="text-center">{!o.is_correct?'✓':''}</td></tr>)}</tbody>
-                                    </table>
-                                ) : (
-                                    <div className="ml-4 space-y-2">
-                                        {q.options.map((o,idx)=>(
-                                            <div key={idx} className={`p-2 rounded flex gap-2 ${o.is_correct?'bg-emerald-50 border border-emerald-100 font-semibold text-emerald-800':''}`}>
-                                                <span className="w-6 text-center opacity-50">{String.fromCharCode(65+idx)}</span> {renderText(o.label)} {o.is_correct&&<CheckCircle size={16} className="text-emerald-600"/>}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
+                                <div className="ml-4 space-y-2">
+                                    {q.options.map((o,idx)=>(
+                                        <div key={idx} className={`p-2 rounded flex gap-2 ${o.is_correct?'bg-emerald-50 border border-emerald-100 font-semibold text-emerald-800':''}`}>
+                                            <span className="w-6 text-center opacity-50">{String.fromCharCode(65+idx)}</span> {renderText(o.label)} {o.is_correct&&<CheckCircle size={16} className="text-emerald-600"/>}
+                                        </div>
+                                    ))}
+                                </div>
                                 {q.explanation && <div className="mt-4 p-4 bg-blue-50 text-blue-900 rounded-lg text-sm"><strong>Pembahasan:</strong> {renderText(q.explanation)}</div>}
                             </div>
                         ))}

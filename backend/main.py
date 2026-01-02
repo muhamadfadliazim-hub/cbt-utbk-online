@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, delete
@@ -15,7 +15,7 @@ import random
 import os
 import uuid
 
-# SETUP FOLDER UPLOAD (UNTUK GAMBAR SOAL)
+# --- SETUP FOLDER UPLOAD (PENTING UNTUK GAMBAR) ---
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
@@ -23,7 +23,7 @@ if not os.path.exists(UPLOAD_DIR):
 models.Base.metadata.create_all(bind=database.engine)
 app = FastAPI()
 
-# Mount folder uploads agar bisa diakses browser (http://domain/static/namafile.jpg)
+# Mount folder agar gambar bisa diakses dari browser
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
 app.add_middleware(
@@ -110,27 +110,29 @@ def check_answer_correctness(question, user_ans):
     elif question.type == 'short_answer':
         key = next((o for o in question.options if o.is_correct), None)
         if key and user_ans:
-            # Normalisasi jawaban (trim spasi & lowercase)
             return str(user_ans).strip().lower() == key.label.strip().lower()
     elif question.type == 'complex':
         correct = {o.option_index for o in question.options if o.is_correct}
         user_set = set(user_ans) if isinstance(user_ans, list) else {user_ans}
         return user_set == correct
     else:
-        # Multiple Choice Standar
         key = next((o for o in question.options if o.is_correct), None)
         return key and user_ans == key.option_index
     return False
 
-# --- UTILS UPLOAD ---
+# --- UTILS UPLOAD GAMBAR ---
 @app.post("/upload-image")
 async def upload_image(file: UploadFile = File(...)):
-    ext = file.filename.split(".")[-1]
-    filename = f"{uuid.uuid4()}.{ext}"
-    path = os.path.join(UPLOAD_DIR, filename)
-    with open(path, "wb") as buffer:
-        buffer.write(await file.read())
-    return {"url": f"/static/{filename}"}
+    try:
+        ext = file.filename.split(".")[-1]
+        filename = f"{uuid.uuid4()}.{ext}"
+        path = os.path.join(UPLOAD_DIR, filename)
+        with open(path, "wb") as buffer:
+            buffer.write(await file.read())
+        # Return URL relatif
+        return {"url": f"/static/{filename}"}
+    except Exception as e:
+        raise HTTPException(500, f"Gagal upload: {str(e)}")
 
 # --- LMS ENDPOINTS ---
 @app.get("/materials")
@@ -143,14 +145,12 @@ def get_materials(category: Optional[str] = None, db: Session = Depends(get_db))
 @app.post("/materials")
 def create_material(data: MaterialCreateSchema, db: Session = Depends(get_db)):
     m = models.Material(title=data.title, type=data.type, content_url=data.content_url, category=data.category, description=data.description)
-    db.add(m)
-    db.commit()
+    db.add(m); db.commit()
     return {"message": "Materi ditambahkan"}
 
 @app.delete("/materials/{mid}")
 def delete_material(mid: int, db: Session = Depends(get_db)):
-    db.query(models.Material).filter_by(id=mid).delete()
-    db.commit()
+    db.query(models.Material).filter_by(id=mid).delete(); db.commit()
     return {"message": "Dihapus"}
 
 # --- EXAM ENDPOINTS ---
@@ -175,10 +175,10 @@ def create_period(data: PeriodCreateSchema, db: Session = Depends(get_db)):
     new_period = models.ExamPeriod(name=data.name, is_active=False, allow_submit=True, allowed_usernames=data.allowed_usernames, is_random=data.is_random, is_flexible=data.is_flexible, exam_type=data.exam_type)
     db.add(new_period); db.commit(); db.refresh(new_period)
     
-    # STRUKTUR FLEKSIBEL (CPNS / UTBK / MANDIRI)
+    # STRUKTUR UJIAN DINAMIS
     if data.exam_type == "CPNS":
         structure = [("TWK","Tes Wawasan Kebangsaan",30), ("TIU","Tes Intelegensia Umum",30), ("TKP","Tes Karakteristik Pribadi",40)]
-    elif data.exam_type == "UMUM":
+    elif data.exam_type == "UMUM": # Ujian Mandiri / Mapel Tunggal
         structure = [("UMUM","Ujian Utama",60)]
     else: # Default UTBK SNBT
         structure = [("PU","Penalaran Umum",30), ("PBM","Pemahaman Bacaan",25), ("PPU","Pengetahuan Umum",15), ("PK","Pengetahuan Kuantitatif",20), ("LBI","Literasi B.Indo",42.5), ("LBE","Literasi B.Inggris",20), ("PM","Penalaran MTK",42.5)]
@@ -201,7 +201,6 @@ def add_manual_question(exam_id: str, data: QuestionCreateSchema, db: Session = 
     
     idx_map = ["A", "B", "C", "D", "E"]
     for i, opt in enumerate(data.options):
-        # Jika multiple choice gunakan A,B,C.. jika tidak gunakan angka string
         opt_idx = idx_map[i] if i < len(idx_map) and data.type in ["multiple_choice","complex"] else str(i+1)
         db.add(models.Option(question_id=q.id, label=opt.label, option_index=opt_idx, is_correct=opt.is_correct))
     db.commit()
@@ -223,36 +222,28 @@ def preview_exam(exam_id: str, db: Session = Depends(get_db)):
 def delete_single_question(qid: int, db: Session = Depends(get_db)):
     db.query(models.Question).filter_by(id=qid).delete(); db.commit(); return {"message":"Deleted"}
 
-# --- EXCEL UPLOAD HANDLERS (TEMPLATE COMPATIBILITY) ---
+# --- EXCEL UPLOAD HANDLERS (TEMPLATE 1, 2, 3) ---
 
-# 1. Upload Jurusan (passing_grade.xlsx)
-@app.post("/admin/majors/bulk")
+@app.post("/admin/majors/bulk") # Template Passing Grade
 async def bulk_majors(file: UploadFile=File(...), db:Session=Depends(get_db)):
     df = pd.read_excel(io.BytesIO(await file.read()))
-    # Normalisasi kolom agar tidak error case-sensitive
     df.columns = df.columns.str.lower().str.strip()
     count=0
     for _,r in df.iterrows():
         try:
-            # Mendukung nama kolom: universitas/university, prodi/name, passing_grade/pg
             univ = r.get('universitas') or r.get('university')
             name = r.get('prodi') or r.get('name') or r.get('jurusan')
-            pg = r.get('passing_grade') or r.get('pg') or r.get('passing grade')
-            
+            pg = r.get('passing_grade') or r.get('pg') or r.get('passing_grade')
             if univ and name:
-                # Update jika ada, Insert jika baru
                 existing = db.query(models.Major).filter_by(university=str(univ), name=str(name)).first()
-                if existing:
-                    existing.passing_grade = float(pg or 0)
-                else:
-                    db.add(models.Major(university=str(univ), name=str(name), passing_grade=float(pg or 0)))
+                if existing: existing.passing_grade = float(pg or 0)
+                else: db.add(models.Major(university=str(univ), name=str(name), passing_grade=float(pg or 0)))
                 count+=1
         except: pass
     db.commit()
     return {"message": f"{count} jurusan berhasil diproses"}
 
-# 2. Upload Peserta (peserta.xlsx)
-@app.post("/admin/users/bulk")
+@app.post("/admin/users/bulk") # Template Peserta
 async def bulk_users(file: UploadFile=File(...), db:Session=Depends(get_db)):
     df = pd.read_excel(io.BytesIO(await file.read()))
     df.columns = df.columns.str.lower().str.strip()
@@ -261,83 +252,56 @@ async def bulk_users(file: UploadFile=File(...), db:Session=Depends(get_db)):
         try:
             uname = str(r['username']).strip()
             if not db.query(models.User).filter_by(username=uname).first():
-                db.add(models.User(
-                    username=uname, 
-                    password=str(r['password']), 
-                    full_name=str(r['full_name']), 
-                    role=str(r.get('role', 'student'))
-                ))
+                db.add(models.User(username=uname, password=str(r['password']), full_name=str(r['full_name']), role='student'))
                 count+=1
         except: pass
     db.commit()
     return {"message": f"{count} user berhasil ditambahkan"}
 
-# 3. Upload Soal (soal_PK_23_april_ready_v2.xlsx)
-@app.post("/admin/upload-questions/{exam_id}")
+@app.post("/admin/upload-questions/{exam_id}") # Template Soal
 async def upload_qs(exam_id:str, file: UploadFile=File(...), db:Session=Depends(get_db)):
     try:
         content = await file.read()
         df = pd.read_excel(io.BytesIO(content))
-        df.columns = df.columns.str.strip().str.title() # Title Case: 'Tipe', 'Soal', 'OpsiA'
+        df.columns = df.columns.str.strip().str.title()
         
-        # Hapus soal lama di exam ini (Opsional, agar tidak duplikat)
         db.query(models.Question).filter_by(exam_id=exam_id).delete()
         db.commit()
         
         count=0
         for _, row in df.iterrows():
-            # Deteksi Tipe dari Excel
             tipe_asal = str(row.get('Tipe', 'PG')).upper().strip()
             q_type = 'multiple_choice'
             if 'ISIAN' in tipe_asal: q_type = 'short_answer'
             elif 'KOMPLEKS' in tipe_asal: q_type = 'complex'
             elif 'TABEL' in tipe_asal or 'BENAR' in tipe_asal: q_type = 'table_boolean'
             
-            # Gambar (Bisa URL external atau path)
             img = str(row.get('Gambar')) if pd.notna(row.get('Gambar')) else None
             
             q = models.Question(
-                exam_id=exam_id, 
-                text=str(row['Soal']), 
-                type=q_type, 
-                difficulty=float(row.get('Kesulitan', 1.0)),
-                image_url=img,
-                reading_material=str(row.get('Bacaan')) if pd.notna(row.get('Bacaan')) else None,
-                explanation=str(row.get('Pembahasan')) if pd.notna(row.get('Pembahasan')) else None # Kolom Pembahasan jika ada
+                exam_id=exam_id, text=str(row['Soal']), type=q_type, difficulty=float(row.get('Kesulitan', 1.0)),
+                image_url=img, reading_material=str(row.get('Bacaan')) if pd.notna(row.get('Bacaan')) else None,
+                explanation=str(row.get('Pembahasan')) if pd.notna(row.get('Pembahasan')) else None
             )
             db.add(q); db.commit()
             
-            # Proses Jawaban & Kunci
             kunci_raw = str(row.get('Kunci','')).strip().upper()
-            
             if q_type == 'short_answer':
-                # Isian: Kunci langsung di kolom Kunci
                 db.add(models.Option(question_id=q.id, option_index='KEY', label=kunci_raw, is_correct=True))
-            
             elif q_type == 'table_boolean':
-                # Tabel: Kunci biasanya "B,S,B,S"
                 keys = [k.strip() for k in kunci_raw.split(',')]
                 for i, col in enumerate(['Opsia', 'Opsib', 'Opsic', 'Opsid', 'Opsie']):
                     if pd.notna(row.get(col)):
                         is_true = (i < len(keys) and keys[i] == 'B')
                         db.add(models.Option(question_id=q.id, option_index=str(i+1), label=str(row[col]), is_correct=is_true))
-            
             else:
-                # PG / Kompleks
-                # Jika kompleks, kunci bisa "A,C"
                 valid_keys = [k.strip() for k in kunci_raw.split(',')]
-                
                 for char, col in [('A','Opsia'),('B','Opsib'),('C','Opsic'),('D','Opsid'),('E','Opsie')]:
                     if pd.notna(row.get(col)):
-                        db.add(models.Option(
-                            question_id=q.id, 
-                            option_index=char, 
-                            label=str(row[col]), 
-                            is_correct=(char in valid_keys)
-                        ))
+                        db.add(models.Option(question_id=q.id, option_index=char, label=str(row[col]), is_correct=(char in valid_keys)))
             count+=1
         db.commit()
-        return {"message": f"Sukses! {count} soal diupload dari Excel."}
+        return {"message": f"Sukses! {count} soal diupload."}
     except Exception as e: return {"message": f"Error: {str(e)}"}
 
 # --- STUDENT API ---
@@ -360,7 +324,7 @@ def get_student_periods(username: str = None, db: Session = Depends(get_db)):
         res.append({"id": p.id, "name": p.name, "exams": exams_data, "type": p.exam_type})
     return res
 
-# --- STANDARD AUTH & CONFIG ---
+# --- STANDARD AUTH, CONFIG & DOWNLOADS ---
 @app.post("/login")
 def login(data: LoginSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
@@ -373,7 +337,6 @@ def get_cfg(k:str, db:Session=Depends(get_db)): c=db.query(models.SystemConfig).
 @app.post("/config/{key}")
 def set_cfg(k:str, d:ConfigSchema, db:Session=Depends(get_db)): c=db.query(models.SystemConfig).filter_by(key=k).first(); (c.value=d.value) if c else db.add(models.SystemConfig(key=k,value=d.value)); db.commit(); return {"message":"OK"}
 
-# --- RECAP & DOWNLOADS ---
 @app.get("/admin/recap")
 def get_recap(period_id: Optional[int]=None, db: Session=Depends(get_db)):
     users = db.query(models.User).filter_by(role='student').options(joinedload(models.User.results), joinedload(models.User.choice1)).all()
