@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Unlock, Eye, EyeOff, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Search, X, Filter, Clock, Key, Building2, PieChart, FileCode, Info, Menu, PenTool, BookOpen, Grid, LayoutDashboard } from 'lucide-react';
+import { Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Eye, EyeOff, ChevronDown, CheckCircle, XCircle, Download, X, Clock, Key, Building2, PieChart, PenTool, BookOpen, Grid, LayoutDashboard, Menu } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
@@ -12,7 +12,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
   const [periods, setPeriods] = useState([]);
   const [newPeriodName, setNewPeriodName] = useState('');
-  const [allowedUsers, setAllowedUsers] = useState('');
+  const [selectedWhitelist, setSelectedWhitelist] = useState([]);
   const [users, setUsers] = useState([]);
   const [recap, setRecap] = useState([]);
   const [majors, setMajors] = useState([]); 
@@ -35,7 +35,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [editAccessUsers, setEditAccessUsers] = useState([]);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedStudentDetail, setSelectedStudentDetail] = useState(null);
-  const [selectedWhitelist, setSelectedWhitelist] = useState([]);
+  
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', role: 'student' });
   const [newMajor, setNewMajor] = useState({ university: '', name: '', passing_grade: '' }); 
@@ -46,7 +46,6 @@ const AdminDashboard = ({ onLogout }) => {
   const [activeExamIdForManual, setActiveExamIdForManual] = useState(null);
   const [manualQ, setManualQ] = useState({ text: '', type: 'multiple_choice', difficulty: 1.0, reading_material: '', explanation: '', label_true: 'Benar', label_false: 'Salah', options: [] });
 
-  // 1. HELPER RENDER TEXT
   const renderText = (text) => {
     if (!text) return null;
     return text.split(/(\$.*?\$)/).map((part, index) => {
@@ -55,7 +54,6 @@ const AdminDashboard = ({ onLogout }) => {
     });
   };
 
-  // 2. DATA FETCHING FUNCTIONS (MUST BE DEFINED FIRST)
   const fetchPeriods = useCallback(() => { fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(setPeriods); }, []);
   const fetchUsers = useCallback(() => { fetch(`${API_URL}/admin/users`).then(r=>r.json()).then(setUsers); }, []);
   const fetchMajors = useCallback(() => { fetch(`${API_URL}/majors`).then(r=>r.json()).then(setMajors); }, []);
@@ -76,14 +74,34 @@ const AdminDashboard = ({ onLogout }) => {
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { if(tab==='recap') fetchRecap(); }, [tab, fetchRecap]);
 
-  // 3. API ACTION WRAPPER
   const apiAction = (url, method, body, onSuccess) => {
       fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
       .then(r=>r.json()).then(d=>{ if(onSuccess) onSuccess(d); else fetchData(); }).catch(e=>alert(e.message));
   };
 
-  // 4. ACTION HANDLERS
-  const handleCreatePeriod = () => { if(!newPeriodName)return; apiAction(`${API_URL}/admin/periods`, 'POST', { name: newPeriodName, allowed_usernames: selectedWhitelist.join(',')||null, is_random: isRandom, is_flexible: isFlexible, exam_type: examType }, ()=>{setNewPeriodName('');fetchData();}); };
+  const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}); };
+  
+  const handleDeleteQuestion = (qid) => { 
+      if(window.confirm("Hapus soal ini?")) {
+          fetch(`${API_URL}/admin/questions/${qid}`, { method: 'DELETE' })
+          .then(() => { 
+              if (previewData) handlePreviewExam(previewData.id || activeExamIdForManual); 
+              fetchPeriods(); 
+          }); 
+      }
+  };
+
+  const handleCreatePeriod = () => { 
+      if(!newPeriodName)return; 
+      apiAction(`${API_URL}/admin/periods`, 'POST', { 
+          name: newPeriodName, 
+          allowed_usernames: selectedWhitelist.join(',')||null, 
+          is_random: isRandom, 
+          is_flexible: isFlexible, 
+          exam_type: examType 
+      }, ()=>{setNewPeriodName(''); setSelectedWhitelist([]); fetchData();}); 
+  };
+
   const handleDeletePeriod = (id) => { if(window.confirm("Hapus?")) apiAction(`${API_URL}/admin/periods/${id}`, 'DELETE'); };
   const togglePeriodActive = (id, s) => apiAction(`${API_URL}/admin/periods/${id}/toggle`, 'POST', {is_active:!s});
   const togglePeriodSubmit = (id, s) => apiAction(`${API_URL}/admin/periods/${id}/toggle-submit`, 'POST', {is_active:!s});
@@ -96,19 +114,6 @@ const AdminDashboard = ({ onLogout }) => {
   const handleAddMajor = () => { apiAction(`${API_URL}/majors`, 'POST', newMajor, ()=>{alert("Jurusan Added");fetchMajors();}); };
   const handleDeleteMajor = (id) => { apiAction(`${API_URL}/majors/${id}`, 'DELETE', {}, fetchMajors); };
   const handleBulkUploadMajors = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/majors/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchMajors();}) };
-
-  const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}); };
-  
-  // NOTE: handleDeleteQuestion depends on handlePreviewExam, so it must come after
-  const handleDeleteQuestion = (qid) => { 
-      if(window.confirm("Hapus soal ini?")) {
-          fetch(`${API_URL}/admin/questions/${qid}`, { method: 'DELETE' })
-          .then(() => { 
-              if (previewData) handlePreviewExam(previewData.id || activeExamIdForManual); 
-              fetchPeriods(); 
-          }); 
-      }
-  };
 
   const handleUploadQuestion = (eid, f) => { const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchPeriods();}); };
 
@@ -123,6 +128,7 @@ const AdminDashboard = ({ onLogout }) => {
   
   const handleDownloadExcel = () => window.open(`${API_URL}/admin/recap/download?period_id=${selectedRecapPeriod}`, '_blank');
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
+  
   const handleShowAnalysis = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/analysis`).then(r => r.json()).then(d => { setAnalysisData(d); setActiveAnalysisId(eid); setShowAnalysis(true); }); };
   const handleDownloadAnalysisExcel = () => { if (activeAnalysisId) window.open(`${API_URL}/admin/exams/${activeAnalysisId}/analysis/download`, '_blank'); };
   const handleResetResult = (uid, eid) => { if(window.confirm("Reset?")) apiAction(`${API_URL}/admin/reset-result`, 'POST', {user_id:uid, exam_id:eid}, fetchRecap); };
@@ -136,11 +142,13 @@ const AdminDashboard = ({ onLogout }) => {
   };
 
   const toggleUserWhitelist = (u) => { setSelectedWhitelist(selectedWhitelist.includes(u) ? selectedWhitelist.filter(x=>x!==u) : [...selectedWhitelist, u]); };
+  
+  // Perbaikan: Fungsi ini dipanggil di tombol Akses
   const openEditAccess = (p) => { setEditingPeriodId(p.id); setEditAccessUsers(p.allowed_usernames ? p.allowed_usernames.split(',') : []); setShowEditAccessModal(true); };
+  
   const toggleEditAccessUser = (u) => { setEditAccessUsers(editAccessUsers.includes(u) ? editAccessUsers.filter(x=>x!==u) : [...editAccessUsers, u]); };
   const saveEditAccess = () => { apiAction(`${API_URL}/admin/periods/${editingPeriodId}/users`, 'PUT', {allowed_usernames:editAccessUsers.join(',')}, ()=>{alert("Saved");setShowEditAccessModal(false);fetchPeriods();}); };
 
-  // Manual Input Logic
   const openManualInput = (eid) => { setActiveExamIdForManual(eid); setManualQ({text:'',type:'multiple_choice',difficulty:1.0,reading_material:'',explanation:'',label_true:'Benar',label_false:'Salah',options:[{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false},{label:'',is_correct:false}]}); setShowManualInput(true); };
   const handleOptionChange = (i, f, v) => { const o=[...manualQ.options]; o[i][f]=v; if(manualQ.type==='multiple_choice'&&f==='is_correct'&&v) o.forEach((x,idx)=>{if(idx!==i)x.is_correct=false}); setManualQ({...manualQ,options:o}); };
   const addOption = () => setManualQ({...manualQ, options: [...manualQ.options, {label:'', is_correct:false}]});
@@ -236,8 +244,10 @@ const AdminDashboard = ({ onLogout }) => {
                                                 <div className="text-xs text-slate-500 flex items-center gap-2"><Clock size={12}/> {e.duration}m <span className="bg-slate-100 px-1.5 rounded">{e.q_count} Soal</span></div>
                                             </div>
                                             <div className="flex gap-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button onClick={()=>openEditAccess(p)} className="flex-1 md:flex-none justify-center px-3 py-1 bg-gray-100 text-gray-700 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-gray-200"><Key size={12}/> Akses</button>
                                                 <button onClick={()=>openManualInput(e.id)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-indigo-700 shadow-sm"><PenTool size={12}/> Editor</button>
                                                 <button onClick={()=>handlePreviewExam(e.id)} className="bg-white border text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-50">Preview</button>
+                                                <button onClick={()=>handleShowAnalysis(e.id)} className="bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><PieChart size={12}/> Analisis</button>
                                                 <label className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-700 cursor-pointer flex items-center gap-1"><Upload size={12}/> Excel <input type="file" hidden onChange={ev=>handleUploadQuestion(e.id,ev.target.files[0])}/></label>
                                             </div>
                                         </div>
@@ -250,7 +260,7 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
-        {/* MODAL INPUT SOAL (EDITOR) */}
+        {/* MODAL INPUT SOAL */}
         {showManualInput && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">
@@ -263,7 +273,6 @@ const AdminDashboard = ({ onLogout }) => {
                             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Tipe Soal</label><select className="w-full p-3 bg-slate-50 border rounded-lg font-medium" value={manualQ.type} onChange={e=>setManualQ({...manualQ, type:e.target.value})}><option value="multiple_choice">Pilihan Ganda (1 Jawaban)</option><option value="complex">Pilihan Ganda Kompleks</option><option value="table_boolean">Tabel Benar/Salah</option><option value="short_answer">Isian Singkat</option></select></div>
                             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Tingkat Kesulitan (1.0 - 2.0)</label><input type="number" step="0.1" className="w-full p-3 bg-slate-50 border rounded-lg font-medium" value={manualQ.difficulty} onChange={e=>setManualQ({...manualQ, difficulty:parseFloat(e.target.value)})}/></div>
                         </div>
-
                         <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
                             <label className="flex items-center gap-2 text-sm font-bold text-slate-700 mb-3"><BookOpen size={16} className="text-amber-500"/> Wacana / Bacaan (Opsional)</label>
                             <textarea className="w-full h-40 p-4 bg-amber-50/50 border border-amber-100 rounded-lg text-sm leading-relaxed focus:ring-2 focus:ring-amber-200 outline-none" placeholder="Masukkan teks bacaan di sini..." value={manualQ.reading_material} onChange={e=>setManualQ({...manualQ, reading_material:e.target.value})}/>
@@ -273,7 +282,6 @@ const AdminDashboard = ({ onLogout }) => {
                             <textarea className="w-full h-40 p-4 bg-indigo-50/50 border border-indigo-100 rounded-lg text-sm leading-relaxed focus:ring-2 focus:ring-indigo-200 outline-none" placeholder="Tulis pertanyaan... Gunakan $ rumus $ untuk Matematika." value={manualQ.text} onChange={e=>setManualQ({...manualQ, text:e.target.value})}/>
                             <div className="mt-2 text-xs text-slate-400 bg-slate-50 p-2 rounded border"><strong>Preview:</strong> {renderText(manualQ.text||"...")}</div>
                         </div>
-
                         <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
                             <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Grid size={18}/> Jawaban</h4>
                             {manualQ.type === 'table_boolean' ? (
@@ -291,7 +299,6 @@ const AdminDashboard = ({ onLogout }) => {
                                 </div>
                             )}
                         </div>
-
                         <div className="p-6 bg-emerald-50/50 rounded-xl border border-emerald-100">
                             <label className="flex items-center gap-2 text-sm font-bold text-emerald-800 mb-3"><BookOpen size={16}/> Pembahasan Lengkap</label>
                             <textarea className="w-full h-32 p-4 bg-white border border-emerald-200 rounded-lg text-sm leading-relaxed outline-none focus:ring-2 focus:ring-emerald-300" placeholder="Jelaskan kenapa jawaban tersebut benar..." value={manualQ.explanation} onChange={e=>setManualQ({...manualQ, explanation:e.target.value})}/>
@@ -320,17 +327,62 @@ const AdminDashboard = ({ onLogout }) => {
                                 <div className="font-bold text-indigo-900 mb-3">No. {i+1} <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[10px] ml-2 uppercase">{q.type}</span></div>
                                 {q.reading_material && <div className="p-4 bg-amber-50 rounded-lg border-l-4 border-amber-300 text-sm mb-4 leading-relaxed italic text-slate-700">{renderText(q.reading_material)}</div>}
                                 <div className="text-lg mb-4 text-slate-800">{renderText(q.text)}</div>
-                                <div className="ml-4 space-y-2">
-                                    {q.options.map((o,idx)=>(
-                                        <div key={idx} className={`p-2 rounded flex gap-2 ${o.is_correct?'bg-emerald-50 border border-emerald-100 font-semibold text-emerald-800':''}`}>
-                                            <span className="w-6 text-center opacity-50">{String.fromCharCode(65+idx)}</span> {renderText(o.label)} {o.is_correct&&<CheckCircle size={16} className="text-emerald-600"/>}
-                                        </div>
-                                    ))}
-                                </div>
+                                
+                                {q.type === 'table_boolean' ? (
+                                    <table className="w-full text-sm border mt-2">
+                                        <thead><tr className="bg-slate-50"><th>Pernyataan</th><th>{q.label_true}</th><th>{q.label_false}</th></tr></thead>
+                                        <tbody>{q.options.map(o=><tr key={o.id} className="border-t"><td className="p-2">{renderText(o.label)}</td><td className="text-center">{o.is_correct?'✓':''}</td><td className="text-center">{!o.is_correct?'✓':''}</td></tr>)}</tbody>
+                                    </table>
+                                ) : (
+                                    <div className="ml-4 space-y-2">
+                                        {q.options.map((o,idx)=>(
+                                            <div key={idx} className={`p-2 rounded flex gap-2 ${o.is_correct?'bg-emerald-50 border border-emerald-100 font-semibold text-emerald-800':''}`}>
+                                                <span className="w-6 text-center opacity-50">{String.fromCharCode(65+idx)}</span> {renderText(o.label)} {o.is_correct&&<CheckCircle size={16} className="text-emerald-600"/>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                                 {q.explanation && <div className="mt-4 p-4 bg-blue-50 text-blue-900 rounded-lg text-sm"><strong>Pembahasan:</strong> {renderText(q.explanation)}</div>}
                             </div>
                         ))}
                     </div>
+                </div>
+            </div>
+        )}
+
+        {showAnalysis && analysisData && (
+             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+             <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col">
+                 <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-xl font-bold">Analisis</h3></div><div className="flex items-center gap-2"><button onClick={handleDownloadAnalysisExcel} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2"><Download size={14}/> Excel</button><button onClick={()=>setShowAnalysis(false)} className="bg-gray-200 p-1.5 rounded hover:bg-gray-300"><X size={18}/></button></div></div>
+                 <div className="flex-1 overflow-y-auto p-6"><div className="overflow-x-auto"><table className="w-full text-sm text-left border rounded-lg"><thead className="bg-indigo-50 text-indigo-900 font-bold"><tr><th className="p-3 border-b">No</th><th className="p-3 border-b">Soal</th><th className="p-3 border-b text-center">Diff</th><th className="p-3 border-b text-center">Benar</th><th className="p-3 border-b text-center">%</th></tr></thead><tbody>{analysisData.stats.map((item, idx) => (<tr key={item.id} className="hover:bg-gray-50 border-b"><td className="p-3 text-center">{idx + 1}</td><td className="p-3 text-gray-700 min-w-[200px]">{renderText(item.text)}</td><td className="p-3 text-center text-blue-600">{item.difficulty}</td><td className="p-3 text-center text-green-600">{item.correct}/{item.attempts}</td><td className="p-3 text-center">{item.percentage}%</td></tr>))}</tbody></table></div></div>
+             </div></div>
+        )}
+
+        {showEditAccessModal && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">
+                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><h3 className="font-bold">Edit Akses</h3><button onClick={()=>setShowEditAccessModal(false)}><X/></button></div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-2">{users.filter(u=>u.role==='student').map(u=>(<label key={u.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 border rounded cursor-pointer"><input type="checkbox" checked={editAccessUsers.includes(u.username)} onChange={()=>toggleEditAccessUser(u.username)}/><div><div className="font-bold text-sm">{u.full_name}</div><div className="text-xs text-gray-400">{u.username}</div></div></label>))}</div>
+                    <div className="p-4 border-t text-right"><button onClick={saveEditAccess} className="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-bold">Simpan</button></div>
+                </div>
+            </div>
+        )}
+
+        {showDetailModal && selectedStudentDetail && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col h-[70vh]">
+                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-lg font-bold text-indigo-900">Rincian</h3><p className="text-sm text-gray-500">{selectedStudentDetail.full_name}</p></div><button onClick={()=>setShowDetailModal(false)}><X/></button></div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4">{EXAM_ORDER.map(code => {const wrongList = selectedStudentDetail.details ? selectedStudentDetail.details[code] : null; return (<div key={code} className="border rounded-lg p-4 bg-gray-50"><div className="flex justify-between items-center mb-2"><span className="font-bold text-indigo-800">{code}</span>{wrongList ? (<span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded font-bold">Salah {wrongList.split(',').length}</span>) : (<span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded font-bold">Benar Semua</span>)}</div><div className="text-sm text-gray-700">{wrongList ? (<div><span className="font-bold text-red-600 mr-2">No Salah:</span><span className="font-mono tracking-widest">{wrongList.replace(/,/g, ', ')}</span></div>) : <span className="italic text-gray-400">-</span>}</div></div>);})}</div>
+                </div>
+            </div>
+        )}
+
+        {showUserModal && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">
+                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><h3 className="font-bold">Pilih Peserta</h3><button onClick={()=>setShowUserModal(false)}><X/></button></div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-2">{users.filter(u=>u.role==='student').map(u=>(<label key={u.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 border rounded cursor-pointer"><input type="checkbox" checked={selectedWhitelist.includes(u.username)} onChange={()=>toggleUserWhitelist(u.username)}/><div><div className="font-bold text-sm">{u.full_name}</div><div className="text-xs text-gray-400">{u.username}</div></div></label>))}</div>
+                    <div className="p-4 border-t text-right"><button onClick={()=>setShowUserModal(false)} className="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-bold">Selesai</button></div>
                 </div>
             </div>
         )}
@@ -366,43 +418,6 @@ const AdminDashboard = ({ onLogout }) => {
             <td className="p-3"><div className="flex items-center gap-2"><button onClick={()=>handleViewStudentDetail(r)} className="text-blue-600 hover:text-blue-800 bg-blue-50 p-1 rounded transition" title="Lihat Rincian Jawaban Salah"><Info size={16}/></button><div><div className="font-bold text-gray-800">{r.full_name}</div><div className="text-xs text-gray-400 font-normal">{r.username}</div></div></div></td>
             {EXAM_ORDER.map(k=><td key={k} className="p-2 text-center text-gray-600">{r[k]||0}</td>)}
             <td className="p-3 text-center font-bold text-blue-700 bg-blue-50">{r.average}</td><td className="p-3">{getStatusBadge(r.status)}</td><td className="p-3 text-center">{r.completed_exams.map(e=><button key={e.exam_id} onClick={()=>handleResetResult(r.id,e.exam_id)} className="px-2 py-1 bg-red-100 text-red-600 text-[10px] rounded border border-red-200 m-0.5 hover:bg-red-600 hover:text-white">{e.code}×</button>)}</td></tr>))}</tbody></table></div></div>)}
-
-        {showEditAccessModal && (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">
-                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><h3 className="font-bold">Edit Akses</h3><button onClick={()=>setShowEditAccessModal(false)}><X/></button></div>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-2">{users.filter(u=>u.role==='student').map(u=>(<label key={u.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 border rounded cursor-pointer"><input type="checkbox" checked={editAccessUsers.includes(u.username)} onChange={()=>toggleEditAccessUser(u.username)}/><div><div className="font-bold text-sm">{u.full_name}</div><div className="text-xs text-gray-400">{u.username}</div></div></label>))}</div>
-                    <div className="p-4 border-t text-right"><button onClick={saveEditAccess} className="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-bold">Simpan</button></div>
-                </div>
-            </div>
-        )}
-
-        {showDetailModal && selectedStudentDetail && (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col h-[70vh]">
-                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-lg font-bold text-indigo-900">Rincian</h3><p className="text-sm text-gray-500">{selectedStudentDetail.full_name}</p></div><button onClick={()=>setShowDetailModal(false)}><X/></button></div>
-                    <div className="flex-1 overflow-y-auto p-6 space-y-4">{EXAM_ORDER.map(code => {const wrongList = selectedStudentDetail.details ? selectedStudentDetail.details[code] : null; return (<div key={code} className="border rounded-lg p-4 bg-gray-50"><div className="flex justify-between items-center mb-2"><span className="font-bold text-indigo-800">{code}</span>{wrongList ? (<span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded font-bold">Salah {wrongList.split(',').length}</span>) : (<span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded font-bold">Benar Semua</span>)}</div><div className="text-sm text-gray-700">{wrongList ? (<div><span className="font-bold text-red-600 mr-2">No Salah:</span><span className="font-mono tracking-widest">{wrongList.replace(/,/g, ', ')}</span></div>) : <span className="italic text-gray-400">-</span>}</div></div>);})}</div>
-                </div>
-            </div>
-        )}
-
-        {showUserModal && (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[70vh]">
-                    <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><h3 className="font-bold">Pilih Peserta</h3><button onClick={()=>setShowUserModal(false)}><X/></button></div>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-2">{users.filter(u=>u.role==='student').map(u=>(<label key={u.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 border rounded cursor-pointer"><input type="checkbox" checked={selectedWhitelist.includes(u.username)} onChange={()=>toggleUserWhitelist(u.username)}/><div><div className="font-bold text-sm">{u.full_name}</div><div className="text-xs text-gray-400">{u.username}</div></div></label>))}</div>
-                    <div className="p-4 border-t text-right"><button onClick={()=>setShowUserModal(false)} className="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-bold">Selesai</button></div>
-                </div>
-            </div>
-        )}
-
-        {showAnalysis && analysisData && (
-             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-             <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col">
-                 <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-xl font-bold">Analisis</h3></div><div className="flex items-center gap-2"><button onClick={handleDownloadAnalysisExcel} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2"><Download size={14}/> Excel</button><button onClick={()=>setShowAnalysis(false)} className="bg-gray-200 p-1.5 rounded hover:bg-gray-300"><X size={18}/></button></div></div>
-                 <div className="flex-1 overflow-y-auto p-6"><div className="overflow-x-auto"><table className="w-full text-sm text-left border rounded-lg"><thead className="bg-indigo-50 text-indigo-900 font-bold"><tr><th className="p-3 border-b">No</th><th className="p-3 border-b">Soal</th><th className="p-3 border-b text-center">Diff</th><th className="p-3 border-b text-center">Benar</th><th className="p-3 border-b text-center">%</th></tr></thead><tbody>{analysisData.stats.map((item, idx) => (<tr key={item.id} className="hover:bg-gray-50 border-b"><td className="p-3 text-center">{idx + 1}</td><td className="p-3 text-gray-700 min-w-[200px]">{renderText(item.text)}</td><td className="p-3 text-center text-blue-600">{item.difficulty}</td><td className="p-3 text-center text-green-600">{item.correct}/{item.attempts}</td><td className="p-3 text-center">{item.percentage}%</td></tr>))}</tbody></table></div></div>
-             </div></div>
-        )}
       </main>
     </div>
   );

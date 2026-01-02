@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { API_URL } from './config';
-import { LogIn, User, Lock, Loader2, AlertCircle, ArrowRight, BookOpen } from 'lucide-react';
+import { User, Lock, Loader2, AlertCircle, ArrowRight, BookOpen } from 'lucide-react';
 
 const Login = ({ onLogin }) => {
   const [username, setUsername] = useState('');
@@ -29,7 +29,6 @@ const Login = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen flex bg-slate-50 font-sans">
-      {/* BAGIAN KIRI: BRANDING */}
       <div className="hidden lg:flex w-1/2 bg-indigo-900 items-center justify-center relative overflow-hidden">
         <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
         <div className="relative z-10 text-white p-12 max-w-lg">
@@ -38,23 +37,11 @@ const Login = ({ onLogin }) => {
           </div>
           <h1 className="text-5xl font-extrabold mb-6 leading-tight">Simulasi CBT <br/><span className="text-indigo-300">SNBT & CPNS</span></h1>
           <p className="text-indigo-200 text-lg leading-relaxed">
-            Platform latihan ujian berbasis komputer terlengkap dengan sistem penilaian IRT (Item Response Theory) dan analisis mendalam.
+            Platform latihan ujian berbasis komputer terlengkap dengan sistem penilaian IRT dan analisis mendalam.
           </p>
-          <div className="mt-8 flex gap-4">
-            <div className="flex flex-col">
-                <span className="font-bold text-3xl">10k+</span>
-                <span className="text-sm text-indigo-300">Soal Latihan</span>
-            </div>
-            <div className="w-px bg-indigo-700 h-12"></div>
-            <div className="flex flex-col">
-                <span className="font-bold text-3xl">99%</span>
-                <span className="text-sm text-indigo-300">Akurasi Sistem</span>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* BAGIAN KANAN: FORM */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
         <div className="w-full max-w-md bg-white p-10 rounded-3xl shadow-xl border border-slate-100">
           <div className="mb-10">
@@ -91,7 +78,7 @@ const Login = ({ onLogin }) => {
           </form>
           
           <div className="mt-8 text-center">
-            <p className="text-sm text-slate-400">Versi Aplikasi v4.0.0 PRO</p>
+            <p className="text-sm text-slate-400">Versi Aplikasi v4.0.1 Stable</p>
           </div>
         </div>
       </div>
