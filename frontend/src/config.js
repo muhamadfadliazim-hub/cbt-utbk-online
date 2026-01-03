@@ -1,6 +1,6 @@
 // frontend/src/config.js
 
-// URL Backend Railway (Server Python)
+// INI ADALAH URL BACKEND (MESIN API) YANG BENAR
 export const API_URL = "https://cbt-utbk-online-production.up.railway.app";
 
-// Pastikan tidak ada tanda / di akhir link
+console.log("Connecting to Backend Engine:", API_URL);
