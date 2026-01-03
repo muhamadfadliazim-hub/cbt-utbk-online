@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
-    CheckCircle, LogOut, BookOpen, X, ChevronLeft, ChevronRight, 
+    CheckCircle, LogOut, BookOpen, ChevronLeft, ChevronRight, 
     LayoutGrid, Award, Zap, Target, Home, Video, FileText, Play, Clock, Link 
 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
@@ -155,7 +155,6 @@ const StudentDashboard = ({ user, onLogout }) => {
                                   </div>
                               </div>
                           ))}
-                          {periods.length === 0 && <div className="col-span-full py-20 text-center text-slate-400 font-black border-4 border-dashed rounded-[3rem]">BELUM ADA UJIAN TERJADWAL</div>}
                       </div>
                   </div>
               </div>
@@ -169,11 +168,11 @@ const StudentDashboard = ({ user, onLogout }) => {
                   <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
                       {materials.map(m => (
                           <div key={m.id} onClick={() => window.open(m.content_url, '_blank')} className="bg-white p-8 rounded-[2.5rem] shadow-xl hover:-translate-y-2 transition-all cursor-pointer group flex flex-col h-full border border-slate-50">
-                              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-8 transition-all group-hover:rotate-6 ${m.type === 'video' ? 'bg-rose-50 text-rose-500' : 'bg-blue-50 text-blue-600'}`}>
+                              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-8 transition-all group-hover:rotate-6 ${m.type === 'video' ? 'bg-rose-50 text-red-500' : 'bg-blue-50 text-blue-600'}`}>
                                   {m.type === 'video' ? <Video size={32}/> : <FileText size={32}/>}
                               </div>
                               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">{m.category}</span>
-                              <h4 className="text-xl font-black text-slate-800 leading-tight group-hover:text-blue-600 transition-colors flex-1 mb-6">{m.title}</h4>
+                              <h4 className="font-black text-slate-800 leading-tight group-hover:text-blue-600 flex-1 mb-6">{m.title}</h4>
                               <div className="flex items-center justify-between pt-6 border-t border-slate-50">
                                   <span className="text-[10px] font-black text-blue-600 tracking-tighter uppercase">Lihat Materi</span>
                                   <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center group-hover:translate-x-1 transition-transform">
@@ -182,13 +181,11 @@ const StudentDashboard = ({ user, onLogout }) => {
                               </div>
                           </div>
                       ))}
-                      {materials.length === 0 && <div className="col-span-full py-24 text-center text-slate-400 font-black border-4 border-dashed rounded-[3rem]">MODUL BELUM TERSEDIA</div>}
                   </div>
               </div>
           )}
       </div>
 
-      {/* Navigasi Mobile Bawah */}
       <div className="md:hidden fixed bottom-0 w-full bg-white/90 backdrop-blur-2xl border-t px-10 py-5 flex justify-between items-center z-40 pb-10 shadow-[0_-20px_50px_rgba(0,0,0,0.1)] rounded-t-[2.5rem]">
           <button onClick={() => setTab('home')} className={`transition-all ${tab === 'home' ? 'text-blue-600 scale-125' : 'text-slate-300'}`}><Home size={28} strokeWidth={3}/></button>
           <button onClick={() => setTab('lms')} className={`transition-all ${tab === 'lms' ? 'text-blue-600 scale-125' : 'text-slate-300'}`}><BookOpen size={28} strokeWidth={3}/></button>
@@ -203,4 +200,4 @@ const StudentDashboard = ({ user, onLogout }) => {
   );
 };
 
-export default StudentDashboard;
+export default StudentDashboard; 
