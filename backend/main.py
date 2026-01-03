@@ -128,13 +128,20 @@ def get_periods(db: Session = Depends(get_db)):
 def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
     p = models.ExamPeriod(name=d.name, allowed_usernames=d.allowed_usernames, is_random=d.is_random, is_flexible=d.is_flexible, exam_type=d.exam_type)
     db.add(p); db.commit(); db.refresh(p)
+    
+    # --- STRUKTUR UJIAN UPDATE (TKA SD-SMA) ---
     struct = []
     if d.exam_type in ["CPNS","KEDINASAN"]: struct=[("TWK",30),("TIU",30),("TKP",40)]
     elif d.exam_type == "TNI_POLRI": struct=[("PSI",60),("AKD",90),("KEP",45)]
     elif d.exam_type == "TOEFL": struct=[("LIS",40),("STR",25),("READ",55)]
     elif d.exam_type == "IELTS": struct=[("LIS",30),("READ",60),("WRIT",60)]
+    elif d.exam_type == "TKA_SD": struct=[("BIN",30),("MAT",30),("IPA",30)]
+    elif d.exam_type == "TKA_SMP": struct=[("BIN",30),("BIG",30),("MAT",40),("IPA",40)]
+    elif d.exam_type == "TKA_SMA_IPA": struct=[("MAT",40),("FIS",40),("KIM",40),("BIO",40),("BIN",30),("BIG",30)]
+    elif d.exam_type == "TKA_SMA_IPS": struct=[("MAT",40),("EKO",40),("SOS",40),("GEO",40),("BIN",30),("BIG",30)]
     elif d.exam_type in ["UMUM","MANDIRI"]: struct=[("UMUM",60)]
-    else: struct=[("PU",30),("PBM",25),("PPU",15),("PK",20),("LBI",45),("LBE",20),("PM",45)]
+    else: struct=[("PU",30),("PBM",25),("PPU",15),("PK",20),("LBI",45),("LBE",20),("PM",45)] # UTBK
+    
     for c, dur in struct: db.add(models.Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", description=d.exam_type, duration=dur))
     db.commit(); return {"message": "OK"}
 
@@ -296,6 +303,12 @@ async def uq(eid:str, file: UploadFile=File(...), db:Session=Depends(get_db)):
             c+=1
         db.commit(); return {"message": f"{c} OK"}
     except Exception as e: return {"message": f"Error: {str(e)}"}
+
+@app.get("/admin/download-template")
+def dl_temp():
+    df = pd.DataFrame([{"Soal":"Contoh", "OpsiA":"A", "OpsiB":"B", "OpsiC":"C", "OpsiD":"D", "OpsiE":"E", "Kunci":"A", "Kesulitan":1, "Gambar":"", "Audio":""}])
+    out=io.BytesIO(); df.to_excel(out, index=False); out.seek(0)
+    return StreamingResponse(out, headers={'Content-Disposition': 'attachment; filename="template.xlsx"'}, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @app.get("/init-admin")
 def ini():
