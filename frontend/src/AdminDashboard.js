@@ -15,12 +15,28 @@ const AdminDashboard = ({ onLogout }) => {
     const [newUser, setNewUser] = useState({ username: '', full_name: '', password: '', role: 'student' });
     const [newPeriod, setNewPeriod] = useState({ name: '', exam_type: 'UTBK' });
 
-    const refreshData = () => {
-        fetch(`${API_URL}/admin/users`).then(r => r.json()).then(data => setUsers(Array.isArray(data) ? data : []));
-        fetch(`${API_URL}/admin/periods`).then(r => r.json()).then(data => setPeriods(Array.isArray(data) ? data : []));
-    };
+const refreshData = () => {
+    fetch(`${API_URL}/admin/users`)
+        .then(r => r.json())
+        .then(data => {
+            // Pengaman: Jika data bukan Array, set ke Array kosong []
+            setUsers(Array.isArray(data) ? data : []);
+        })
+        .catch(err => {
+            console.error("Error users:", err);
+            setUsers([]); // Reset ke kosong jika error
+        });
 
-    useEffect(() => { refreshData(); }, [activeTab]);
+    fetch(`${API_URL}/admin/periods`)
+        .then(r => r.json())
+        .then(data => {
+            setPeriods(Array.isArray(data) ? data : []);
+        })
+        .catch(err => {
+            console.error("Error periods:", err);
+            setPeriods([]);
+        });
+};
 
     const handleBulkDelete = () => {
         if (window.confirm("PERINGATAN: Hapus seluruh peserta? Tindakan ini permanen!")) {

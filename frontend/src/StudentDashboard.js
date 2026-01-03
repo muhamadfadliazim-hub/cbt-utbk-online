@@ -25,10 +25,21 @@ const StudentDashboard = ({ user, onLogout }) => {
     );
   }, []);
 
-  useEffect(() => {
-    fetch(`${API_URL}/student/periods?username=${user.username}`).then(r => r.json()).then(setPeriods);
-    fetch(`${API_URL}/materials`).then(r => r.json()).then(setMaterials);
-  }, [user.username]);
+useEffect(() => {
+    fetch(`${API_URL}/student/periods?username=${user.username}`)
+        .then(r => r.json())
+        .then(data => {
+            setPeriods(Array.isArray(data) ? data : []);
+        })
+        .catch(() => setPeriods([]));
+
+    fetch(`${API_URL}/materials`)
+        .then(r => r.json())
+        .then(data => {
+            setMaterials(Array.isArray(data) ? data : []);
+        })
+        .catch(() => setMaterials([]));
+}, [user.username]);
 
   useEffect(() => {
     if (timeLeft > 0 && activeExam) {
