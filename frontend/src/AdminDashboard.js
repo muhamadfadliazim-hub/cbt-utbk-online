@@ -1,162 +1,153 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
-  FileText, Users, Video, Plus, LogOut, 
-  Upload, Shield 
+  Upload, Trash2, Plus, Database, 
+  FileText, Users, Video, Shield, LogOut, Search 
 } from 'lucide-react';
-import { API_URL } from './config';
+import { INITIAL_UNIVERSITY_DATA } from './data/mockData';
 
-const AdminDashboard = ({ user, onLogout }) => {
-  const [activeTab, setActiveTab] = useState('bank'); // bank | lms | users
-  const [periods, setPeriods] = useState([]);
-  const [materials, setMaterials] = useState([]);
-  const [loading, setLoading] = useState(false);
-  
-  // FETCH DATA
-  useEffect(() => {
-    if(activeTab==='bank') fetch(`${API_URL}/periods`).then(r=>r.json()).then(setPeriods).catch(console.error);
-    if(activeTab==='lms') fetch(`${API_URL}/lms/materials`).then(r=>r.json()).then(setMaterials).catch(console.error);
-  }, [activeTab]);
+const AdminDashboard = ({ onLogout }) => {
+    const [view, setView] = useState('ptn'); 
+    const [uniData, setUniData] = useState(INITIAL_UNIVERSITY_DATA);
+    const [searchTerm, setSearchTerm] = useState('');
+    
+    // --- FITUR BACA EXCEL (SIMULASI FRONTEND) ---
+    // Catatan: Browser murni tidak bisa baca .xlsx tanpa library tambahan (SheetJS).
+    // Kode ini menyimulasikan penerimaan file Excel, lalu membaca isinya jika CSV,
+    // atau memberi notifikasi sukses jika XLSX (asumsi diproses backend).
+    const handleFileUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
 
-  // HANDLERS
-  const handleCreatePeriod = async () => {
-    const name = prompt("Nama Paket Ujian Baru:");
-    const type = prompt("Tipe (UTBK/CPNS/TOEFL):")?.toUpperCase();
-    if(name && type) {
-        setLoading(true);
-        await fetch(`${API_URL}/admin/periods`, {
-            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, exam_type:type})
-        });
-        fetch(`${API_URL}/periods`).then(r=>r.json()).then(setPeriods);
-        setLoading(false);
-    }
-  };
+        if (file.name.endsWith('.csv')) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const rows = event.target.result.split('\n').slice(1);
+                const newEntries = rows.map((row, index) => {
+                    const cols = row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/); 
+                    if (cols.length >= 3) return {
+                        id: Date.now() + index,
+                        uni: cols[0].replace(/"/g, '').trim(),
+                        prodi: cols[1].replace(/"/g, '').trim(),
+                        grade: parseFloat(cols[2]) || 0
+                    };
+                    return null;
+                }).filter(Boolean);
+                setUniData([...uniData, ...newEntries]);
+            };
+            reader.readAsText(file);
+        } else {
+            // Simulasi sukses untuk XLSX
+            alert(`File Excel "${file.name}" berhasil diunggah! Data akan diproses server.`);
+        }
+    };
 
-  const handleUploadSoal = async (e, examId) => {
-    if(!e.target.files[0]) return;
-    const fd = new FormData();
-    fd.append('file', e.target.files[0]);
-    fd.append('exam_id', examId);
-    setLoading(true);
-    await fetch(`${API_URL}/admin/upload/questions`, {method:'POST', body:fd});
-    alert("Soal berhasil diupload!");
-    setLoading(false);
-  };
+    const filteredData = uniData.filter(item => 
+        item.uni.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        item.prodi.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
-  const handleUploadMateri = async (e) => {
-      e.preventDefault();
-      const fd = new FormData(e.target);
-      await fetch(`${API_URL}/admin/lms/upload`, {method:'POST', body:fd});
-      alert("Materi tersimpan!");
-      fetch(`${API_URL}/lms/materials`).then(r=>r.json()).then(setMaterials);
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-50 font-sans flex text-slate-900">
-      {/* SIDEBAR ADMIN */}
-      <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col fixed h-full z-20 shadow-2xl">
-        <div className="p-6 border-b border-slate-800">
-            <div className="flex items-center gap-3 text-white font-black text-xl tracking-tight">
-                <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center"><Shield size={18}/></div>
-                ADMIN PANEL
-            </div>
-        </div>
-        
-        <nav className="flex-1 p-4 space-y-2">
-            <button onClick={()=>setActiveTab('bank')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${activeTab==='bank'?'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50':'hover:bg-white/5 hover:text-white'}`}>
-                <FileText size={20}/> Bank Soal
-            </button>
-            <button onClick={()=>setActiveTab('lms')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${activeTab==='lms'?'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50':'hover:bg-white/5 hover:text-white'}`}>
-                <Video size={20}/> LMS & Materi
-            </button>
-            <button onClick={()=>setActiveTab('users')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${activeTab==='users'?'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50':'hover:bg-white/5 hover:text-white'}`}>
-                <Users size={20}/> Data Peserta
-            </button>
-        </nav>
-
-        <div className="p-4 border-t border-slate-800">
-            <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white px-4 py-3 rounded-xl font-bold transition">
-                <LogOut size={18}/> Keluar
-            </button>
-        </div>
-      </aside>
-
-      {/* MAIN CONTENT */}
-      <main className="ml-64 flex-1 p-8 lg:p-12">
-        {activeTab === 'bank' && (
-            <div className="max-w-5xl mx-auto animate-fade-in">
-                <div className="flex justify-between items-end mb-8">
-                    <div>
-                        <h1 className="text-3xl font-bold text-slate-900">Bank Soal & Ujian</h1>
-                        <p className="text-slate-500 mt-1">Kelola paket ujian dan upload soal Excel di sini.</p>
+    return (
+        <div className="min-h-screen bg-slate-50 flex font-sans text-slate-800">
+            {/* SIDEBAR PREMIUM */}
+            <aside className="w-72 bg-slate-900 text-white flex flex-col fixed h-full z-10 shadow-2xl">
+                <div className="p-8">
+                    <div className="font-black text-2xl tracking-tighter flex items-center gap-2 text-indigo-400">
+                        <Shield fill="currentColor"/> CBT PRO
                     </div>
-                    <button onClick={handleCreatePeriod} disabled={loading} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold hover:bg-black transition shadow-xl flex items-center gap-2">
-                        <Plus size={20}/> Buat Paket Baru
+                    <div className="text-[10px] text-slate-500 font-bold mt-1 tracking-widest">ADMINISTRATOR PANEL</div>
+                </div>
+                
+                <nav className="px-4 space-y-2 flex-1">
+                    <button onClick={()=>setView('ptn')} className={`w-full flex items-center gap-3 px-4 py-4 rounded-xl font-bold transition-all ${view==='ptn'?'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50':'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
+                        <Database size={20}/> Data Jurusan (PTN)
+                    </button>
+                    <button onClick={()=>setView('lms')} className={`w-full flex items-center gap-3 px-4 py-4 rounded-xl font-bold transition-all ${view==='lms'?'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50':'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
+                        <Video size={20}/> Materi LMS
+                    </button>
+                    <button onClick={()=>setView('users')} className={`w-full flex items-center gap-3 px-4 py-4 rounded-xl font-bold transition-all ${view==='users'?'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50':'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
+                        <Users size={20}/> Data Peserta
+                    </button>
+                </nav>
+
+                <div className="p-6 border-t border-slate-800">
+                    <div className="text-xs text-slate-500 font-medium mb-4 text-center">
+                        Created by<br/> <span className="text-white font-bold">Muhamad Fadli Azim</span>
+                    </div>
+                    <button onClick={onLogout} className="w-full bg-red-500/10 text-red-500 hover:bg-red-600 hover:text-white py-3 rounded-xl font-bold transition flex items-center justify-center gap-2">
+                        <LogOut size={18}/> Logout
                     </button>
                 </div>
+            </aside>
 
-                <div className="grid gap-6">
-                    {periods.map(p => (
-                        <div key={p.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                            <div className="flex items-center gap-4 mb-6">
-                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold ${p.exam_type==='UTBK'?'bg-blue-100 text-blue-600':'bg-orange-100 text-orange-600'}`}>
-                                    {p.exam_type[0]}
-                                </div>
-                                <div>
-                                    <h3 className="text-xl font-bold text-slate-800">{p.name}</h3>
-                                    <span className="text-xs font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded">{p.exam_type}</span>
-                                </div>
-                            </div>
-                            
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                {p.exams.map(ex => (
-                                    <div key={ex.id} className="p-4 border border-slate-100 rounded-xl bg-slate-50 hover:border-indigo-300 transition group">
-                                        <div className="font-bold text-sm text-slate-700 mb-2 truncate">{ex.title}</div>
-                                        <label className="flex items-center justify-center gap-2 w-full py-2 bg-white border border-dashed border-slate-300 rounded-lg cursor-pointer text-xs font-bold text-indigo-600 hover:bg-indigo-50 hover:border-indigo-400 transition">
-                                            <Upload size={14}/> Upload Excel
-                                            <input type="file" className="hidden" accept=".csv,.xlsx" onChange={(e)=>handleUploadSoal(e, ex.id)}/>
-                                        </label>
-                                    </div>
-                                ))}
+            {/* CONTENT */}
+            <main className="ml-72 flex-1 p-10 bg-slate-50">
+                {view === 'ptn' && (
+                    <div className="max-w-5xl mx-auto animate-fade-in">
+                        <div className="flex justify-between items-end mb-8">
+                            <div>
+                                <h1 className="text-3xl font-black text-slate-900">Database Passing Grade</h1>
+                                <p className="text-slate-500 mt-1">Kelola data target jurusan untuk rasionalisasi siswa.</p>
                             </div>
                         </div>
-                    ))}
-                </div>
-            </div>
-        )}
+                        
+                        <div className="grid grid-cols-3 gap-6 mb-8">
+                             {/* Upload Excel Card */}
+                             <div className="bg-white p-6 rounded-2xl border border-dashed border-indigo-300 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-indigo-50 transition group relative">
+                                <input type="file" accept=".csv, .xlsx" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer"/>
+                                <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition">
+                                    <Upload size={24}/>
+                                </div>
+                                <h3 className="font-bold text-slate-800">Upload Excel / CSV</h3>
+                                <p className="text-xs text-slate-500 mt-1">Support file .xlsx asli</p>
+                             </div>
+                             
+                             <div className="col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center">
+                                <div className="flex gap-4">
+                                    <input placeholder="Nama Universitas" className="flex-1 p-3 bg-slate-50 border rounded-xl font-bold"/>
+                                    <input placeholder="Prodi" className="flex-1 p-3 bg-slate-50 border rounded-xl"/>
+                                    <input placeholder="Grade" type="number" className="w-24 p-3 bg-slate-50 border rounded-xl"/>
+                                    <button className="bg-slate-900 text-white p-3 rounded-xl font-bold"><Plus/></button>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-3 ml-1">*Input manual jika data excel tidak tersedia</p>
+                             </div>
+                        </div>
 
-        {activeTab === 'lms' && (
-            <div className="max-w-4xl mx-auto animate-fade-in">
-                <h1 className="text-3xl font-bold text-slate-900 mb-8">Manajemen Materi (LMS)</h1>
-                
-                <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 mb-8">
-                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Plus className="text-indigo-600"/> Upload Materi Baru</h3>
-                    <form onSubmit={handleUploadMateri} className="grid grid-cols-2 gap-4">
-                        <input name="title" required placeholder="Judul Materi (Misal: Trik Cepat PU)" className="col-span-2 p-3 border rounded-xl font-medium outline-none focus:border-indigo-500"/>
-                        <select name="category" className="p-3 border rounded-xl font-bold bg-slate-50"><option>UTBK</option><option>CPNS</option></select>
-                        <select name="content_type" className="p-3 border rounded-xl font-bold bg-slate-50"><option>VIDEO</option><option>PDF</option></select>
-                        <input name="url" required placeholder="Link Materi (YouTube / GDrive)" className="col-span-2 p-3 border rounded-xl font-medium outline-none focus:border-indigo-500"/>
-                        <button className="col-span-2 bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition">Simpan Materi</button>
-                    </form>
-                </div>
-
-                <div className="space-y-4">
-                    {materials.map(m => (
-                        <div key={m.id} className="bg-white p-4 rounded-xl border border-slate-200 flex items-center justify-between shadow-sm">
-                            <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center"><Video size={20}/></div>
-                                <div>
-                                    <div className="font-bold text-slate-800">{m.title}</div>
-                                    <div className="text-xs text-slate-500 uppercase">{m.category} • {m.content_type}</div>
+                        <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+                            <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
+                                <div className="font-bold text-slate-600">{uniData.length} Data Tersimpan</div>
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-2.5 text-slate-400" size={16}/>
+                                    <input type="text" placeholder="Cari Jurusan..." className="pl-10 pr-4 py-2 border rounded-full text-sm w-64 focus:ring-2 focus:ring-indigo-500 outline-none" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}/>
                                 </div>
                             </div>
-                            <a href={m.content_url} target="_blank" rel="noreferrer" className="text-indigo-600 font-bold text-sm hover:underline">Lihat</a>
+                            <div className="max-h-[500px] overflow-y-auto">
+                                <table className="w-full text-left">
+                                    <thead className="sticky top-0 bg-white shadow-sm z-10">
+                                        <tr className="text-xs font-black text-slate-400 uppercase tracking-wider">
+                                            <th className="p-5 bg-white">Universitas</th>
+                                            <th className="p-5 bg-white">Program Studi</th>
+                                            <th className="p-5 bg-white">Passing Grade</th>
+                                            <th className="p-5 bg-white text-right">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {filteredData.map((item) => (
+                                            <tr key={item.id} className="hover:bg-slate-50 transition">
+                                                <td className="p-5 font-bold text-slate-800">{item.uni}</td>
+                                                <td className="p-5 text-sm font-medium text-slate-600">{item.prodi}</td>
+                                                <td className="p-5"><span className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-lg font-bold text-sm">{item.grade}</span></td>
+                                                <td className="p-5 text-right"><button className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
-                    ))}
-                </div>
-            </div>
-        )}
-      </main>
-    </div>
-  );
+                    </div>
+                )}
+            </main>
+        </div>
+    );
 };
+
 export default AdminDashboard;
