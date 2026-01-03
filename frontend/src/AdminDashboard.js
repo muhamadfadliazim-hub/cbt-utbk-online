@@ -29,24 +29,60 @@ const AdminDashboard = ({ onLogout }) => {
 
     useEffect(() => { refreshData(); }, [activeTab]);
 
+    // --- LOGIKA IMPOR EXCEL PESERTA ---
+    const handleBulkUser = (file) => {
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        fetch(`${API_URL}/admin/users/bulk`, { 
+            method: 'POST', 
+            body: formData 
+        })
+        .then(async (res) => {
+            if (res.ok) {
+                alert("Peserta Berhasil Diimpor dari Excel!");
+                refreshData();
+            } else {
+                alert("Gagal impor. Pastikan format Excel benar (username, password, full_name)");
+            }
+        })
+        .catch(err => console.error(err));
+    };
+
+    // --- LOGIKA TAMBAH USER MANUAL ---
     const handleAddUser = (e) => {
         e.preventDefault();
         fetch(`${API_URL}/admin/users`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newUser)
-        }).then(() => { setShowUserModal(false); refreshData(); });
+        }).then(() => { 
+            setShowUserModal(false); 
+            setNewUser({ username: '', full_name: '', password: '', role: 'student' });
+            refreshData(); 
+        });
     };
 
+    // --- LOGIKA BANK SOAL ---
     const handleAddPeriod = (e) => {
         e.preventDefault();
         const formData = new FormData();
         formData.append('name', newPeriod.name);
         formData.append('exam_type', newPeriod.exam_type);
         fetch(`${API_URL}/admin/periods`, { method: 'POST', body: formData }).then(() => {
-            setShowPeriodModal(false); refreshData();
+            setShowPeriodModal(false); 
+            setNewPeriod({ name: '', exam_type: 'UTBK' });
+            refreshData();
         });
     };
 
+    const handleUploadSoal = (eid, file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        fetch(`${API_URL}/admin/upload-questions/${eid}`, { method: 'POST', body: formData })
+            .then(() => { alert("Soal Berhasil Masuk!"); refreshData(); });
+    };
+
+    // --- LOGIKA LMS ---
     const handleAddLms = (e) => {
         e.preventDefault();
         const formData = new FormData();
@@ -55,15 +91,10 @@ const AdminDashboard = ({ onLogout }) => {
         formData.append('category', newLms.category);
         formData.append('url', newLms.url);
         fetch(`${API_URL}/materials`, { method: 'POST', body: formData }).then(() => {
-            setShowLmsModal(false); refreshData();
+            setShowLmsModal(false); 
+            setNewLms({ title: '', type: 'video', category: 'UTBK', url: '' });
+            refreshData();
         });
-    };
-
-    const handleUploadSoal = (eid, file) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        fetch(`${API_URL}/admin/upload-questions/${eid}`, { method: 'POST', body: formData })
-            .then(() => { alert("Upload Berhasil!"); refreshData(); });
     };
 
     const handlePreview = (eid) => {
@@ -92,12 +123,18 @@ const AdminDashboard = ({ onLogout }) => {
             {/* Main Content */}
             <div className="flex-1 p-12 overflow-y-auto">
                 <header className="flex justify-between items-center mb-12">
-                    <h1 className="text-4xl font-black capitalize tracking-tight">{activeTab}</h1>
+                    <h1 className="text-4xl font-black capitalize tracking-tight">{activeTab} Management</h1>
                     <div className="flex gap-4">
                         {activeTab === 'users' && (
-                            <button onClick={() => setShowUserModal(true)} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-xl hover:bg-indigo-700 transition-all transform active:scale-95">
-                                <Plus size={22}/> TAMBAH PESERTA
-                            </button>
+                            <>
+                                <label className="bg-emerald-600 text-white px-6 py-4 rounded-2xl font-black flex items-center gap-3 shadow-xl hover:bg-emerald-700 transition-all cursor-pointer transform active:scale-95">
+                                    <FileSpreadsheet size={22}/> IMPOR EXCEL
+                                    <input type="file" className="hidden" accept=".xlsx, .xls" onChange={(e) => handleBulkUser(e.target.files[0])} />
+                                </label>
+                                <button onClick={() => setShowUserModal(true)} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-xl hover:bg-indigo-700 transition-all transform active:scale-95">
+                                    <Plus size={22}/> TAMBAH MANUAL
+                                </button>
+                            </>
                         )}
                         {activeTab === 'exams' && (
                             <button onClick={() => setShowPeriodModal(true)} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-xl hover:bg-indigo-700 transition-all transform active:scale-95">
@@ -117,14 +154,18 @@ const AdminDashboard = ({ onLogout }) => {
                     <div className="bg-white rounded-[3rem] shadow-2xl border overflow-hidden">
                         <table className="w-full text-left">
                             <thead className="bg-slate-50 border-b text-slate-400 text-[10px] font-black uppercase">
-                                <tr><th className="p-8">Nama</th><th className="p-8">Username</th><th className="p-8">Role</th><th className="p-8 text-right">Aksi</th></tr>
+                                <tr><th className="p-8">Nama Lengkap</th><th className="p-8">Username ID</th><th className="p-8">Role</th><th className="p-8 text-right">Aksi</th></tr>
                             </thead>
                             <tbody>
                                 {users.map(u => (
                                     <tr key={u.id} className="border-b hover:bg-slate-50/50">
                                         <td className="p-8 font-black">{u.full_name}</td>
                                         <td className="p-8 font-mono">{u.username}</td>
-                                        <td className="p-8"><span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase">{u.role}</span></td>
+                                        <td className="p-8">
+                                            <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase border ${u.role === 'admin' ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-indigo-50 text-indigo-600 border-indigo-200'}`}>
+                                                {u.role}
+                                            </span>
+                                        </td>
                                         <td className="p-8 text-right">
                                             <button onClick={() => fetch(`${API_URL}/admin/users/${u.id}`, {method:'DELETE'}).then(refreshData)} className="p-3 text-rose-400 hover:text-rose-600 transition-all"><Trash2 size={20}/></button>
                                         </td>
@@ -149,10 +190,10 @@ const AdminDashboard = ({ onLogout }) => {
                                         <div key={e.id} className="p-6 bg-slate-50 rounded-3xl flex justify-between items-center group transition-all hover:bg-slate-100">
                                             <div><p className="font-bold text-slate-700">{e.title}</p><p className="text-[10px] text-slate-400 font-black">{e.duration} MINS</p></div>
                                             <div className="flex gap-2">
-                                                <label className="p-3 bg-emerald-100 text-emerald-600 rounded-xl cursor-pointer hover:bg-emerald-600 hover:text-white transition-all">
+                                                <label className="p-3 bg-emerald-100 text-emerald-600 rounded-xl cursor-pointer hover:bg-emerald-600 hover:text-white transition-all shadow-sm">
                                                     <Upload size={18}/><input type="file" className="hidden" onChange={(x) => handleUploadSoal(e.id, x.target.files[0])}/>
                                                 </label>
-                                                <button onClick={() => handlePreview(e.id)} className="p-3 bg-indigo-100 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><Eye size={18}/></button>
+                                                <button onClick={() => handlePreview(e.id)} className="p-3 bg-indigo-100 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm"><Eye size={18}/></button>
                                             </div>
                                         </div>
                                     ))}
@@ -181,11 +222,11 @@ const AdminDashboard = ({ onLogout }) => {
                 )}
             </div>
 
-            {/* Modal User */}
+            {/* Modal Manual User */}
             {showUserModal && (
                 <div className="fixed inset-0 bg-[#0F172A]/80 backdrop-blur-md z-50 flex items-center justify-center p-6">
-                    <form onSubmit={handleAddUser} className="bg-white rounded-[3.5rem] p-12 w-full max-w-md">
-                        <h3 className="text-2xl font-black mb-8 text-center">Data Peserta Baru</h3>
+                    <form onSubmit={handleAddUser} className="bg-white rounded-[3.5rem] p-12 w-full max-w-md shadow-2xl">
+                        <h3 className="text-2xl font-black mb-8 text-center">Data Anggota Baru</h3>
                         <div className="space-y-4">
                             <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" placeholder="Nama Lengkap" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name: e.target.value})} required/>
                             <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username: e.target.value})} required/>
@@ -206,10 +247,10 @@ const AdminDashboard = ({ onLogout }) => {
             {/* Modal Paket Ujian */}
             {showPeriodModal && (
                 <div className="fixed inset-0 bg-[#0F172A]/80 backdrop-blur-md z-50 flex items-center justify-center p-6">
-                    <form onSubmit={handleAddPeriod} className="bg-white rounded-[3.5rem] p-12 w-full max-w-md">
+                    <form onSubmit={handleAddPeriod} className="bg-white rounded-[3.5rem] p-12 w-full max-w-md shadow-2xl">
                         <h3 className="text-2xl font-black mb-8 text-center">Buat Paket Tryout</h3>
                         <div className="space-y-4">
-                            <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" placeholder="Nama Paket (Contoh: TO 1)" value={newPeriod.name} onChange={e=>setNewPeriod({...newPeriod, name: e.target.value})} required/>
+                            <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" placeholder="Nama Paket (Contoh: Tryout Akbar #1)" value={newPeriod.name} onChange={e=>setNewPeriod({...newPeriod, name: e.target.value})} required/>
                             <select className="w-full p-5 bg-slate-50 border rounded-2xl font-black" value={newPeriod.exam_type} onChange={e=>setNewPeriod({...newPeriod, exam_type: e.target.value})}>
                                 <option value="UTBK">UTBK SNBT</option>
                                 <option value="CPNS">CPNS BKN</option>
@@ -228,7 +269,7 @@ const AdminDashboard = ({ onLogout }) => {
             {/* Modal LMS */}
             {showLmsModal && (
                 <div className="fixed inset-0 bg-[#0F172A]/80 backdrop-blur-md z-50 flex items-center justify-center p-6">
-                    <form onSubmit={handleAddLms} className="bg-white rounded-[3.5rem] p-12 w-full max-w-md">
+                    <form onSubmit={handleAddLms} className="bg-white rounded-[3.5rem] p-12 w-full max-w-md shadow-2xl">
                         <h3 className="text-2xl font-black mb-8 text-center">Tambah Materi Belajar</h3>
                         <div className="space-y-4">
                             <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" placeholder="Judul Materi" value={newLms.title} onChange={e=>setNewLms({...newLms, title: e.target.value})} required/>
@@ -253,12 +294,15 @@ const AdminDashboard = ({ onLogout }) => {
                 </div>
             )}
 
-            {/* Modal Preview */}
+            {/* Modal Preview Soal */}
             {previewExam && (
                 <div className="fixed inset-0 bg-white z-[100] overflow-y-auto p-12 animate-in slide-in-from-bottom-10">
                     <div className="max-w-4xl mx-auto">
                         <div className="flex justify-between items-center mb-12 border-b pb-8">
-                            <h2 className="text-4xl font-black italic">{previewExam.title} - Preview</h2>
+                            <div>
+                                <h2 className="text-4xl font-black italic">{previewExam.title}</h2>
+                                <p className="text-slate-500 font-bold mt-1 tracking-widest uppercase text-xs">Review Soal & Kunci Jawaban</p>
+                            </div>
                             <button onClick={() => setPreviewExam(null)} className="p-5 bg-slate-100 rounded-full hover:bg-rose-50 transition-all"><X size={32}/></button>
                         </div>
                         <div className="space-y-8">
@@ -266,13 +310,13 @@ const AdminDashboard = ({ onLogout }) => {
                                 <div key={i} className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-xl">
                                     <div className="flex justify-between mb-6">
                                         <span className="bg-indigo-900 text-white px-6 py-1.5 rounded-full text-[10px] font-black uppercase">Soal {i+1}</span>
-                                        <button onClick={() => fetch(`${API_URL}/admin/questions/${q.id}`, {method:'DELETE'}).then(() => handlePreview(previewExam.id))} className="text-rose-500"><Trash2 size={20}/></button>
+                                        <button onClick={() => fetch(`${API_URL}/admin/questions/${q.id}`, {method:'DELETE'}).then(() => handlePreview(previewExam.id))} className="text-rose-500 hover:bg-rose-50 p-2 rounded-lg transition-all"><Trash2 size={20}/></button>
                                     </div>
                                     <p className="text-2xl font-bold mb-8 text-slate-800 italic">"{q.text}"</p>
                                     <div className="grid gap-3">
                                         {q.options && q.options.map((o, idx) => (
-                                            <div key={idx} className={`p-6 rounded-2xl border-2 flex items-center justify-between ${o.is_correct ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-black' : 'bg-slate-50 text-slate-400 opacity-60'}`}>
-                                                <span>{o.option_index}. {o.label}</span>
+                                            <div key={idx} className={`p-6 rounded-2xl border-2 flex items-center justify-between ${o.is_correct ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-black' : 'border-slate-50 bg-slate-50/50 text-slate-400 opacity-60'}`}>
+                                                <span className="text-lg">{o.option_index}. {o.label}</span>
                                                 {o.is_correct && <CheckCircle size={24}/>}
                                             </div>
                                         ))}
