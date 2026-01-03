@@ -3,293 +3,159 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
-from typing import Dict, Any, List, Optional
-from datetime import datetime
+from typing import Dict, Any, List
 import models, database
-import os, uuid, shutil
+import pandas as pd
+import io, os, uuid, shutil
 
-# --- KONFIGURASI FOLDER UPLOAD ---
+# SETUP FOLDER & APP
 UPLOAD_DIR = "uploads"
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR)
+if not os.path.exists(UPLOAD_DIR): os.makedirs(UPLOAD_DIR)
 
-app = FastAPI(title="CBT Pro Backend")
-
-# --- AKSES STATIS (Agar Gambar Bisa Diakses Frontend) ---
+app = FastAPI()
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# --- CORS (Agar Frontend Bisa Komunikasi) ---
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# --- DEPENDENCY DATABASE ---
 def get_db():
     db = database.SessionLocal()
     try: yield db
     finally: db.close()
 
-# --- STARTUP EVENT (Auto-Repair Database) ---
 @app.on_event("startup")
-def startup_event():
-    # Buat Tabel di Database
+def startup():
     models.Base.metadata.create_all(bind=database.engine)
-    
-    # Cek & Buat Super Admin Default
     db = database.SessionLocal()
-    try:
-        if not db.query(models.User).filter_by(username="admin").first():
-            print("Creating Default Admin...")
-            admin = models.User(
-                username="admin", 
-                password="123", # Di production gunakan Hash!
-                full_name="Super Administrator", 
-                role="admin", 
-                is_premium=True
-            )
-            db.add(admin)
-            db.commit()
-    finally:
-        db.close()
+    if not db.query(models.User).filter_by(username="admin").first():
+        db.add(models.User(username="admin", password="123", full_name="Super Admin", role="admin"))
+        db.commit()
+    db.close()
 
-# --- SCHEMAS (Validasi Data Masuk) ---
-class LoginSchema(BaseModel):
-    username: str
-    password: str
-
-class PeriodCreateSchema(BaseModel):
-    name: str
-    exam_type: str  # UTBK, CPNS, TKA_SMA
-    is_vip: bool = False
-
-class QuestionCreateSchema(BaseModel):
-    text: str
-    options: List[str]
-    correct_option: str
-    explanation: str = ""
-    image_url: Optional[str] = None
-
-class AnswerSchema(BaseModel):
-    answers: Dict[str, Any]
-    username: str
-
-# ==========================================
-# ENDPOINTS: AUTHENTICATION
-# ==========================================
+# --- AUTH & PERIODS ---
+class LoginSchema(BaseModel): username: str; password: str
+class PeriodCreateSchema(BaseModel): name: str; exam_type: str
 
 @app.post("/login")
 def login(d: LoginSchema, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter_by(username=d.username).first()
-    if not user or user.password != d.password:
-        raise HTTPException(status_code=400, detail="Username atau Password Salah")
-    return {
-        "id": user.id,
-        "username": user.username,
-        "full_name": user.full_name,
-        "role": user.role,
-        "is_premium": user.is_premium
-    }
-
-# ==========================================
-# ENDPOINTS: UPLOAD FILE (IMAGE)
-# ==========================================
-
-@app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
-    # Generate nama unik agar tidak bentrok
-    file_ext = file.filename.split(".")[-1]
-    filename = f"{uuid.uuid4()}.{file_ext}"
-    file_path = os.path.join(UPLOAD_DIR, filename)
-    
-    # Simpan file ke server
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    # Return URL lengkap agar bisa diakses frontend
-    # Ganti domain jika sudah deploy production
-    return {"url": f"/static/{filename}"}
-
-# ==========================================
-# ENDPOINTS: ADMIN (EXAM MANAGEMENT)
-# ==========================================
+    u = db.query(models.User).filter_by(username=d.username).first()
+    if not u or u.password != d.password: raise HTTPException(400, "Gagal Login")
+    return {"id": u.id, "username": u.username, "role": u.role, "full_name": u.full_name}
 
 @app.get("/admin/periods")
 def get_periods(db: Session = Depends(get_db)):
-    # Urutkan dari yang terbaru
     return db.query(models.ExamPeriod).options(joinedload(models.ExamPeriod.exams)).order_by(models.ExamPeriod.id.desc()).all()
 
 @app.post("/admin/periods")
 def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
-    # 1. Buat Periode Induk
-    p = models.ExamPeriod(
-        name=d.name,
-        exam_type=d.exam_type,
-        is_active=True,
-        is_vip_only=d.is_vip
-    )
-    db.add(p)
-    db.commit()
-    db.refresh(p)
-
-    # 2. LOGIKA CERDAS: Generate Subtes Berdasarkan Tipe
+    p = models.ExamPeriod(name=d.name, exam_type=d.exam_type, is_active=True)
+    db.add(p); db.commit(); db.refresh(p)
+    
+    # GENERATE SUBTES OTOMATIS
     struct = []
-    tipe = d.exam_type.upper()
-
-    if "CPNS" in tipe or "KEDINASAN" in tipe:
-        # Standar SKD BKN
-        struct = [
-            ("TWK", 30, "Tes Wawasan Kebangsaan"),
-            ("TIU", 35, "Tes Intelegensia Umum"),
-            ("TKP", 45, "Tes Karakteristik Pribadi")
-        ]
-    elif "TKA_SMA" in tipe:
-        # Saintek
-        struct = [
-            ("MAT", 25, "Matematika Saintek"),
-            ("FIS", 20, "Fisika"),
-            ("KIM", 20, "Kimia"),
-            ("BIO", 20, "Biologi")
-        ]
-    else:
-        # Default: UTBK SNBT (7 Subtes Lengkap)
-        struct = [
-            ("PU", 30, "Penalaran Umum"),
-            ("PBM", 20, "Pemahaman Bacaan & Menulis"),
-            ("PPU", 20, "Pengetahuan & Pemahaman Umum"),
-            ("PK", 20, "Pengetahuan Kuantitatif"),
-            ("LBI", 30, "Literasi B.Indonesia"),
-            ("LBE", 30, "Literasi B.Inggris"),
-            ("PM", 20, "Penalaran Matematika")
-        ]
-
-    # 3. Masukkan Subtes ke Database
-    for code, dur, title in struct:
-        sub_exam = models.Exam(
-            id=f"P{p.id}_{code}_{uuid.uuid4().hex[:4]}", # ID Unik
-            period_id=p.id,
-            code=code,
-            title=title,
-            duration=dur
-        )
-        db.add(sub_exam)
+    if d.exam_type == "CPNS": struct=[("TWK",30),("TIU",35),("TKP",45)]
+    elif d.exam_type == "UTBK": struct=[("PU",30),("PBM",20),("PPU",20),("PK",20),("LBI",30),("LBE",30),("PM",20)]
+    elif d.exam_type == "TKA_SMA": struct=[("MAT",25),("FIS",20),("KIM",20),("BIO",20)]
+    else: struct=[("UMUM", 60)]
     
+    for code, dur in struct:
+        db.add(models.Exam(id=f"P{p.id}_{code}", period_id=p.id, code=code, title=f"Tes {code}", duration=dur))
     db.commit()
-    return {"message": "Paket Ujian Berhasil Dibuat", "id": p.id}
+    return {"message": "Paket & Subtes Dibuat"}
 
-@app.post("/exams/{exam_id}/questions")
-def add_question(exam_id: str, q: QuestionCreateSchema, db: Session = Depends(get_db)):
-    # Simpan Pertanyaan
-    new_q = models.Question(
-        exam_id=exam_id,
-        text=q.text,
-        image_url=q.image_url,
-        correct_option=q.correct_option,
-        explanation=q.explanation
-    )
-    db.add(new_q)
+# --- FITUR 1: UPLOAD PESERTA (Sesuai File peserta.xlsx) ---
+@app.post("/admin/upload/users")
+async def upload_users(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    c = await file.read()
+    df = pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
+    
+    count = 0
+    for _, row in df.iterrows():
+        if db.query(models.User).filter_by(username=str(row['username'])).first(): continue
+        db.add(models.User(
+            username=str(row['username']), 
+            password=str(row['password']), 
+            full_name=str(row['full_name']), 
+            role=str(row.get('role', 'student'))
+        ))
+        count += 1
     db.commit()
-    db.refresh(new_q)
+    return {"message": f"Berhasil import {count} user"}
 
-    # Simpan Opsi (A, B, C, D, E)
-    labels = ["A", "B", "C", "D", "E"]
-    for idx, opt_text in enumerate(q.options):
-        label_char = labels[idx] if idx < 5 else "?"
-        is_right = (label_char == q.correct_option)
+# --- FITUR 2: UPLOAD SOAL (Sesuai File soal_LBI...csv) ---
+@app.post("/admin/upload/questions")
+async def upload_questions(exam_id: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
+    c = await file.read()
+    df = pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
+    
+    # Hapus soal lama di subtes ini (Opsional, agar tidak duplikat)
+    db.query(models.Question).filter_by(exam_id=exam_id).delete()
+    
+    count = 0
+    for _, row in df.iterrows():
+        # Mapping Kolom Excel Anda ke Database
+        opsi = []
+        for char in ['A','B','C','D','E']:
+            col = f'Opsi{char}'
+            if col in row and pd.notna(row[col]):
+                opsi.append({"label": char, "text": str(row[col])})
         
-        opt = models.Option(
-            question_id=new_q.id,
-            label=opt_text,
-            option_index=label_char,
-            is_correct=is_right
+        q = models.Question(
+            exam_id=exam_id,
+            q_type=str(row.get('Tipe', 'PG')), # Kolom 'Tipe' di Excel
+            text=str(row.get('Soal', '')),     # Kolom 'Soal'
+            wacana=str(row.get('Bacaan', '')) if pd.notna(row.get('Bacaan')) else None,
+            options_json=opsi,
+            correct_answer=str(row.get('Kunci', '')),
+            difficulty=int(row.get('Kesulitan', 1)) if pd.notna(row.get('Kesulitan')) else 1,
+            explanation=str(row.get('Pembahasan', ''))
         )
-        db.add(opt)
-    
+        db.add(q)
+        count += 1
     db.commit()
-    return {"message": "Soal Tersimpan"}
+    return {"message": f"Sukses upload {count} soal"}
 
 @app.get("/exams/{exam_id}/questions")
-def get_questions_admin(exam_id: str, db: Session = Depends(get_db)):
-    return db.query(models.Question).filter_by(exam_id=exam_id).options(joinedload(models.Question.options)).all()
+def get_qs(exam_id: str, db: Session = Depends(get_db)):
+    return db.query(models.Question).filter_by(exam_id=exam_id).all()
 
-# ==========================================
-# ENDPOINTS: STUDENT (UJIAN & SCORING)
-# ==========================================
+# --- FITUR 3: SUBMIT & IRT SCORING ---
+class AnsSchema(BaseModel): answers: Dict[str, Any]; username: str
+
+@app.post("/exams/{period_id}/finish")
+def finish_exam(period_id: int, d: AnsSchema, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter_by(username=d.username).first()
+    
+    total_score = 0
+    detail = {}
+    
+    # Loop per subtes (PU, PK, LBI...)
+    exams = db.query(models.Exam).filter_by(period_id=period_id).all()
+    for ex in exams:
+        sub_score = 0
+        qs = db.query(models.Question).filter_by(exam_id=ex.id).all()
+        q_map = {str(q.id): q for q in qs}
+        user_ans_sub = d.answers.get(ex.id, {}) # Jawaban user di subtes ini
+        
+        for q_id, val in user_ans_sub.items():
+            if q_id in q_map:
+                q = q_map[q_id]
+                # Cek Benar (Case insensitive untuk isian)
+                is_correct = str(val).upper() == str(q.correct_answer).upper()
+                if is_correct:
+                    # Rumus IRT Simple: Bobot Dasar + (Kesulitan * 10)
+                    sub_score += (10 + (q.difficulty * 10))
+        
+        detail[ex.code] = sub_score
+        total_score += sub_score
+        
+    res = models.ExamResult(
+        user_id=user.id, period_id=period_id, 
+        scores_detail=detail, total_score=total_score
+    )
+    db.add(res); db.commit()
+    return {"total": total_score, "detail": detail}
 
 @app.get("/student/periods")
-def get_student_periods(username: str, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter_by(username=username).first()
-    if not user: raise HTTPException(404, "User not found")
-
-    # Ambil semua periode aktif
-    raw_periods = db.query(models.ExamPeriod).filter_by(is_active=True).options(joinedload(models.ExamPeriod.exams)).order_by(models.ExamPeriod.id.desc()).all()
-    
-    result = []
-    for p in raw_periods:
-        # Logika Penguncian (Locking)
-        is_locked = False
-        if p.is_vip_only and not user.is_premium:
-            is_locked = True
-        
-        result.append({
-            "id": p.id,
-            "name": p.name,
-            "exam_type": p.exam_type,
-            "is_vip": p.is_vip_only,
-            "locked": is_locked,
-            "exams": p.exams # List subtes
-        })
-    return result
-
-@app.post("/exams/{exam_id}/submit")
-def submit_exam(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter_by(username=d.username).first()
-    if not user: raise HTTPException(404, "User not found")
-
-    # Hitung Skor
-    correct = 0
-    wrong = 0
-    
-    # Ambil Kunci Jawaban dari DB (Optimasi Query)
-    questions = db.query(models.Question).filter_by(exam_id=exam_id).all()
-    key_map = {str(q.id): q.correct_option for q in questions} # { "101": "A", "102": "C" }
-
-    for q_id, user_ans in d.answers.items():
-        if q_id in key_map:
-            if key_map[q_id] == user_ans:
-                correct += 1
-            else:
-                wrong += 1
-    
-    # Rumus Nilai Sederhana (Bisa diganti IRT nanti)
-    final_score = correct * 10 
-
-    # Simpan History Nilai
-    res = models.ExamResult(
-        user_id=user.id,
-        exam_id=exam_id,
-        correct_count=correct,
-        wrong_count=wrong,
-        irt_score=final_score
-    )
-    db.add(res)
-    db.commit()
-    
-    return {"score": final_score, "correct": correct, "wrong": wrong}
-
-# ==========================================
-# ENDPOINTS: COMMERCIAL (PAYMENT)
-# ==========================================
-
-@app.post("/payment/upgrade")
-def upgrade_premium(username: str, db: Session = Depends(get_db)):
-    # Endpoint ini dipanggil Admin atau Webhook Payment Gateway
-    user = db.query(models.User).filter_by(username=username).first()
-    if not user: raise HTTPException(404, "User not found")
-    
-    user.is_premium = True
-    db.commit()
-    return {"message": f"User {username} berhasil menjadi Premium"}
+def st_periods(username: str, db: Session = Depends(get_db)):
+    # Return periods + exams structure
+    pers = db.query(models.ExamPeriod).filter_by(is_active=True).options(joinedload(models.ExamPeriod.exams)).all()
+    return pers
