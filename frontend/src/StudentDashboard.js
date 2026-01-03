@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { CheckCircle, LogOut, ChevronLeft, ChevronRight, Clock, BookOpen, Volume2, Image as ImageIcon } from 'lucide-react';
+import { CheckCircle, LogOut, ChevronLeft, ChevronRight, Clock, Volume2 } from 'lucide-react';
 import { API_URL } from './config';
 
 const StudentDashboard = ({ user, onLogout }) => {
@@ -106,7 +106,6 @@ const StudentDashboard = ({ user, onLogout }) => {
                 <div className="h-16 bg-white border-t border-slate-200 flex items-center justify-between px-8 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20">
                     <button onClick={() => setCurrentQIdx(p => Math.max(0, p - 1))} disabled={currentQIdx === 0} className="px-6 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-50 font-bold text-sm flex items-center gap-2"><ChevronLeft size={16}/> SEBELUMNYA</button>
                     
-                    {/* Quick Jump (Desktop) */}
                     <div className="hidden md:flex gap-1">
                         {questions.map((_, i) => (
                             <div key={i} className={`w-8 h-2 rounded-full cursor-pointer ${i === currentQIdx ? 'bg-blue-600' : answers[questions[i].id] ? 'bg-emerald-400' : 'bg-slate-200'}`} onClick={() => setCurrentQIdx(i)}></div>
@@ -152,7 +151,7 @@ const StudentDashboard = ({ user, onLogout }) => {
                                                 <h4 className="font-bold text-slate-800">{e.title}</h4>
                                                 <p className="text-xs text-slate-500 mt-1">{e.duration} Menit &bull; {p.type === 'UTBK' ? 'IRT Scoring' : 'Standard'}</p>
                                             </div>
-                                            {e.is_done ? <CheckCircle className="text-emerald-500"/> : <BookOpen className="text-blue-500"/>}
+                                            {e.is_done ? <CheckCircle className="text-emerald-500"/> : <Clock className="text-blue-500"/>}
                                         </div>
                                         {e.is_done ? (
                                             <div className="w-full py-3 bg-emerald-100 text-emerald-700 text-center rounded-xl font-bold text-sm cursor-not-allowed">SELESAI</div>
