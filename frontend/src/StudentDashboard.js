@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Play, Clock, ChevronRight, LogOut, BookOpen, Menu, X, Home } from 'lucide-react';
+import { Play, Clock, ChevronRight, LogOut, Menu, X, Home, BookOpen } from 'lucide-react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import { API_URL } from './config';
 
 const StudentDashboard = ({ user, onLogout }) => {
     const [view, setView] = useState('home');
-    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // STATE BARU UNTUK RESPONSIVE
     const [periods, setPeriods] = useState([]);
     const [materials, setMaterials] = useState([]);
     
-    // Exam States
+    // --- STATE RESPONSIVE & UJIAN ---
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [activePeriod, setActivePeriod] = useState(null);
     const [activeSubtest, setActiveSubtest] = useState(null);
     const [questions, setQuestions] = useState([]);
@@ -17,55 +17,103 @@ const StudentDashboard = ({ user, onLogout }) => {
     const [timeLeft, setTimeLeft] = useState(0);
     const [examResult, setExamResult] = useState(null);
 
+    // Load Data Awal
     useEffect(() => {
-        fetch(`${API_URL}/periods?active_only=true`).then(r=>r.json()).then(setPeriods);
-        fetch(`${API_URL}/lms/materials`).then(r=>r.json()).then(setMaterials);
+        fetch(`${API_URL}/periods`).then(r => r.json()).then(data => setPeriods(data)).catch(e => console.error(e));
+        fetch(`${API_URL}/lms/materials`).then(r => r.json()).then(data => setMaterials(data)).catch(e => console.error(e));
     }, []);
 
-    // ... (LOGIC UJIAN SAMA SEPERTI SEBELUMNYA, DIPERSINGKAT AGAR MUAT) ...
-    const finishExam = useCallback(async () => {
-        const res = await fetch(`${API_URL}/exams/${activePeriod.id}/finish`, {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({username:user.username, answers})
-        });
-        setExamResult(await res.json()); setView('result');
-    }, [activePeriod, answers, user.username]);
-
+    // Timer Logic
     const handleNextSubtest = useCallback(() => {
-        const idx = activePeriod.exams.findIndex(e => e.id === activeSubtest.id);
-        if(idx < activePeriod.exams.length - 1) {
-            alert("Lanjut Subtes Berikutnya");
-            const next = activePeriod.exams[idx+1];
-            fetch(`${API_URL}/exams/${next.id}/questions`).then(r=>r.json()).then(d=>{
-                setQuestions(d); setActiveSubtest(next); setTimeLeft(next.duration*60);
-            });
-        } else finishExam();
-    }, [activePeriod, activeSubtest, finishExam]);
+        if (!activePeriod || !activeSubtest) return;
+        const currentIdx = activePeriod.exams.findIndex(e => e.id === activeSubtest.id);
+        
+        if (currentIdx < activePeriod.exams.length - 1) {
+            // Lanjut ke subtes berikutnya
+            const nextSubtest = activePeriod.exams[currentIdx + 1];
+            // Load Manual
+            fetch(`${API_URL}/exams/${nextSubtest.id}/questions`)
+                .then(r => r.json())
+                .then(data => {
+                    setQuestions(data);
+                    setActiveSubtest(nextSubtest);
+                    setTimeLeft(nextSubtest.duration * 60);
+                    setIsMobileMenuOpen(false);
+                    window.scrollTo(0, 0);
+                });
+        } else {
+            // Selesai semua
+            finishExam();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activePeriod, activeSubtest]);
 
     useEffect(() => {
-        if(!activeSubtest || timeLeft <= 0) return;
-        const t = setInterval(() => setTimeLeft(p => p<=1 ? (handleNextSubtest(), 0) : p-1), 1000);
-        return () => clearInterval(t);
+        if (!activeSubtest || timeLeft <= 0) return;
+        const timer = setInterval(() => {
+            setTimeLeft(prev => {
+                if (prev <= 1) {
+                    handleNextSubtest();
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(timer);
     }, [timeLeft, activeSubtest, handleNextSubtest]);
 
-    const startExam = (p) => {
-        setActivePeriod(p);
-        const first = p.exams[0];
-        fetch(`${API_URL}/exams/${first.id}/questions`).then(r=>r.json()).then(d=>{
-            setQuestions(d); setActiveSubtest(first); setTimeLeft(first.duration*60); setView('exam');
-        });
+    // Finish Exam Logic
+    const finishExam = async () => {
+        try {
+            const res = await fetch(`${API_URL}/exams/${activePeriod.id}/finish`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: user.username, answers })
+            });
+            const result = await res.json();
+            setExamResult(result);
+            setView('result');
+        } catch (error) {
+            alert("Gagal mengirim jawaban. Cek koneksi.");
+        }
     };
 
-    // --- RENDER RESULT ---
-    if(view === 'result' && examResult) {
-        const data = Object.keys(examResult.detail).map(k=>({ subj:k, A:examResult.detail[k], full:1000 }));
+    const startExam = (period) => {
+        if (!period.exams || period.exams.length === 0) {
+            alert("Paket soal belum siap."); return;
+        }
+        setActivePeriod(period);
+        const subtest = period.exams[0];
+        
+        fetch(`${API_URL}/exams/${subtest.id}/questions`)
+            .then(r => r.json())
+            .then(data => {
+                setQuestions(data);
+                setActiveSubtest(subtest);
+                setTimeLeft(subtest.duration * 60);
+                setIsMobileMenuOpen(false); 
+                setView('exam');
+            });
+    };
+
+    // --- RENDER HALAMAN HASIL ---
+    if (view === 'result' && examResult) {
+        const chartData = Object.keys(examResult.detail).map(k => ({ subject: k, A: examResult.detail[k], full: 100 }));
         return (
-            <div className="min-h-screen bg-slate-50 p-4 flex items-center justify-center">
-                <div className="bg-white p-6 rounded-3xl shadow-xl w-full max-w-2xl text-center">
-                    <h1 className="text-2xl font-black mb-2">Hasil Ujian</h1>
-                    <div className="text-5xl font-black text-indigo-600 mb-6">{examResult.total}</div>
-                    <div className="h-64 w-full">
-                        <ResponsiveContainer><RadarChart outerRadius={90} data={data}><PolarGrid/><PolarAngleAxis dataKey="subj"/><PolarRadiusAxis/><Radar name="Skor" dataKey="A" stroke="#4f46e5" fill="#6366f1" fillOpacity={0.6}/></RadarChart></ResponsiveContainer>
+            <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+                <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-2xl text-center">
+                    <h2 className="text-3xl font-black text-slate-800 mb-2">Hasil Ujian</h2>
+                    <div className="text-6xl font-black text-indigo-600 mb-6">{examResult.total}</div>
+                    
+                    <div className="h-64 w-full mb-6">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <RadarChart outerRadius={90} data={chartData}>
+                                <PolarGrid />
+                                <PolarAngleAxis dataKey="subject" />
+                                <PolarRadiusAxis />
+                                <Radar name="Skor" dataKey="A" stroke="#4f46e5" fill="#6366f1" fillOpacity={0.6} />
+                            </RadarChart>
+                        </ResponsiveContainer>
                     </div>
                     <button onClick={()=>window.location.reload()} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold mt-6">Kembali</button>
                 </div>
@@ -74,19 +122,27 @@ const StudentDashboard = ({ user, onLogout }) => {
     }
 
     // --- RENDER EXAM (RESPONSIVE) ---
-    if(view === 'exam' && activeSubtest) {
+    if (view === 'exam' && activeSubtest) {
         return (
             <div className="h-screen flex flex-col bg-white overflow-hidden">
                 <header className="bg-slate-900 text-white p-3 flex justify-between items-center z-20 shadow-md">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3">
                         {/* Tombol Menu di HP */}
-                        <button onClick={()=>setIsMobileMenuOpen(!isMobileMenuOpen)} className="md:hidden p-2 bg-slate-800 rounded">
+                        <button onClick={()=>setIsMobileMenuOpen(!isMobileMenuOpen)} className="md:hidden p-2 bg-slate-800 rounded text-white">
                             {isMobileMenuOpen ? <X size={18}/> : <Menu size={18}/>}
                         </button>
-                        <div className="font-bold truncate max-w-[150px] md:max-w-none">{activeSubtest.title}</div>
+                        
+                        <div className="flex items-center gap-2">
+                             <BookOpen size={18} className="text-indigo-400 hidden sm:block"/>
+                             <div className="font-bold truncate max-w-[150px] md:max-w-none">{activeSubtest.title}</div>
+                        </div>
                     </div>
-                    <div className={`font-mono font-bold px-3 py-1 rounded ${timeLeft<300?'bg-red-500':'bg-indigo-600'}`}>
-                        {Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}
+                    
+                    <div className="flex items-center gap-2">
+                        <Clock size={16} className={timeLeft < 300 ? 'text-red-400 animate-pulse' : 'text-indigo-400'}/>
+                        <div className={`font-mono font-bold px-3 py-1 rounded ${timeLeft<300?'bg-red-500':'bg-indigo-600'}`}>
+                            {Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}
+                        </div>
                     </div>
                 </header>
 
@@ -97,6 +153,9 @@ const StudentDashboard = ({ user, onLogout }) => {
                         md:relative md:translate-x-0
                         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
                     `}>
+                        <div className="p-4 bg-slate-50 border-b border-slate-100 font-bold text-sm text-slate-500">
+                            Nomor Soal
+                        </div>
                         <div className="p-4 grid grid-cols-5 gap-2 overflow-y-auto h-full pb-20">
                             {questions.map((q,i)=>(
                                 <button key={q.id} onClick={()=>{
@@ -135,7 +194,12 @@ const StudentDashboard = ({ user, onLogout }) => {
                                 </div>
                             </div>
                         ))}
-                        <button onClick={handleNextSubtest} className="w-full md:w-auto bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg mb-10">Selesai Subtes</button>
+                        
+                        <div className="flex justify-end pb-10">
+                            <button onClick={handleNextSubtest} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold shadow-lg flex items-center gap-2">
+                                Selanjutnya <ChevronRight size={18}/>
+                            </button>
+                        </div>
                     </main>
                 </div>
             </div>
@@ -149,7 +213,7 @@ const StudentDashboard = ({ user, onLogout }) => {
             <nav className="bg-white p-4 sticky top-0 z-30 border-b shadow-sm flex justify-between items-center">
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 bg-indigo-600 rounded-lg text-white flex items-center justify-center font-bold">C</div>
-                    <span className="font-extrabold text-slate-800">CBT PRO</span>
+                    <span className="font-extrabold text-slate-800 hidden sm:block">CBT PRO</span>
                 </div>
                 <div className="flex items-center gap-3">
                     <button onClick={()=>setView('home')} className={`p-2 rounded-lg ${view==='home'?'bg-indigo-50 text-indigo-600':''}`}><Home size={20}/></button>
@@ -182,7 +246,7 @@ const StudentDashboard = ({ user, onLogout }) => {
                 {view === 'lms' && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {materials.map(m => (
-                            <a key={m.id} href={m.content_url} target="_blank" className="bg-white p-4 rounded-xl border shadow-sm flex items-center gap-4">
+                            <a key={m.id} href={m.content_url} target="_blank" rel="noreferrer" className="bg-white p-4 rounded-xl border shadow-sm flex items-center gap-4">
                                 <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center"><Play size={20} className="text-indigo-600"/></div>
                                 <div>
                                     <div className="font-bold text-sm text-slate-800">{m.title}</div>
