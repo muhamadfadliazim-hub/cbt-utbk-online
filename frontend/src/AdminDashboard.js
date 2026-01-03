@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Eye, 
   ChevronDown, CheckCircle, XCircle, Download, Search, X, Filter, Clock, Key, 
-  Building2, PieChart, PenTool, BookOpen, Grid, LayoutDashboard, Menu, FileCode, Info, Save, Video, Link, Unlock, Music, Edit
+  Building2, PieChart, PenTool, BookOpen, Grid, LayoutDashboard, Menu, FileCode, Info, Save, Video, Link, Unlock, Music, Image, Edit, AlertTriangle
 } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
@@ -10,8 +10,9 @@ import { API_URL } from './config';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// Daftar lengkap subtes
-const EXAM_CODES = [
+// --- KONFIGURASI DATA ---
+// Daftar lengkap untuk fallback
+const EXAM_CODES_ALL = [
     "PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM", 
     "TWK", "TIU", "TKP", 
     "PSI", "AKD", "KEP", 
@@ -20,6 +21,7 @@ const EXAM_CODES = [
     "UMUM"
 ];
 
+// Mapping Subtes agar Rekap Nilai RAPI (Sesuai Jenis Ujian)
 const LMS_SUBTESTS = {
     UTBK: ["PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM"],
     CPNS: ["TWK", "TIU", "TKP"],
@@ -37,7 +39,7 @@ const LMS_SUBTESTS = {
 const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
   
-  // Data
+  // Data State
   const [periods, setPeriods] = useState([]);
   const [users, setUsers] = useState([]);
   const [recap, setRecap] = useState([]);
@@ -49,17 +51,20 @@ const AdminDashboard = ({ onLogout }) => {
   const [examType, setExamType] = useState('UTBK');
   const [isRandom, setIsRandom] = useState(true); 
   const [isFlexible, setIsFlexible] = useState(false); 
+  
+  // FIX: Tambah Role Default 'student'
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', role: 'student' });
+  
   const [newMajor, setNewMajor] = useState({ university: '', name: '', passing_grade: '' });
   const [lmsCategory, setLmsCategory] = useState('UTBK');
   const [lmsSubtest, setLmsSubtest] = useState('');
   const [newMaterial, setNewMaterial] = useState({ title: '', type: 'pdf', content_url: '', description: '' });
 
-  // Config
+  // Config State
   const [isReleased, setIsReleased] = useState(false);
   const [isMajorSelectionEnabled, setIsMajorSelectionEnabled] = useState(true);
 
-  // UI States
+  // UI/Modal States
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewData, setPreviewData] = useState(null); 
   const [analysisData, setAnalysisData] = useState(null); 
@@ -77,7 +82,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
-  // Manual Question
+  // Manual Question State
   const [showManualInput, setShowManualInput] = useState(false);
   const [activeExamIdForManual, setActiveExamIdForManual] = useState(null);
   const [editingQuestionId, setEditingQuestionId] = useState(null);
@@ -88,6 +93,7 @@ const AdminDashboard = ({ onLogout }) => {
       image_url: '', audio_url: '', options: [] 
   });
 
+  // --- HELPERS ---
   const renderText = (text) => {
     if (!text) return null;
     return text.split(/(\$.*?\$)/).map((part, index) => {
@@ -96,6 +102,12 @@ const AdminDashboard = ({ onLogout }) => {
     });
   };
 
+  const getStatusBadge = (s) => {
+      if (s && s.startsWith('LULUS')) return <span className="text-emerald-600 font-bold text-xs flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded"><CheckCircle size={12}/> {s}</span>;
+      return <span className="text-rose-600 font-bold text-xs flex items-center gap-1 bg-rose-50 px-2 py-1 rounded"><XCircle size={12}/> TIDAK LULUS</span>;
+  };
+
+  // --- API CALLS ---
   const fetchData = useCallback(() => { 
       fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(d=>setPeriods(Array.isArray(d)?d:[])); 
       fetch(`${API_URL}/admin/users`).then(r=>r.json()).then(d=>setUsers(Array.isArray(d)?d:[])); 
@@ -106,7 +118,7 @@ const AdminDashboard = ({ onLogout }) => {
   }, []);
 
   const fetchRecap = useCallback(() => {
-      const url = selectedRecapPeriod ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap`;
+      const url = selectedRecapPeriod ? `${API_URL}/admin/recap?pid=${selectedRecapPeriod}` : `${API_URL}/admin/recap`;
       fetch(url).then(r=>r.json()).then(d=>setRecap(Array.isArray(d)?d:[]));
   }, [selectedRecapPeriod]);
 
@@ -127,33 +139,66 @@ const AdminDashboard = ({ onLogout }) => {
       if(type==='audio') setManualQ({...manualQ, audio_url: data.url});
   };
 
-  const getStatusBadge = (s) => {
-      if (s && s.startsWith('LULUS')) return <span className="text-emerald-600 font-bold text-xs flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded"><CheckCircle size={12}/> {s}</span>;
-      return <span className="text-rose-600 font-bold text-xs flex items-center gap-1 bg-rose-50 px-2 py-1 rounded"><XCircle size={12}/> TIDAK LULUS</span>;
-  };
-
+  // --- HANDLERS ---
   const handleCreatePeriod = () => { if(!newPeriodName)return; apiAction(`${API_URL}/admin/periods`, 'POST', { name: newPeriodName, allowed_usernames: selectedWhitelist.length>0?selectedWhitelist.join(','):null, is_random: isRandom, is_flexible: isFlexible, exam_type: examType }, ()=>{setNewPeriodName(''); setSelectedWhitelist([]); fetchData();}); };
   const updatePeriod = (id, data) => { apiAction(`${API_URL}/admin/periods/${id}`, 'PUT', data, fetchData); };
   const handleDeletePeriod = (id) => { if(window.confirm("Hapus?")) apiAction(`${API_URL}/admin/periods/${id}`, 'DELETE'); };
   
   const handleAddUser = () => { apiAction(`${API_URL}/admin/users`, 'POST', newUser, ()=>{alert("User Added");setNewUser({...newUser, username:''});}); };
   const handleBulkDelete = () => { if(window.confirm("Hapus terpilih?")) apiAction(`${API_URL}/admin/users/delete-bulk`, 'POST', {user_ids:selectedIds}, ()=>setSelectedIds([])); };
-  const handleBulkUpload = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/users/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchData();}) };
+  
+  const handleBulkUpload = (e) => { 
+      const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); 
+      fetch(`${API_URL}/admin/users/bulk`,{method:'POST',body:d})
+      .then(r=>r.json())
+      .then(d=>{alert(d.message || "Proses Selesai"); fetchData();})
+      .catch(e=>alert("Upload Gagal: " + e.message)); 
+  };
+  
   const handleChangePassword = (uid) => { const p = prompt("Pass Baru:"); if(p) apiAction(`${API_URL}/admin/users/${uid}/password`, 'PUT', {new_password:p}, ()=>alert("Diganti")); };
 
   const handleAddMajor = () => { apiAction(`${API_URL}/majors`, 'POST', newMajor, ()=>{alert("Added");setNewMajor({university:'',name:'',passing_grade:''});}); };
   const handleDeleteMajor = (id) => { apiAction(`${API_URL}/majors/${id}`, 'DELETE'); };
-  const handleBulkUploadMajors = (e) => { const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/majors/bulk`,{method:'POST',body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchData();}) };
+  
+  const handleBulkUploadMajors = (e) => { 
+      const f=e.target.files[0]; if(!f)return; const d=new FormData(); d.append('file',f); 
+      fetch(`${API_URL}/admin/majors/bulk`,{method:'POST',body:d})
+      .then(r=>r.json())
+      .then(d=>{alert(d.message || "Upload Selesai"); fetchData();})
+      .catch(e=>alert("Upload Error: " + e.message));
+  };
 
   const handleAddMaterial = () => { const finalCategory = lmsSubtest ? `${lmsCategory} - ${lmsSubtest}` : lmsCategory; apiAction(`${API_URL}/materials`, 'POST', {...newMaterial, category: finalCategory}, ()=>{alert("Materi Added");setNewMaterial({...newMaterial, title:''});}); };
   const handleDeleteMaterial = (id) => { if(window.confirm("Hapus materi?")) apiAction(`${API_URL}/materials/${id}`, 'DELETE'); };
 
-  const handlePreviewExam = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}); };
+  // FIX: Set Active Exam ID saat Preview agar tombol Edit tahu ID-nya
+  const handlePreviewExam = (eid) => { 
+      setActiveExamIdForManual(eid);
+      fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r=>r.json()).then(d=>{setPreviewData(d); setShowPreview(true);}); 
+  };
+  
   const handleDeleteQuestion = (qid) => { if(window.confirm("Hapus?")) fetch(`${API_URL}/admin/questions/${qid}`, { method: 'DELETE' }).then(() => { if (previewData) handlePreviewExam(previewData.id||activeExamIdForManual); fetchData(); }); };
-  const handleUploadQuestion = (eid, f) => { const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchData();}); };
+  
+  const handleUploadQuestion = (eid, f) => { 
+      const d=new FormData(); d.append('file',f); 
+      fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d})
+      .then(r=>r.json())
+      .then(d=>{alert(d.message || "Upload Soal Selesai"); fetchData();})
+      .catch(e=>alert("Gagal Upload Soal: "+e.message));
+  };
 
-  const handleDownloadPDF = () => { if(recap.length===0) return alert("Data kosong"); const doc = new jsPDF('landscape'); doc.text("REKAP NILAI", 14, 15); const tableColumn = ["Nama", "Username", ...EXAM_CODES, "Avg", "Status"]; const tableRows = recap.map(r => [r.full_name, r.username, ...EXAM_CODES.map(k=>r[k]||0), r.average, r.status]); autoTable(doc, { head: [tableColumn], body: tableRows, startY: 20 }); doc.save('rekap.pdf'); };
-  const handleDownloadExcel = () => window.open(`${API_URL}/admin/recap/download?period_id=${selectedRecapPeriod}`, '_blank');
+  // Logic Rekap Dinamis
+  const getDynamicExamCodes = () => {
+      if (!selectedRecapPeriod) return EXAM_CODES_ALL;
+      const period = periods.find(p => p.id === parseInt(selectedRecapPeriod));
+      if (period && LMS_SUBTESTS[period.exam_type]) {
+          return LMS_SUBTESTS[period.exam_type];
+      }
+      return EXAM_CODES_ALL;
+  };
+
+  const handleDownloadPDF = () => { if(recap.length===0) return alert("Data kosong"); const doc = new jsPDF('landscape'); doc.text("REKAP NILAI", 14, 15); const cols = getDynamicExamCodes(); const tableColumn = ["Nama", "Username", ...cols, "Avg", "Status"]; const tableRows = recap.map(r => [r.full_name, r.username, ...cols.map(k=>r[k]||0), r.average, r.status]); autoTable(doc, { head: [tableColumn], body: tableRows, startY: 20 }); doc.save('rekap.pdf'); };
+  const handleDownloadExcel = () => window.open(`${API_URL}/admin/recap/download?pid=${selectedRecapPeriod}`, '_blank');
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
   
   const handleShowAnalysis = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/analysis`).then(r => r.json()).then(d => { setAnalysisData(d); setActiveAnalysisId(eid); setShowAnalysis(true); }); };
@@ -227,7 +272,6 @@ const AdminDashboard = ({ onLogout }) => {
       <main className="flex-1 md:ml-72 p-6 md:p-10 overflow-y-auto h-screen relative">
         <div className="md:hidden flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200"><span className="font-bold text-slate-700">Menu Admin</span><button onClick={()=>setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 bg-slate-100 rounded-lg"><Menu/></button></div>
 
-        {/* TAB 1: BANK SOAL */}
         {tab === 'periods' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="flex justify-between items-center">
@@ -280,7 +324,6 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
-        {/* TAB 2: LMS */}
         {tab === 'lms' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                 <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
@@ -299,17 +342,25 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
-        {/* TAB 3: USERS */}
         {tab === 'users' && (
             <div className="space-y-6">
                 <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-slate-800">Manajemen Peserta</h2>{selectedIds.length > 0 && <button onClick={handleBulkDelete} className="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2"><Trash2 size={16}/> Hapus Terpilih</button>}</div>
-                <div className="bg-white p-6 rounded-xl border shadow-sm flex flex-col md:flex-row gap-4 mb-6"><input className="border p-2 rounded-lg flex-1" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input className="border p-2 rounded-lg flex-1" placeholder="Nama Lengkap" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input className="border p-2 rounded-lg flex-1" placeholder="Password" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><button onClick={handleAddUser} className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2"><Plus size={16}/> Tambah</button></div>
+                {/* FIX: ROLE DROPDOWN */}
+                <div className="bg-white p-6 rounded-xl border shadow-sm flex flex-col md:flex-row gap-4 mb-6">
+                    <input className="border p-2 rounded-lg flex-1" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/>
+                    <input className="border p-2 rounded-lg flex-1" placeholder="Nama Lengkap" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/>
+                    <input className="border p-2 rounded-lg flex-1" placeholder="Password" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/>
+                    <select className="border p-2 rounded-lg bg-white" value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})}>
+                        <option value="student">Siswa</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                    <button onClick={handleAddUser} className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2"><Plus size={16}/> Tambah</button>
+                </div>
                 <div className="mb-4"><label className="text-indigo-600 font-bold text-sm cursor-pointer flex items-center gap-2"><Upload size={16}/> Upload Excel Peserta <input type="file" hidden onChange={handleBulkUpload}/></label></div>
-                <div className="bg-white rounded-xl shadow-sm border overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-700 text-white font-bold"><tr><th className="p-4 w-10"><input type="checkbox" onChange={e=>setSelectedIds(e.target.checked?users.map(u=>u.id):[])}/></th><th className="p-4">Nama</th><th className="p-4">Username</th><th className="p-4">Aksi</th></tr></thead><tbody>{users.map(u=>(<tr key={u.id} className="border-t hover:bg-slate-50"><td className="p-4"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={()=>{selectedIds.includes(u.id)?setSelectedIds(selectedIds.filter(i=>i!==u.id)):setSelectedIds([...selectedIds,u.id])}}/></td><td className="p-4 font-bold">{u.full_name}</td><td className="p-4 text-slate-500">{u.username}</td><td className="p-4"><button onClick={()=>handleChangePassword(u.id)} className="text-indigo-600 font-bold text-xs"><Key size={14}/></button></td></tr>))}</tbody></table></div>
+                <div className="bg-white rounded-xl shadow-sm border overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-700 text-white font-bold"><tr><th className="p-4 w-10"><input type="checkbox" onChange={e=>setSelectedIds(e.target.checked?users.map(u=>u.id):[])}/></th><th className="p-4">Nama</th><th className="p-4">Username</th><th className="p-4">Role</th><th className="p-4">Aksi</th></tr></thead><tbody>{users.map(u=>(<tr key={u.id} className="border-t hover:bg-slate-50"><td className="p-4"><input type="checkbox" checked={selectedIds.includes(u.id)} onChange={()=>{selectedIds.includes(u.id)?setSelectedIds(selectedIds.filter(i=>i!==u.id)):setSelectedIds([...selectedIds,u.id])}}/></td><td className="p-4 font-bold">{u.full_name}</td><td className="p-4 text-slate-500">{u.username}</td><td className="p-4"><span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold uppercase">{u.role}</span></td><td className="p-4"><button onClick={()=>handleChangePassword(u.id)} className="text-indigo-600 font-bold text-xs"><Key size={14}/></button></td></tr>))}</tbody></table></div>
             </div>
         )}
 
-        {/* TAB 4: MAJORS */}
         {tab === 'majors' && (
              <div className="space-y-6">
                 <h2 className="text-2xl font-bold text-slate-800">Data Jurusan & Passing Grade</h2>
@@ -319,8 +370,8 @@ const AdminDashboard = ({ onLogout }) => {
              </div>
         )}
 
-        {/* TAB 5: RECAP */}
-        {tab === 'recap' && (<div className="overflow-x-auto pb-20"><div className="flex flex-col md:flex-row justify-between items-end mb-6 gap-4"><div><h2 className="text-2xl font-bold">Rekap Nilai</h2><div className="flex items-center gap-2 mt-2"><Filter size={16} className="text-gray-500"/><select className="p-2 border rounded w-full md:w-auto" value={selectedRecapPeriod} onChange={e=>setSelectedRecapPeriod(e.target.value)}><option value="">-- Semua Periode --</option>{periods.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div></div><div className="flex flex-wrap gap-2 w-full md:w-auto"><button onClick={handleDownloadPDF} className="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded shadow text-sm font-bold hover:bg-red-700"><FileCode size={16}/> PDF</button><button onClick={handleDownloadExcel} className="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 bg-white border rounded shadow text-sm font-bold"><Download size={16}/> Excel</button><button onClick={()=>toggleConfig('release_announcement', isReleased)} className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 text-white rounded shadow text-sm font-bold ${isReleased?'bg-green-600':'bg-orange-500'}`}>{isReleased?<Unlock size={16}/>:<Lock size={16}/>} {isReleased?'Tutup':'Rilis'}</button></div></div><div className="hidden md:block bg-white shadow rounded overflow-hidden border overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-indigo-900 text-white"><tr><th className="p-3" rowSpan="2">Nama</th><th className="p-2 text-center bg-indigo-800" colSpan="7">Skor</th><th className="p-3 text-center bg-blue-900" rowSpan="2">Avg</th><th className="p-3 bg-indigo-800" rowSpan="2">Ket</th><th className="p-3 bg-red-900" rowSpan="2">Reset</th></tr><tr>{EXAM_CODES.map(s=><th key={s} className="p-1 text-center text-xs bg-indigo-700">{s}</th>)}</tr></thead><tbody className="divide-y">{recap.map((r,i)=>(<tr key={i} className="hover:bg-gray-50"><td className="p-3"><div className="flex items-center gap-2"><button onClick={()=>handleViewStudentDetail(r)} className="text-blue-600 hover:text-blue-800 bg-blue-50 p-1 rounded transition"><Info size={16}/></button><div><div className="font-bold text-gray-800">{r.full_name}</div><div className="text-xs text-gray-400 font-normal">{r.username}</div></div></div></td>{EXAM_CODES.map(k=><td key={k} className="p-2 text-center text-gray-600">{r[k]||0}</td>)}<td className="p-3 text-center font-bold text-blue-700 bg-blue-50">{r.average}</td><td className="p-3">{getStatusBadge(r.status)}</td><td className="p-3 text-center">{r.completed_exams.map(e=><button key={e.exam_id} onClick={()=>handleResetResult(r.id,e.exam_id)} className="px-2 py-1 bg-red-100 text-red-600 text-[10px] rounded border border-red-200 m-0.5 hover:bg-red-600 hover:text-white">{e.code}×</button>)}</td></tr>))}</tbody></table></div></div>)}
+        {/* TAB RECAP - FIX COLUMNS */}
+        {tab === 'recap' && (<div className="overflow-x-auto pb-20"><div className="flex flex-col md:flex-row justify-between items-end mb-6 gap-4"><div><h2 className="text-2xl font-bold">Rekap Nilai</h2><div className="flex items-center gap-2 mt-2"><Filter size={16} className="text-gray-500"/><select className="p-2 border rounded w-full md:w-auto" value={selectedRecapPeriod} onChange={e=>setSelectedRecapPeriod(e.target.value)}><option value="">-- Semua Periode --</option>{periods.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div></div><div className="flex flex-wrap gap-2 w-full md:w-auto"><button onClick={handleDownloadPDF} className="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded shadow text-sm font-bold hover:bg-red-700"><FileCode size={16}/> PDF</button><button onClick={handleDownloadExcel} className="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 bg-white border rounded shadow text-sm font-bold"><Download size={16}/> Excel</button><button onClick={()=>toggleConfig('release_announcement', isReleased)} className={`flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 text-white rounded shadow text-sm font-bold ${isReleased?'bg-green-600':'bg-orange-500'}`}>{isReleased?<Unlock size={16}/>:<Lock size={16}/>} {isReleased?'Tutup':'Rilis'}</button></div></div><div className="hidden md:block bg-white shadow rounded overflow-hidden border overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-indigo-900 text-white"><tr><th className="p-3" rowSpan="2">Nama</th><th className="p-2 text-center bg-indigo-800" colSpan="7">Skor</th><th className="p-3 text-center bg-blue-900" rowSpan="2">Avg</th><th className="p-3 bg-indigo-800" rowSpan="2">Ket</th><th className="p-3 bg-red-900" rowSpan="2">Reset</th></tr><tr>{getDynamicExamCodes().map(s=><th key={s} className="p-1 text-center text-xs bg-indigo-700">{s}</th>)}</tr></thead><tbody className="divide-y">{recap.map((r,i)=>(<tr key={i} className="hover:bg-gray-50"><td className="p-3"><div className="flex items-center gap-2"><button onClick={()=>handleViewStudentDetail(r)} className="text-blue-600 hover:text-blue-800 bg-blue-50 p-1 rounded transition"><Info size={16}/></button><div><div className="font-bold text-gray-800">{r.full_name}</div><div className="text-xs text-gray-400 font-normal">{r.username}</div></div></div></td>{getDynamicExamCodes().map(k=><td key={k} className="p-2 text-center text-gray-600">{r[k]||0}</td>)}<td className="p-3 text-center font-bold text-blue-700 bg-blue-50">{r.average}</td><td className="p-3">{getStatusBadge(r.status)}</td><td className="p-3 text-center">{r.completed_exams.map(e=><button key={e.exam_id} onClick={()=>handleResetResult(r.id,e.exam_id)} className="px-2 py-1 bg-red-100 text-red-600 text-[10px] rounded border border-red-200 m-0.5 hover:bg-red-600 hover:text-white">{e.code}×</button>)}</td></tr>))}</tbody></table></div></div>)}
 
         {/* MODALS */}
         {showEditAccessModal && (
@@ -337,7 +388,7 @@ const AdminDashboard = ({ onLogout }) => {
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col h-[70vh]">
                     <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl"><div><h3 className="text-lg font-bold text-indigo-900">Rincian</h3><p className="text-sm text-gray-500">{selectedStudentDetail.full_name}</p></div><button onClick={()=>setShowDetailModal(false)}><X/></button></div>
-                    <div className="flex-1 overflow-y-auto p-6 space-y-4">{EXAM_CODES.map(code => {const wrongList = selectedStudentDetail.details ? selectedStudentDetail.details[code] : null; return (<div key={code} className="border rounded-lg p-4 bg-gray-50"><div className="flex justify-between items-center mb-2"><span className="font-bold text-indigo-800">{code}</span>{wrongList ? (<span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded font-bold">Salah {wrongList.split(',').length}</span>) : (<span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded font-bold">Benar Semua</span>)}</div><div className="text-sm text-gray-700">{wrongList ? (<div><span className="font-bold text-red-600 mr-2">No Salah:</span><span className="font-mono tracking-widest">{wrongList.replace(/,/g, ', ')}</span></div>) : <span className="italic text-gray-400">-</span>}</div></div>);})}</div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4">{getDynamicExamCodes().map(code => {const wrongList = selectedStudentDetail.details ? selectedStudentDetail.details[code] : null; return (<div key={code} className="border rounded-lg p-4 bg-gray-50"><div className="flex justify-between items-center mb-2"><span className="font-bold text-indigo-800">{code}</span>{wrongList ? (<span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded font-bold">Salah {wrongList.split(',').length}</span>) : (<span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded font-bold">Benar Semua</span>)}</div><div className="text-sm text-gray-700">{wrongList ? (<div><span className="font-bold text-red-600 mr-2">No Salah:</span><span className="font-mono tracking-widest">{wrongList.replace(/,/g, ', ')}</span></div>) : <span className="italic text-gray-400">-</span>}</div></div>);})}</div>
                 </div>
             </div>
         )}
@@ -402,7 +453,6 @@ const AdminDashboard = ({ onLogout }) => {
             </div>
         )}
 
-        {/* MODAL INPUT SOAL (EDITOR) */}
         {showManualInput && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-200">
                 <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">
