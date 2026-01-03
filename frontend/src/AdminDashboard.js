@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Trash2, Plus, Save, BookOpen, Crown, LayoutDashboard, 
-  FileText, CheckCircle, XCircle, LogOut 
+  FileText, CheckCircle, LogOut 
 } from 'lucide-react';
 import { API_URL } from './config';
 
@@ -14,8 +14,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [newPeriod, setNewPeriod] = useState({ name: '', exam_type: 'UTBK', is_vip: false });
   
   // State Input Soal
-  const [selectedExam, setSelectedExam] = useState(null); // Subtes yang sedang diedit (misal: TWK)
-  const [questions, setQuestions] = useState([]);
+  const [selectedExam, setSelectedExam] = useState(null); 
   const [formQ, setFormQ] = useState({ text: '', options: ['','','','',''], correct: 'A', explanation: '' });
 
   useEffect(() => {
@@ -54,7 +53,6 @@ const AdminDashboard = ({ onLogout }) => {
     });
     alert("Soal Tersimpan!");
     setFormQ({ text: '', options: ['','','','',''], correct: 'A', explanation: '' });
-    // Refresh questions if needed
   };
 
   return (
@@ -191,11 +189,11 @@ const AdminDashboard = ({ onLogout }) => {
                         </button>
                     </div>
 
-                    {/* Preview / List Soal Yang Sudah Ada (Placeholder) */}
+                    {/* Preview / List Soal Yang Sudah Ada */}
                     <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200">
                         <div className="text-center text-slate-400 py-10">
                             <FileText size={48} className="mx-auto mb-4 opacity-50"/>
-                            <p>Soal yang sudah diinput akan muncul disini (Fitur Fetch List Soal)</p>
+                            <p>Soal yang sudah diinput akan muncul disini</p>
                         </div>
                     </div>
                 </div>
