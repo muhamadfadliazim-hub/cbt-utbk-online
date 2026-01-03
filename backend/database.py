@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # Ganti nama file .db menjadi v24_ultimate agar Railway membuat database baru yang fresh
-SQLALCHEMY_DATABASE_URL = "sqlite:///./eduprime_v28_final_fixed.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///./eduprime_v31_enterprise.db"
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
