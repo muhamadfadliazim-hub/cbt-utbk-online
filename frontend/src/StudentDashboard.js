@@ -1,8 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-    CheckCircle, LogOut, BookOpen, ChevronLeft, ChevronRight, 
-    LayoutGrid, Award, Zap, Target, Home, Video, FileText, Play, Clock, Link 
-} from 'lucide-react';
+import { CheckCircle, LogOut, BookOpen, ChevronLeft, ChevronRight, LayoutGrid, Award, Zap, Target, Home, Video, FileText, Play, Clock, Star, Book, Search, X } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
@@ -12,6 +9,7 @@ const StudentDashboard = ({ user, onLogout }) => {
   const [periods, setPeriods] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [activeExam, setActiveExam] = useState(null);
+  const [reviewData, setReviewData] = useState(null); // State untuk Pembahasan
   const [questions, setQuestions] = useState([]);
   const [currentQIdx, setCurrentQIdx] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -19,165 +17,141 @@ const StudentDashboard = ({ user, onLogout }) => {
 
   const renderText = useCallback((text) => {
     if (!text) return null;
-    return text.split(/(\$.*?\$)/).map((p, i) => 
-        p.startsWith('$') ? <InlineMath key={i} math={p.slice(1, -1)}/> : 
-        <span key={i} dangerouslySetInnerHTML={{__html: p.replace(/\n/g, '<br/>')}}/>
-    );
+    return text.split(/(\$.*?\$)/).map((p, i) => p.startsWith('$') ? <InlineMath key={i} math={p.slice(1,-1)}/> : <span key={i} dangerouslySetInnerHTML={{__html:p.replace(/\n/g,'<br/>')}}/>);
   }, []);
 
   useEffect(() => {
-    fetch(`${API_URL}/student/periods?username=${user.username}`)
-      .then(r => r.json())
-      .then(setPeriods)
-      .catch(err => console.error("Error periods:", err));
-      
-    fetch(`${API_URL}/materials`)
-      .then(r => r.json())
-      .then(setMaterials)
-      .catch(err => console.error("Error materials:", err));
+    fetch(`${API_URL}/student/periods?username=${user.username}`).then(r => r.json()).then(setPeriods);
+    fetch(`${API_URL}/materials`).then(r => r.json()).then(setMaterials);
   }, [user.username]);
 
-  useEffect(() => {
-    if (timeLeft > 0 && activeExam) {
-      const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
-      return () => clearInterval(timer);
-    }
-  }, [timeLeft, activeExam]);
-
+  // --- LOGIKA UJIAN ---
   const startExam = (eid) => {
-    if(!window.confirm("Mulai ujian sekarang?")) return;
-    fetch(`${API_URL}/exams/${eid}`)
-      .then(r => r.json())
-      .then(d => {
-        setQuestions(d.questions || []);
-        setTimeLeft((d.duration || 60) * 60);
-        setActiveExam(eid);
-        setCurrentQIdx(0);
-        setAnswers({});
-      });
+    fetch(`${API_URL}/exams/${eid}`).then(r => r.json()).then(d => {
+        setQuestions(d.questions || []); setTimeLeft(d.duration * 60); setActiveExam(eid); setCurrentQIdx(0);
+    });
   };
 
-  if (activeExam && questions.length > 0) {
-    const q = questions[currentQIdx];
+  const submitExam = () => {
+    fetch(`${API_URL}/exams/${activeExam}/submit`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ username: user.username, answers })
+    }).then(() => window.location.reload());
+  };
+
+  // --- LOGIKA PEMBAHASAN (LMS) ---
+  const openReview = (eid) => {
+    fetch(`${API_URL}/student/exams/${eid}/review?username=${user.username}`).then(r => r.json()).then(setReviewData);
+  };
+
+  if (activeExam) {
     return (
-        <div className="h-screen flex flex-col bg-white overflow-hidden font-sans">
-            <div className="h-16 border-b flex items-center justify-between px-6 bg-white z-30 shadow-sm">
-                <div className="flex items-center gap-2">
-                    <div className="bg-blue-600 text-white w-10 h-10 rounded-lg flex items-center justify-center font-black">{currentQIdx+1}</div>
-                    <span className="font-bold text-slate-400">/ {questions.length}</span>
+        <div className="h-screen flex flex-col bg-[#020617] text-white font-sans">
+            <div className="h-20 border-b border-white/10 flex items-center justify-between px-10">
+                <span className="text-xl font-black">Segment {currentQIdx + 1}</span>
+                <div className="bg-white/5 px-6 py-2 rounded-full border border-indigo-500/50 text-indigo-400 font-mono text-2xl">
+                    {Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}
                 </div>
-                <div className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-full font-mono font-bold">
-                    <Clock size={18}/> {Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}
-                </div>
-                <button onClick={() => window.location.reload()} className="bg-rose-500 text-white px-6 py-2 rounded-xl font-bold hover:bg-rose-600 transition">KELUAR</button>
+                <button onClick={submitExam} className="bg-emerald-600 px-8 py-2 rounded-xl font-black">SUBMIT</button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 lg:p-12 bg-slate-50">
-                <div className="max-w-3xl mx-auto space-y-8">
-                    {q?.reading_material && <div className="bg-orange-50 p-6 rounded-3xl border border-orange-200 text-slate-700 italic leading-relaxed shadow-sm">{renderText(q.reading_material)}</div>}
-                    <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-2xl">
-                        <div className="text-2xl font-bold text-slate-800 mb-8">{renderText(q?.text)}</div>
-                        <div className="grid gap-4">
-                            {q?.options.map((o, i) => (
-                                <label key={i} className={`p-6 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-4 ${answers[q.id] === o.id ? 'border-blue-600 bg-blue-50' : 'border-slate-100 hover:bg-slate-50'}`}>
-                                    <input type="radio" className="hidden" name={`q-${q.id}`} checked={answers[q.id] === o.id} onChange={() => setAnswers({...answers, [q.id]: o.id})}/>
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black ${answers[q.id] === o.id ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>{o.id}</div>
-                                    <span className="font-bold text-slate-700">{renderText(o.label)}</span>
-                                </label>
-                            ))}
-                        </div>
+            <div className="flex-1 p-10 overflow-y-auto">
+                <div className="max-w-4xl mx-auto space-y-8">
+                    <div className="text-3xl font-bold">{renderText(questions[currentQIdx]?.text)}</div>
+                    <div className="grid gap-4">
+                        {questions[currentQIdx]?.options.map((o, i) => (
+                            <button key={i} onClick={() => setAnswers({...answers, [questions[currentQIdx].id]: o.id})} className={`p-6 rounded-[2rem] border-2 text-left transition-all ${answers[questions[currentQIdx].id] === o.id ? 'bg-indigo-600 border-indigo-400' : 'bg-white/5 border-transparent'}`}>
+                                <span className="font-black mr-4">{o.id}.</span> {renderText(o.label)}
+                            </button>
+                        ))}
                     </div>
                 </div>
             </div>
-            <div className="h-20 border-t bg-white flex items-center justify-between px-10 shadow-inner">
-                <button onClick={() => setCurrentQIdx(p => Math.max(0, p - 1))} disabled={currentQIdx === 0} className="p-4 bg-slate-100 rounded-full hover:bg-slate-200 disabled:opacity-30"><ChevronLeft/></button>
-                <button onClick={() => window.location.reload()} className="bg-emerald-600 text-white px-10 py-3 rounded-2xl font-black shadow-lg">SUBMIT</button>
-                <button onClick={() => setCurrentQIdx(p => Math.min(questions.length - 1, p + 1))} disabled={currentQIdx === questions.length - 1} className="p-4 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-30"><ChevronRight/></button>
+            <div className="h-24 border-t border-white/10 flex items-center justify-between px-10">
+                <button onClick={() => setCurrentQIdx(p => Math.max(0, p-1))} className="p-4 bg-white/5 rounded-full"><ChevronLeft/></button>
+                <button onClick={() => setCurrentQIdx(p => Math.min(questions.length-1, p+1))} className="p-4 bg-indigo-600 rounded-full"><ChevronRight/></button>
             </div>
         </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans pb-24 md:pb-0">
-      <div className="bg-white border-b px-8 py-4 flex justify-between items-center sticky top-0 z-20 shadow-sm">
-          <div className="text-2xl font-black text-blue-600 flex items-center gap-2 tracking-tighter">
-              <Zap fill="currentColor" className="text-yellow-400"/> EduPrime
-          </div>
+    <div className="min-h-screen bg-[#020617] text-slate-300 font-sans pb-20">
+      {/* Royal Header */}
+      <div className="p-8 border-b border-white/5 flex justify-between items-center sticky top-0 bg-[#020617]/80 backdrop-blur-xl z-50">
+          <h1 className="text-3xl font-black text-white italic tracking-tighter">EDU<span className="text-indigo-500">PRIME</span></h1>
           <div className="flex items-center gap-4">
-              <div className="text-right hidden sm:block">
-                  <p className="text-sm font-black text-slate-800">{user.name}</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{user.username}</p>
+              <div className="text-right hidden md:block">
+                  <p className="text-sm font-black text-white">{user.name}</p>
+                  <p className="text-[10px] text-amber-500 font-bold uppercase tracking-widest">Premium Member</p>
               </div>
-              <button onClick={onLogout} className="p-2.5 bg-rose-50 text-rose-500 rounded-full hover:bg-rose-500 hover:text-white transition-all"><LogOut size={20}/></button>
+              <button onClick={onLogout} className="p-3 bg-rose-500/10 text-rose-500 rounded-2xl border border-rose-500/20"><LogOut/></button>
           </div>
       </div>
 
-      <div className="max-w-6xl mx-auto p-6 md:p-12 space-y-12">
+      <div className="max-w-7xl mx-auto p-6 md:p-12 space-y-16">
           {tab === 'home' && (
-              <div className="space-y-12">
-                  <div className="bg-gradient-to-br from-blue-700 to-indigo-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden">
-                      <div className="relative z-10 space-y-4">
-                          <span className="bg-white/20 backdrop-blur-md px-4 py-1 rounded-full text-[10px] font-black tracking-widest border border-white/10 uppercase">Member Eksklusif</span>
-                          <h2 className="text-4xl font-black tracking-tight">Siap Menaklukkan <br/>Ujian Hari Ini? 🚀</h2>
-                          <p className="text-blue-100 text-lg max-w-md">Kalahkan batasanmu dan raih skor tertinggi dengan EduPrime Intelligence System.</p>
+              <div className="space-y-16 animate-in fade-in duration-700">
+                  {/* Hero */}
+                  <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-[4rem] p-12 text-white border border-white/10 shadow-2xl relative overflow-hidden">
+                      <div className="relative z-10 space-y-6">
+                          <span className="bg-indigo-500 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.2em]">Academic Elite</span>
+                          <h2 className="text-6xl font-black tracking-tight leading-tight">Kejar Skor <br/>Tertinggi Anda.</h2>
+                          <p className="text-slate-400 text-xl max-w-lg font-light">Simulasi ujian dengan algoritma IRT standar nasional untuk hasil presisi.</p>
                       </div>
-                      <Award size={240} className="absolute right-[-40px] top-[-40px] opacity-10 rotate-12"/>
+                      <Award size={300} className="absolute right-[-50px] top-[-50px] opacity-10 rotate-12"/>
                   </div>
-                  
-                  <div className="space-y-6">
-                      <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-                          <LayoutGrid className="text-blue-600"/> Paket Ujian Aktif
-                      </h3>
-                      <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-2">
-                          {periods.map(p => (
-                              <div key={p.id} className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 hover:shadow-2xl transition-all duration-300">
-                                  <div className="flex justify-between items-center mb-6">
-                                      <div className="bg-blue-50 text-blue-600 p-4 rounded-2xl font-black text-2xl">{p.name[0]}</div>
-                                      <span className="bg-slate-900 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter shadow-md">{p.type}</span>
-                                  </div>
-                                  <h3 className="text-2xl font-black text-slate-800 mb-6">{p.name}</h3>
-                                  <div className="space-y-3">
-                                      {p.exams.map(e => (
-                                          <div key={e.id} className="flex justify-between items-center p-5 bg-slate-50 rounded-2xl hover:bg-indigo-50/50 transition-all border border-transparent hover:border-indigo-100 group">
-                                              <div>
-                                                  <p className="font-bold text-slate-700">{e.title}</p>
-                                                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{e.duration} Menit</p>
-                                              </div>
-                                              {e.is_done ? (
-                                                  <div className="bg-emerald-100 text-emerald-600 p-2 rounded-xl"><CheckCircle size={20}/></div>
-                                              ) : (
-                                                  <button onClick={() => startExam(e.id)} className="bg-blue-600 text-white p-3 rounded-full shadow-lg group-hover:scale-110 transition-transform">
-                                                      <Play size={16} fill="currentColor" className="ml-1"/>
-                                                  </button>
-                                              )}
-                                          </div>
-                                      ))}
-                                  </div>
+
+                  {/* Tryout CPNS & UTBK List */}
+                  <div className="grid gap-10 md:grid-cols-2">
+                      {periods.map(p => (
+                          <div key={p.id} className="bg-white/5 p-10 rounded-[3.5rem] border border-white/5 hover:border-indigo-500/30 transition-all duration-500">
+                              <div className="flex justify-between items-center mb-8">
+                                  <div className="bg-indigo-600/20 text-indigo-400 p-4 rounded-2xl font-black text-2xl">{p.name[0]}</div>
+                                  <span className="bg-slate-900 text-indigo-400 px-6 py-2 rounded-full text-[10px] font-black tracking-widest uppercase border border-indigo-500/20">{p.type}</span>
                               </div>
-                          ))}
-                      </div>
+                              <h3 className="text-3xl font-bold text-white mb-8">{p.name}</h3>
+                              <div className="space-y-4">
+                                  {p.exams.map(e => (
+                                      <div key={e.id} className="flex justify-between items-center p-6 bg-white/[0.03] rounded-[2rem] hover:bg-indigo-600 transition-all group">
+                                          <div>
+                                              <p className="font-black text-white text-lg">{e.title}</p>
+                                              <p className="text-[10px] text-slate-500 font-bold uppercase group-hover:text-indigo-200">{e.duration} Mins &bull; IRT Active</p>
+                                          </div>
+                                          {e.is_done ? (
+                                              <button onClick={() => openReview(e.id)} className="bg-emerald-500/20 text-emerald-400 p-3 rounded-2xl border border-emerald-500/20 flex items-center gap-2 text-xs font-black">
+                                                  <CheckCircle size={18}/> REVIEW
+                                              </button>
+                                          ) : (
+                                              <button onClick={() => startExam(e.id)} className="bg-white text-indigo-900 p-4 rounded-full shadow-2xl hover:scale-110 transition-transform">
+                                                  <Play size={20} fill="currentColor"/>
+                                              </button>
+                                          )}
+                                      </div>
+                                  ))}
+                              </div>
+                          </div>
+                      ))}
                   </div>
               </div>
           )}
 
           {tab === 'lms' && (
-              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-6">
-                  <h3 className="text-2xl font-black text-slate-800 flex items-center gap-4">
-                      <BookOpen size={32} className="text-blue-600"/> Materi & Modul Belajar
-                  </h3>
-                  <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+              <div className="space-y-12 animate-in slide-in-from-bottom-10 duration-700">
+                  <div className="text-center space-y-4">
+                      <h2 className="text-5xl font-black text-white tracking-tighter uppercase italic">Imperial <span className="text-indigo-500">Library</span></h2>
+                      <p className="text-slate-500 text-xl">Materi belajar eksklusif untuk persiapan skor 800+.</p>
+                  </div>
+                  <div className="grid gap-8 md:grid-cols-3">
                       {materials.map(m => (
-                          <div key={m.id} onClick={() => window.open(m.content_url, '_blank')} className="bg-white p-8 rounded-[2.5rem] shadow-xl hover:-translate-y-2 transition-all cursor-pointer group flex flex-col h-full border border-slate-50">
-                              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-8 transition-all group-hover:rotate-6 ${m.type === 'video' ? 'bg-rose-50 text-red-500' : 'bg-blue-50 text-blue-600'}`}>
-                                  {m.type === 'video' ? <Video size={32}/> : <FileText size={32}/>}
+                          <div key={m.id} onClick={() => window.open(m.content_url, '_blank')} className="bg-white/5 p-10 rounded-[3.5rem] border border-white/5 hover:-translate-y-4 transition-all duration-500 cursor-pointer group flex flex-col h-full">
+                              <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center mb-8 ${m.type==='video'?'bg-rose-500/10 text-rose-500':'bg-indigo-500/10 text-indigo-400'}`}>
+                                  {m.type==='video'?<Video size={40}/>:<FileText size={40}/>}
                               </div>
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">{m.category}</span>
-                              <h4 className="font-black text-slate-800 leading-tight group-hover:text-blue-600 flex-1 mb-6">{m.title}</h4>
-                              <div className="flex items-center justify-between pt-6 border-t border-slate-50">
-                                  <span className="text-[10px] font-black text-blue-600 tracking-tighter uppercase">Lihat Materi</span>
-                                  <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center group-hover:translate-x-1 transition-transform">
-                                      <Link size={14} strokeWidth={3}/>
-                                  </div>
+                              <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-4 block">{m.category}</span>
+                              <h4 className="text-2xl font-bold text-white leading-tight mb-10 flex-1">{m.title}</h4>
+                              <div className="flex items-center justify-between pt-8 border-t border-white/5 group-hover:text-indigo-400 transition-colors">
+                                  <span className="text-xs font-black tracking-widest uppercase">Open Module</span>
+                                  <ChevronRight/>
                               </div>
                           </div>
                       ))}
@@ -186,18 +160,52 @@ const StudentDashboard = ({ user, onLogout }) => {
           )}
       </div>
 
-      <div className="md:hidden fixed bottom-0 w-full bg-white/90 backdrop-blur-2xl border-t px-10 py-5 flex justify-between items-center z-40 pb-10 shadow-[0_-20px_50px_rgba(0,0,0,0.1)] rounded-t-[2.5rem]">
-          <button onClick={() => setTab('home')} className={`transition-all ${tab === 'home' ? 'text-blue-600 scale-125' : 'text-slate-300'}`}><Home size={28} strokeWidth={3}/></button>
-          <button onClick={() => setTab('lms')} className={`transition-all ${tab === 'lms' ? 'text-blue-600 scale-125' : 'text-slate-300'}`}><BookOpen size={28} strokeWidth={3}/></button>
-          <button onClick={() => setTab('target')} className={`transition-all ${tab === 'target' ? 'text-blue-600 scale-125' : 'text-slate-300'}`}><Target size={28} strokeWidth={3}/></button>
+      {/* Modal Pembahasan (Review) */}
+      {reviewData && (
+          <div className="fixed inset-0 bg-[#020617] z-[100] overflow-y-auto p-6 md:p-20 animate-in slide-in-from-bottom duration-700">
+              <div className="max-w-4xl mx-auto space-y-12">
+                  <div className="flex justify-between items-center border-b border-white/10 pb-8">
+                      <div>
+                          <h2 className="text-4xl font-black text-white uppercase tracking-tighter">Review & Pembahasan</h2>
+                          <p className="text-emerald-400 font-black mt-2">SKOR IRT ANDA: {reviewData.score}</p>
+                      </div>
+                      <button onClick={() => setReviewData(null)} className="p-4 bg-white/5 rounded-full text-slate-400"><X size={32}/></button>
+                  </div>
+                  {reviewData.questions.map((q, i) => (
+                      <div key={i} className="bg-white/5 p-10 rounded-[3rem] border border-white/10 space-y-8 relative overflow-hidden">
+                          <span className="bg-indigo-600 text-white px-6 py-1 rounded-full text-xs font-black uppercase tracking-widest">Nomor {i+1}</span>
+                          <div className="text-2xl font-bold text-white">{renderText(q.text)}</div>
+                          <div className="grid gap-3">
+                              {q.options.map((o, idx) => (
+                                  <div key={idx} className={`p-6 rounded-2xl border flex justify-between items-center ${o.is_correct ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 font-black' : 'bg-white/5 border-transparent opacity-60'}`}>
+                                      <span>{o.idx}. {renderText(o.label)}</span>
+                                      {o.is_correct && <CheckCircle/>}
+                                  </div>
+                              ))}
+                          </div>
+                          <div className="bg-indigo-500/10 p-8 rounded-[2rem] border-l-[10px] border-indigo-500 text-indigo-300">
+                              <p className="text-xs font-black uppercase tracking-widest mb-4">💡 Analisis Solusi</p>
+                              <div className="text-lg leading-relaxed italic">{renderText(q.explanation || "Pembahasan eksklusif tersedia dalam modul LMS.")}</div>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
+
+      {/* Royal Mobile Nav */}
+      <div className="md:hidden fixed bottom-0 w-full bg-[#020617]/90 backdrop-blur-2xl border-t border-white/10 p-6 flex justify-around items-center z-50 rounded-t-[3rem] shadow-[0_-20px_50px_rgba(0,0,0,0.5)] pb-12">
+          <button onClick={() => setTab('home')} className={`transition-all duration-500 ${tab === 'home' ? 'text-indigo-400 scale-150' : 'text-slate-600'}`}><Home size={28}/></button>
+          <button onClick={() => setTab('lms')} className={`transition-all duration-500 ${tab === 'lms' ? 'text-indigo-400 scale-150' : 'text-slate-600'}`}><Book size={28}/></button>
+          <button onClick={() => setTab('target')} className={`transition-all duration-500 ${tab === 'target' ? 'text-indigo-400 scale-150' : 'text-slate-600'}`}><Target size={28}/></button>
       </div>
 
-      <footer className="hidden md:block py-16 text-center text-slate-400 border-t bg-white mt-20">
-          <p className="font-black text-[10px] tracking-[0.4em] mb-3 uppercase text-slate-300">EduPrime CBT System v20.0</p>
-          <p className="font-bold text-slate-400">Handcrafted with Excellence by <span className="text-slate-900 font-black">Muhamad Fadli Azim</span></p>
+      <footer className="hidden md:block py-20 text-center text-slate-700 border-t border-white/5 bg-[#020617] mt-40">
+          <p className="font-black text-[12px] tracking-[1em] mb-8 uppercase text-slate-600">EduPrime Imperial v22.0</p>
+          <p className="text-2xl font-black text-white tracking-tighter uppercase opacity-80 italic underline decoration-indigo-500">MUHAMAD FADLI AZIM</p>
       </footer>
     </div>
   );
 };
 
-export default StudentDashboard; 
+export default StudentDashboard;
