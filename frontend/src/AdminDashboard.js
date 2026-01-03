@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Users, Database, BookOpen, Trash2, Plus, FileSpreadsheet, Upload, CheckSquare, Square, LogOut, Edit3, Eye, X } from 'lucide-react';
+import { Users, Database, BookOpen, Trash2, Plus, FileSpreadsheet, Upload, CheckSquare, Square, LogOut, Eye, X } from 'lucide-react';
 import { API_URL } from './config';
 import 'katex/dist/katex.min.css';
-import { InlineMath, BlockMath } from 'react-katex';
+import { InlineMath } from 'react-katex';
 
-// Render Soal Helper untuk Admin Preview
+// Render Soal Helper (Regex Fixed)
 const RenderPreview = ({ text }) => {
     if (!text) return null;
-    const parts = text.split(/(\$[^\$]+\$)/g);
+    const parts = text.split(/(\$[^\$]+\$)/g); // Fixed regex
     return (
         <span>
             {parts.map((part, index) => {
@@ -19,7 +19,6 @@ const RenderPreview = ({ text }) => {
 };
 
 const AdminDashboard = ({ onLogout }) => {
-    // ... (State lama sama, tambah state Preview)
     const [activeTab, setActiveTab] = useState('users');
     const [users, setUsers] = useState([]);
     const [periods, setPeriods] = useState([]);
@@ -30,7 +29,6 @@ const AdminDashboard = ({ onLogout }) => {
     const [showPeriodModal, setShowPeriodModal] = useState(false);
     const [showLmsModal, setShowLmsModal] = useState(false);
     
-    // NEW: PREVIEW STATE
     const [previewExamId, setPreviewExamId] = useState(null);
     const [previewQuestions, setPreviewQuestions] = useState([]);
 
@@ -46,7 +44,6 @@ const AdminDashboard = ({ onLogout }) => {
 
     useEffect(() => { refresh(); }, [refresh]);
 
-    // ... (Fungsi Toggle, Delete, Upload sama seperti V33) ...
     const toggleSelect = (id) => setSelectedUsers(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
     const toggleSelectAll = () => setSelectedUsers(selectedUsers.length === users.length ? [] : users.map(u => u.id));
     const deleteSelected = () => {
@@ -64,7 +61,6 @@ const AdminDashboard = ({ onLogout }) => {
         fetch(`${API_URL}/admin/majors/bulk`, {method:'POST', body:f}).then(()=>alert("Passing Grade Updated!"));
     };
 
-    // LOGIC PREVIEW
     const openPreview = (eid) => {
         fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d => {
             setPreviewQuestions(d.questions);
@@ -72,7 +68,6 @@ const AdminDashboard = ({ onLogout }) => {
         });
     };
 
-    // Handlers
     const handleAddUser = (e) => { e.preventDefault(); fetch(`${API_URL}/admin/users`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(newUser)}).then(()=>{setShowUserModal(false);refresh()}); };
     const handleAddPeriod = (e) => { e.preventDefault(); const f=new FormData();f.append('name',newPeriod.name);f.append('exam_type',newPeriod.exam_type); fetch(`${API_URL}/admin/periods`,{method:'POST',body:f}).then(()=>{setShowPeriodModal(false);refresh()}); };
     const handleAddLms = (e) => { e.preventDefault(); const f=new FormData();f.append('title',newLms.title);f.append('type',newLms.type);f.append('category',newLms.category);f.append('url',newLms.url); fetch(`${API_URL}/materials`,{method:'POST',body:f}).then(()=>{setShowLmsModal(false);refresh()}); };
@@ -80,7 +75,7 @@ const AdminDashboard = ({ onLogout }) => {
     return (
         <div className="min-h-screen bg-slate-50 flex text-slate-900 font-sans">
             <aside className="w-64 bg-[#0F172A] text-white p-6 flex flex-col shadow-2xl">
-                <h2 className="text-2xl font-black mb-10 italic text-indigo-400">EduPrime V36</h2>
+                <h2 className="text-2xl font-black mb-10 italic text-indigo-400">EduPrime V37</h2>
                 <nav className="space-y-2 flex-1">
                     <button onClick={()=>setActiveTab('users')} className={`w-full text-left p-3 rounded-xl font-bold flex items-center gap-3 ${activeTab==='users'?'bg-indigo-600':'hover:bg-white/5'}`}><Users size={18}/> Peserta</button>
                     <button onClick={()=>setActiveTab('exams')} className={`w-full text-left p-3 rounded-xl font-bold flex items-center gap-3 ${activeTab==='exams'?'bg-indigo-600':'hover:bg-white/5'}`}><Database size={18}/> Bank Soal</button>
@@ -90,7 +85,6 @@ const AdminDashboard = ({ onLogout }) => {
             </aside>
 
             <main className="flex-1 p-10 overflow-y-auto">
-                {/* Header & Buttons (Sama V33) */}
                 <div className="flex justify-between items-center mb-8">
                     <h1 className="text-4xl font-black uppercase tracking-tight">{activeTab}</h1>
                     {activeTab === 'users' && (
@@ -105,7 +99,6 @@ const AdminDashboard = ({ onLogout }) => {
                     {activeTab === 'lms' && <button onClick={()=>setShowLmsModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg flex items-center gap-2"><Plus size={18}/> Tambah Materi</button>}
                 </div>
 
-                {/* USER TABLE */}
                 {activeTab === 'users' && (
                     <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100">
                         <table className="w-full text-left">
@@ -131,7 +124,6 @@ const AdminDashboard = ({ onLogout }) => {
                     </div>
                 )}
 
-                {/* EXAM PERIODS */}
                 {activeTab === 'exams' && (
                     <div className="grid gap-8 md:grid-cols-2">
                         {periods.map(p => (
@@ -159,7 +151,6 @@ const AdminDashboard = ({ onLogout }) => {
                     </div>
                 )}
 
-                {/* LMS (Sama) */}
                 {activeTab === 'lms' && (
                     <div className="grid gap-6 md:grid-cols-3">
                         {materials.map(m => (
@@ -175,7 +166,6 @@ const AdminDashboard = ({ onLogout }) => {
                 )}
             </main>
             
-            {/* Modal PREVIEW SOAL (FITUR BARU) */}
             {previewExamId && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-6 z-[100] backdrop-blur-sm">
                     <div className="bg-white w-full max-w-4xl h-[90vh] rounded-[3rem] overflow-hidden flex flex-col relative">
@@ -205,7 +195,6 @@ const AdminDashboard = ({ onLogout }) => {
                 </div>
             )}
 
-            {/* Modal User & Period & LMS (Sama V33 - Saya singkat agar muat) */}
             {showUserModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><form onSubmit={handleAddUser} className="bg-white p-8 rounded-3xl w-full max-w-sm"><h3 className="text-xl font-bold mb-4">Tambah User</h3><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Nama" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name: e.target.value})}/><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username: e.target.value})}/><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Password" value={newUser.password} onChange={e=>setNewUser({...newUser, password: e.target.value})}/><button type="submit" className="w-full p-3 bg-indigo-600 text-white rounded-xl font-bold">Simpan</button><button type="button" onClick={()=>setShowUserModal(false)} className="w-full mt-2 p-3 bg-slate-100 rounded-xl font-bold">Batal</button></form></div>}
             {showPeriodModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><form onSubmit={handleAddPeriod} className="bg-white p-8 rounded-3xl w-full max-w-sm"><h3 className="text-xl font-bold mb-4">Paket Baru</h3><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Nama Paket" value={newPeriod.name} onChange={e=>setNewPeriod({...newPeriod, name: e.target.value})}/><select className="w-full mb-3 p-3 border rounded-xl" value={newPeriod.exam_type} onChange={e=>setNewPeriod({...newPeriod, exam_type: e.target.value})}><option value="UTBK">UTBK</option><option value="CPNS">CPNS</option><option value="TKA">TKA</option></select><button type="submit" className="w-full p-3 bg-indigo-600 text-white rounded-xl font-bold">Buat</button><button type="button" onClick={()=>setShowPeriodModal(false)} className="w-full mt-2 p-3 bg-slate-100 rounded-xl font-bold">Batal</button></form></div>}
             {showLmsModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><form onSubmit={handleAddLms} className="bg-white p-8 rounded-3xl w-full max-w-sm"><h3 className="text-xl font-bold mb-4">Materi Baru</h3><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Judul" value={newLms.title} onChange={e=>setNewLms({...newLms, title: e.target.value})}/><input className="w-full mb-3 p-3 border rounded-xl" placeholder="URL" value={newLms.url} onChange={e=>setNewLms({...newLms, url: e.target.value})}/><button type="submit" className="w-full p-3 bg-indigo-600 text-white rounded-xl font-bold">Simpan</button><button type="button" onClick={()=>setShowLmsModal(false)} className="w-full mt-2 p-3 bg-slate-100 rounded-xl font-bold">Batal</button></form></div>}

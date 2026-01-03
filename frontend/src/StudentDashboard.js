@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Clock, Play, BarChart2, LogOut, ChevronLeft, ChevronRight, Home, BookOpen, Award, FileText } from 'lucide-react';
+import { Play, BarChart2, LogOut, ChevronLeft, ChevronRight, Home, BookOpen, Award, FileText } from 'lucide-react';
 import { API_URL } from './config';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 
-// Helper Render Math
+// Render Soal Helper (Regex Fixed)
 const RenderSoal = ({ text }) => {
     if (!text) return null;
-    const parts = text.split(/(\$[^\$]+\$)/g);
+    const parts = text.split(/(\$[^\$]+\$)/g); // Fixed
     return (
         <span className="text-lg leading-loose text-slate-800 font-serif">
             {parts.map((part, index) => {
@@ -21,12 +21,12 @@ const RenderSoal = ({ text }) => {
 const RadarChartMock = () => <div className="w-full h-40 bg-indigo-900/50 rounded-xl flex items-center justify-center text-indigo-200 text-xs font-bold border border-indigo-500/30">ANALISIS KEMAMPUAN</div>;
 
 const StudentDashboard = ({ user, onLogout }) => {
-    const [view, setView] = useState('home'); // home, results, lms
+    const [view, setView] = useState('home');
     const [data, setData] = useState(null);
     const [majors, setMajors] = useState([]);
     const [selectedMajor, setSelectedMajor] = useState({ m1: user.c1||'', m2: user.c2||'' });
     
-    // Exam State
+    // Exam
     const [activeExamId, setActiveExamId] = useState(null);
     const [examContent, setExamContent] = useState(null);
     const [answers, setAnswers] = useState({});
@@ -47,7 +47,6 @@ const StudentDashboard = ({ user, onLogout }) => {
         }).then(()=>alert("Target Disimpan!"));
     };
 
-    // --- LOGIC TIMER & SUBMIT ---
     const startExam = (eid) => {
         if(!window.confirm("Waktu berjalan. Fokus!")) return;
         fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{
@@ -76,7 +75,7 @@ const StudentDashboard = ({ user, onLogout }) => {
         }
     }, [timeLeft, activeExamId, submitExam]);
 
-    // --- RENDER EXAM MODE (FULL SCREEN) ---
+    // EXAM MODE
     if(activeExamId && examContent) {
         const q = examContent.questions[qIdx];
         return (
@@ -124,7 +123,6 @@ const StudentDashboard = ({ user, onLogout }) => {
 
     return (
         <div className="min-h-screen bg-[#F1F5F9] font-sans pb-24">
-            {/* Header */}
             <div className="bg-white p-6 shadow-sm mb-6 flex justify-between items-center">
                 <h1 className="text-2xl font-black text-slate-800">EduPrime</h1>
                 <div className="flex gap-4 items-center">
@@ -133,13 +131,9 @@ const StudentDashboard = ({ user, onLogout }) => {
                 </div>
             </div>
 
-            {/* Content Based on Tab */}
             <div className="max-w-6xl mx-auto px-6">
-                
-                {/* 1. TAB HOME (UJIAN) */}
                 {view === 'home' && (
                     <div className="space-y-8">
-                        {/* Profile & Jurusan */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border flex flex-col md:flex-row justify-between gap-4">
                             <div><h2 className="font-bold text-lg">Target Kampus</h2><p className="text-xs text-slate-500">Pilih jurusan impianmu untuk analisis peluang.</p></div>
                             <div className="flex gap-2">
@@ -149,16 +143,12 @@ const StudentDashboard = ({ user, onLogout }) => {
                                 <button onClick={saveMajors} className="bg-indigo-600 text-white px-4 rounded-lg font-bold text-xs">SIMPAN</button>
                             </div>
                         </div>
-
-                        {/* Radar Chart */}
                         <div className="bg-indigo-900 text-white p-6 rounded-2xl shadow-lg relative overflow-hidden">
                             <div className="flex justify-between items-start">
                                 <div><h3 className="font-bold mb-2"><BarChart2 className="inline mr-2"/> Analisis Kemampuan</h3><p className="text-xs text-indigo-300">Grafik perkembangan skor Tryout Anda.</p></div>
                                 <RadarChartMock/>
                             </div>
                         </div>
-
-                        {/* Exam List */}
                         <div className="grid gap-6">
                             {data.periods.map(p => (
                                 <div key={p.id} className="bg-white p-6 rounded-2xl shadow-sm border">
@@ -180,7 +170,6 @@ const StudentDashboard = ({ user, onLogout }) => {
                     </div>
                 )}
 
-                {/* 2. TAB HASIL (REKAP NILAI) */}
                 {view === 'results' && (
                     <div className="bg-white p-8 rounded-3xl shadow-sm border">
                         <h2 className="text-2xl font-black mb-6 flex items-center gap-3"><Award className="text-emerald-500"/> Riwayat Hasil Ujian</h2>
@@ -202,7 +191,6 @@ const StudentDashboard = ({ user, onLogout }) => {
                     </div>
                 )}
 
-                {/* 3. TAB LMS (MATERI) */}
                 {view === 'lms' && (
                     <div className="space-y-6">
                         <h2 className="text-2xl font-black flex items-center gap-3"><BookOpen className="text-blue-500"/> Materi Belajar</h2>
@@ -222,7 +210,6 @@ const StudentDashboard = ({ user, onLogout }) => {
                 )}
             </div>
 
-            {/* Bottom Navigation */}
             <div className="fixed bottom-0 left-0 w-full bg-white border-t flex justify-around py-4 z-40 shadow-[0_-10px_20px_rgba(0,0,0,0.05)]">
                 <button onClick={()=>setView('home')} className={`flex flex-col items-center gap-1 text-xs font-bold ${view==='home'?'text-indigo-600':'text-slate-400'}`}><Home size={20}/> Beranda</button>
                 <button onClick={()=>setView('results')} className={`flex flex-col items-center gap-1 text-xs font-bold ${view==='results'?'text-indigo-600':'text-slate-400'}`}><Award size={20}/> Hasil</button>
