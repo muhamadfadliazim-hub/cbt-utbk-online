@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Upload, Trash2, Plus, Database, 
-  FileText, Users, Video, Shield, LogOut, Search 
+  Users, Video, Shield, LogOut, Search 
 } from 'lucide-react';
 import { INITIAL_UNIVERSITY_DATA } from './data/mockData';
 
@@ -11,9 +11,6 @@ const AdminDashboard = ({ onLogout }) => {
     const [searchTerm, setSearchTerm] = useState('');
     
     // --- FITUR BACA EXCEL (SIMULASI FRONTEND) ---
-    // Catatan: Browser murni tidak bisa baca .xlsx tanpa library tambahan (SheetJS).
-    // Kode ini menyimulasikan penerimaan file Excel, lalu membaca isinya jika CSV,
-    // atau memberi notifikasi sukses jika XLSX (asumsi diproses backend).
     const handleFileUpload = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -36,7 +33,6 @@ const AdminDashboard = ({ onLogout }) => {
             };
             reader.readAsText(file);
         } else {
-            // Simulasi sukses untuk XLSX
             alert(`File Excel "${file.name}" berhasil diunggah! Data akan diproses server.`);
         }
     };

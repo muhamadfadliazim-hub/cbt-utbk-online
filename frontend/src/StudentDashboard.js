@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
     BookOpen, ArrowRight, Play, FileText, Folder, 
-    ChevronLeft, Monitor, Award, LogOut, Layout, User
+    ChevronLeft, Award, User
 } from 'lucide-react';
 import { SUBJECT_FOLDERS, MOCK_MATERIALS } from './data/mockData';
 
@@ -80,6 +80,8 @@ const StudentDashboard = ({ user, onLogout }) => {
                 {/* Footer Creator */}
                 <div className="mt-auto py-6 text-center text-slate-400 text-sm font-medium">
                     &copy; 2024 CBT Pro Excellence. Created by <span className="text-slate-600 font-bold">Muhamad Fadli Azim</span>.
+                    <br/>
+                    <button onClick={onLogout} className="mt-2 text-red-400 hover:text-red-500 font-bold text-xs">Logout</button>
                 </div>
             </div>
         );
@@ -87,8 +89,6 @@ const StudentDashboard = ({ user, onLogout }) => {
 
     // --- VIEW 2: LMS (FOLDER SYSTEM) ---
     if (mainView === 'lms') {
-        // Ambil folder berdasarkan kategori yang dipilih
-        // Default ke subject kosong jika kategori tidak punya subject khusus (fallback)
         const currentFolders = SUBJECT_FOLDERS[lmsCategory] || [];
         
         const filteredMaterials = MOCK_MATERIALS.filter(m => 
@@ -124,7 +124,7 @@ const StudentDashboard = ({ user, onLogout }) => {
 
                 <main className="flex-1 max-w-6xl w-full mx-auto p-6 md:p-8">
                     
-                    {/* LEVEL 1: GRID FOLDER MAPEL (Jika subject belum dipilih) */}
+                    {/* LEVEL 1: GRID FOLDER MAPEL */}
                     {!selectedSubject && (
                         <div className="animate-fade-in">
                             <div className="mb-6">
@@ -148,7 +148,7 @@ const StudentDashboard = ({ user, onLogout }) => {
                         </div>
                     )}
 
-                    {/* LEVEL 2: LIST MATERI (Setelah subject dipilih) */}
+                    {/* LEVEL 2: LIST MATERI */}
                     {selectedSubject && (
                         <div className="animate-fade-in">
                              <button onClick={()=>setSelectedSubject(null)} className="mb-6 text-sm font-bold text-slate-500 hover:text-indigo-600 flex items-center gap-1">
