@@ -26,6 +26,15 @@ const StudentDashboard = ({ user, onLogout }) => {
   const [timeLeft, setTimeLeft] = useState(0);
   const [markedQuestions, setMarkedQuestions] = useState([]);
 
+  // Fungsi renderText dipindahkan ke dalam agar bisa diakses secara konsisten
+  const renderText = useCallback((text) => {
+    if (!text) return null;
+    return text.split(/(\$.*?\$)/).map((part, index) => {
+        if (part.startsWith('$') && part.endsWith('$')) return <InlineMath key={index} math={part.slice(1, -1)} />;
+        return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br/>') }} />;
+    });
+  }, []);
+
   useEffect(() => {
     fetch(`${API_URL}/student/periods?username=${user.username}`).then(r => r.json()).then(setPeriods);
     fetch(`${API_URL}/majors`).then(r => r.json()).then(d => setMajors(Array.isArray(d) ? d : []));
@@ -33,6 +42,7 @@ const StudentDashboard = ({ user, onLogout }) => {
   }, [user.username]);
 
   const handleSubmitExam = useCallback(() => { 
+    if (!activeExam) return;
     fetch(`${API_URL}/exams/${activeExam}/submit`, { 
         method: 'POST', 
         headers: {'Content-Type':'application/json'}, 
@@ -62,14 +72,6 @@ const StudentDashboard = ({ user, onLogout }) => {
       ).slice(0, 50); 
   }, [majors, searchMajor]);
 
-  const renderText = (text) => {
-    if (!text) return null;
-    return text.split(/(\$.*?\$)/).map((part, index) => {
-        if (part.startsWith('$') && part.endsWith('$')) return <InlineMath key={index} math={part.slice(1, -1)} />;
-        return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br/>') }} />;
-    });
-  };
-
   const handleSaveMajor = () => {
       fetch(`${API_URL}/users/select-major`, {
           method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -80,11 +82,15 @@ const StudentDashboard = ({ user, onLogout }) => {
   const startExam = (examId) => {
       if(!window.confirm("Mulai ujian sekarang?")) return;
       fetch(`${API_URL}/exams/${examId}`).then(r => r.json()).then(data => {
-            setQuestions(data.questions); setTimeLeft(data.duration * 60); setAnswers({}); setCurrentQIdx(0); setActiveExam(examId);
+            setQuestions(data.questions || []); 
+            setTimeLeft(data.duration * 60); 
+            setAnswers({}); 
+            setCurrentQIdx(0); 
+            setActiveExam(examId);
       });
   };
 
-  const handleAnswer = (val) => setAnswers({ ...answers, [questions[currentQIdx].id]: val });
+  const handleAnswer = (val) => setAnswers(prev => ({ ...prev, [questions[currentQIdx].id]: val }));
   const toggleMark = (idx) => setMarkedQuestions(prev => prev.includes(idx) ? prev.filter(i=>i!==idx) : [...prev, idx]);
   const openReview = (examId) => { fetch(`${API_URL}/student/exams/${examId}/review?username=${user.username}`).then(r => r.ok?r.json():Promise.reject("Belum selesai")).then(setReviewExamData).catch(e=>alert(e)); };
 
@@ -101,14 +107,14 @@ const StudentDashboard = ({ user, onLogout }) => {
                       <Clock size={16}/> {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
                   </div>
                   <button onClick={()=>setIsNavOpen(!isNavOpen)} className="lg:hidden p-2 bg-slate-100 rounded-lg"><LayoutGrid size={20}/></button>
-                  <button onClick={handleSubmitExam} className="hidden lg:block bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200">Selesai</button>
+                  <button onClick={handleSubmitExam} className="hidden lg:block bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 transition">Selesai</button>
               </div>
 
               <div className="flex-1 flex overflow-hidden relative">
                   <div className="flex-1 overflow-y-auto p-4 pb-32">
                       <div className="max-w-3xl mx-auto space-y-6">
                           {q.reading_material && <div className="bg-orange-50 p-6 rounded-2xl border-l-4 border-orange-400 text-slate-800 leading-relaxed shadow-sm">{renderText(q.reading_material)}</div>}
-                          <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-xl shadow-slate-200/50 border border-slate-100">
+                          <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-xl border border-slate-100">
                               <div className="text-xl font-bold text-slate-800 mb-8 leading-tight">{renderText(q.text)}</div>
                               {q.image_url && <img src={q.image_url.startsWith('http') ? q.image_url : `${API_URL}${q.image_url}`} alt="Soal" className="mb-8 rounded-2xl border max-h-64 object-contain mx-auto shadow-sm"/>}
                               <div className="space-y-3">
@@ -127,19 +133,22 @@ const StudentDashboard = ({ user, onLogout }) => {
                   <div className={`fixed inset-y-0 right-0 w-72 bg-white border-l shadow-2xl transform transition-transform z-40 ${isNavOpen?'translate-x-0':'translate-x-full lg:translate-x-0 lg:static'}`}>
                       <div className="p-4 border-b font-bold flex justify-between bg-indigo-900 text-white"><span>Navigasi Soal</span><button onClick={()=>setIsNavOpen(false)}><X size={20}/></button></div>
                       <div className="p-4 grid grid-cols-5 gap-2 overflow-y-auto max-h-[70vh]">
-                          {questions.map((_, i) => (
-                              <button key={i} onClick={()=>{setCurrentQIdx(i);setIsNavOpen(false)}} className={`aspect-square rounded-xl font-black text-xs relative transition-all ${currentQIdx===i?'bg-blue-600 text-white ring-2 ring-blue-300 ring-offset-2':answers[questions[i].id]?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-400'}`}>
-                                  {i+1}{markedQuestions.includes(i)&&<div className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></div>}
-                              </button>
-                          ))}
+                          {questions.map((_, i) => {
+                              const isFilled = answers[questions[i].id];
+                              return (
+                                <button key={i} onClick={()=>{setCurrentQIdx(i);setIsNavOpen(false)}} className={`aspect-square rounded-xl font-black text-xs relative transition-all ${currentQIdx===i?'bg-blue-600 text-white ring-2 ring-blue-300 ring-offset-2':isFilled?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-400'}`}>
+                                    {i+1}{markedQuestions.includes(i)&&<div className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></div>}
+                                </button>
+                              )
+                          })}
                       </div>
                       <div className="p-4 border-t mt-auto"><button onClick={()=>toggleMark(currentQIdx)} className="w-full py-3 bg-slate-100 rounded-xl font-bold text-slate-600 flex justify-center gap-2 hover:bg-slate-200 transition-colors"><Flag size={16}/> {markedQuestions.includes(currentQIdx)?'Hapus Ragu':'Ragu-ragu'}</button></div>
                   </div>
               </div>
-              <div className="h-20 bg-white border-t flex items-center justify-between px-6 shadow-[0_-5px_15px_rgba(0,0,0,0.05)] z-30">
-                   <button onClick={() => setCurrentQIdx(Math.max(0, currentQIdx - 1))} disabled={currentQIdx===0} className="p-3 rounded-full bg-slate-100 text-slate-600 disabled:opacity-30 hover:bg-slate-200 transition-colors"><ChevronLeft size={28}/></button>
-                   <button onClick={handleSubmitExam} className="lg:hidden bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg">SELESAI</button>
-                   <button onClick={() => setCurrentQIdx(Math.min(questions.length-1, currentQIdx + 1))} disabled={currentQIdx===questions.length-1} className="p-3 rounded-full bg-blue-600 text-white disabled:opacity-30 hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all"><ChevronRight size={28}/></button>
+              <div className="h-20 bg-white border-t flex items-center justify-between px-6 z-30">
+                   <button onClick={() => setCurrentQIdx(Math.max(0, currentQIdx - 1))} disabled={currentQIdx===0} className="p-3 rounded-full bg-slate-100 text-slate-600 disabled:opacity-30 hover:bg-slate-200"><ChevronLeft size={28}/></button>
+                   <button onClick={handleSubmitExam} className="lg:hidden bg-blue-600 text-white px-8 py-3 rounded-2xl font-black">SELESAI</button>
+                   <button onClick={() => setCurrentQIdx(Math.min(questions.length-1, currentQIdx + 1))} disabled={currentQIdx===questions.length-1} className="p-3 rounded-full bg-blue-600 text-white disabled:opacity-30 hover:bg-blue-700 shadow-lg"><ChevronRight size={28}/></button>
               </div>
           </div>
       );
@@ -163,35 +172,35 @@ const StudentDashboard = ({ user, onLogout }) => {
               <>
                 <div className="bg-gradient-to-br from-blue-600 to-indigo-900 rounded-[2.5rem] p-8 md:p-12 text-white shadow-2xl relative overflow-hidden">
                     <div className="relative z-10">
-                        <span className="bg-white/20 backdrop-blur-md px-4 py-1 rounded-full text-[10px] font-black tracking-widest border border-white/20 mb-4 inline-block">MEMBER PRIORITAS</span>
-                        <h2 className="text-4xl font-black mb-2 tracking-tight leading-tight">Kejar Kampus <br/>Impianmu! ✨</h2>
-                        <p className="text-blue-100 mb-8 max-w-sm font-medium">Target Utama: <span className="text-white font-black underline decoration-yellow-400 decoration-2">{user.pilihan1 || "Belum dipilih"}</span></p>
-                        <button onClick={()=>setShowMajorModal(true)} className="bg-white text-blue-900 px-8 py-3.5 rounded-2xl font-black hover:bg-blue-50 transition-all flex items-center gap-3 shadow-xl hover:-translate-y-1 active:translate-y-0"><GraduationCap size={20}/> Tentukan Target</button>
+                        <span className="bg-white/20 backdrop-blur-md px-4 py-1 rounded-full text-[10px] font-black tracking-widest border border-white/20 mb-4 inline-block uppercase">Premium User</span>
+                        <h2 className="text-4xl font-black mb-2 tracking-tight leading-tight">Siap Menghadapi <br/>Ujian Hari Ini? 🚀</h2>
+                        <p className="text-blue-100 mb-8 max-w-sm font-medium">Target: <span className="text-white font-black underline decoration-yellow-400 decoration-2">{user.pilihan1 || "Atur Jurusan Impian"}</span></p>
+                        <button onClick={()=>setShowMajorModal(true)} className="bg-white text-blue-900 px-8 py-3.5 rounded-2xl font-black hover:bg-blue-50 transition-all flex items-center gap-3 shadow-xl"><GraduationCap size={20}/> Tentukan Target</button>
                     </div>
                     <Award size={220} className="absolute right-[-30px] bottom-[-30px] opacity-10 rotate-12"/>
                 </div>
 
                 <div className="space-y-6">
-                    <h3 className="font-black text-xl flex items-center gap-3 text-slate-800"><LayoutGrid size={24} className="text-blue-600"/> Dashboard Ujian</h3>
+                    <h3 className="font-black text-xl flex items-center gap-3 text-slate-800"><LayoutGrid size={24} className="text-blue-600"/> Paket Ujian</h3>
                     <div className="grid gap-6 md:grid-cols-2">
                         {periods.map(p => (
                             <div key={p.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 hover:shadow-2xl transition-all duration-500 group">
                                 <div className="flex justify-between items-start mb-6">
                                     <div className="bg-blue-50 text-blue-600 p-4 rounded-2xl font-black text-2xl">{p.name[0]}</div>
-                                    <span className="text-[10px] font-black bg-slate-900 text-white px-4 py-1.5 rounded-full uppercase tracking-tighter shadow-md">{p.type}</span>
+                                    <span className="text-[10px] font-black bg-slate-900 text-white px-4 py-1.5 rounded-full uppercase tracking-tighter">{p.type}</span>
                                 </div>
                                 <h4 className="font-black text-xl text-slate-800 mb-6">{p.name}</h4>
                                 <div className="space-y-3">
                                     {p.exams.map(e => (
-                                        <div key={e.id} className="flex justify-between items-center p-4 bg-slate-50/50 rounded-2xl border border-transparent hover:border-blue-200 hover:bg-blue-50/20 transition-all group/item">
+                                        <div key={e.id} className="flex justify-between items-center p-4 bg-slate-50/50 rounded-2xl border border-transparent hover:border-blue-200 hover:bg-blue-50/20 transition-all">
                                             <div>
                                                 <div className="text-sm font-black text-slate-700">{e.title}</div>
-                                                <div className="text-[10px] font-bold text-slate-400">Durasi {e.duration} Menit</div>
+                                                <div className="text-[10px] font-bold text-slate-400">{e.duration} Menit</div>
                                             </div>
                                             {e.is_done ? (
-                                                <button onClick={()=>openReview(e.id)} className="bg-emerald-500 text-white px-5 py-2 rounded-xl text-[10px] font-black shadow-lg hover:bg-emerald-600 transition-all">REVIEW</button>
+                                                <button onClick={()=>openReview(e.id)} className="bg-emerald-500 text-white px-5 py-2 rounded-xl text-[10px] font-black shadow-lg hover:bg-emerald-600">REVIEW</button>
                                             ) : (
-                                                <button onClick={()=>startExam(e.id)} className="bg-blue-600 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-xl group-hover/item:scale-110 transition-all">
+                                                <button onClick={()=>startExam(e.id)} className="bg-blue-600 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-xl hover:scale-110 transition-all">
                                                     <Play size={16} fill="currentColor" className="ml-1"/>
                                                 </button>
                                             )}
@@ -200,6 +209,7 @@ const StudentDashboard = ({ user, onLogout }) => {
                                 </div>
                             </div>
                         ))}
+                        {periods.length === 0 && <div className="col-span-full py-20 text-center text-slate-400 font-bold border-2 border-dashed rounded-[2rem]">Belum ada paket ujian aktif</div>}
                     </div>
                 </div>
               </>
@@ -207,24 +217,23 @@ const StudentDashboard = ({ user, onLogout }) => {
 
           {tab === 'lms' && (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
-                  <h3 className="font-black text-2xl flex items-center gap-4 text-slate-800 tracking-tight"><BookOpen size={32} className="text-blue-600"/> Materi Belajar Eksklusif</h3>
+                  <h3 className="font-black text-2xl flex items-center gap-4 text-slate-800 tracking-tight"><BookOpen size={32} className="text-blue-600"/> Materi Eksklusif</h3>
                   <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                       {materials.map(m=>(
                           <div key={m.id} onClick={()=>window.open(m.content_url, '_blank')} className="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/50 hover:shadow-2xl hover:-translate-y-2 transition-all cursor-pointer group flex flex-col h-full">
-                              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-8 transition-all group-hover:rotate-6 ${m.type==='video'?'bg-rose-50 text-rose-500':'bg-blue-50 text-blue-500'}`}>
+                              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-8 transition-all group-hover:rotate-6 ${m.type==='video'?'bg-rose-50 text-red-500':'bg-blue-50 text-blue-500'}`}>
                                   {m.type==='video' ? <Video size={32}/> : <FileText size={32}/>}
                               </div>
                               <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{m.category}</div>
                               <h4 className="font-black text-slate-800 text-xl leading-tight mb-8 group-hover:text-blue-600 transition-colors flex-1">{m.title}</h4>
                               <div className="flex items-center justify-between pt-6 border-t border-slate-50">
-                                  <span className="text-xs font-black text-blue-600 tracking-tighter">LIHAT MATERI</span>
+                                  <span className="text-xs font-black text-blue-600 tracking-tighter uppercase">Buka Materi</span>
                                   <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center group-hover:translate-x-1 transition-transform">
                                       <Link size={16} strokeWidth={3}/>
                                   </div>
                               </div>
                           </div>
                       ))}
-                      {materials.length===0 && <div className="col-span-full text-center py-24 bg-white rounded-[3rem] border-4 border-dashed border-slate-100 text-slate-400 font-black uppercase tracking-widest">Konten belum tersedia</div>}
                   </div>
               </div>
           )}
@@ -233,21 +242,22 @@ const StudentDashboard = ({ user, onLogout }) => {
       <div className="md:hidden fixed bottom-0 w-full bg-white/90 backdrop-blur-2xl border-t flex justify-around p-4 z-40 pb-10 shadow-[0_-20px_50px_rgba(0,0,0,0.1)] rounded-t-[2.5rem]">
           <button onClick={()=>setTab('home')} className={`flex flex-col items-center gap-1.5 transition-all ${tab==='home'?'text-blue-600 scale-110':'text-slate-300'}`}>
               <Home size={26} strokeWidth={tab==='home'?3.5:2.5}/>
-              <span className="text-[9px] font-black">HOME</span>
+              <span className="text-[9px] font-black uppercase">Home</span>
           </button>
           <button onClick={()=>setTab('lms')} className={`flex flex-col items-center gap-1.5 transition-all ${tab==='lms'?'text-blue-600 scale-110':'text-slate-300'}`}>
               <BookOpen size={26} strokeWidth={tab==='lms'?3.5:2.5}/>
-              <span className="text-[9px] font-black">MODUL</span>
+              <span className="text-[9px] font-black uppercase">Modul</span>
           </button>
           <button onClick={()=>setShowMajorModal(true)} className={`flex flex-col items-center gap-1.5 text-slate-300 transition-all hover:text-blue-600`}>
               <Target size={26} strokeWidth={2.5}/>
-              <span className="text-[9px] font-black">TARGET</span>
+              <span className="text-[9px] font-black uppercase">Target</span>
           </button>
       </div>
 
       {showMajorModal && (
           <div className="fixed inset-0 bg-indigo-950/80 backdrop-blur-md z-50 flex items-center justify-center p-6 animate-in fade-in duration-300">
               <div className="bg-white rounded-[3rem] w-full max-w-sm p-8 shadow-2xl relative">
+                  <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
                   <div className="text-center mb-10">
                       <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-inner"><Target size={40} strokeWidth={2.5}/></div>
                       <h3 className="font-black text-2xl text-slate-800 tracking-tight">Atur Impianmu</h3>
@@ -268,8 +278,8 @@ const StudentDashboard = ({ user, onLogout }) => {
                       </select>
                   </div>
                   <div className="flex gap-4">
-                      <button onClick={()=>setShowMajorModal(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black hover:bg-slate-200 transition-all">BATAL</button>
-                      <button onClick={handleSaveMajor} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all transform active:scale-95">SIMPAN</button>
+                      <button onClick={()=>setShowMajorModal(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black hover:bg-slate-200 transition-all uppercase">Batal</button>
+                      <button onClick={handleSaveMajor} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all transform active:scale-95 uppercase">Simpan</button>
                   </div>
               </div>
           </div>
@@ -313,8 +323,8 @@ const StudentDashboard = ({ user, onLogout }) => {
           </div>
       )}
       <footer className="hidden md:block py-16 text-center text-slate-400 border-t bg-white mt-20">
-          <p className="font-black tracking-[0.3em] mb-3 text-sm text-slate-300 uppercase">EduPrime Assessment Platform v17.0</p>
-          <p className="font-bold text-slate-400">Handcrafted with Excellence by <span className="text-indigo-900 font-black">Muhamad Fadli Azim</span></p>
+          <p className="font-black tracking-[0.3em] mb-3 text-sm text-slate-300 uppercase tracking-[0.2em]">EduPrime Assessment Platform v18.0</p>
+          <p className="font-bold text-slate-400 italic">Handcrafted with Excellence by Muhamad Fadli Azim</p>
       </footer>
     </div>
   );
