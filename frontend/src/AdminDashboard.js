@@ -4,10 +4,10 @@ import { API_URL } from './config';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 
-// Render Soal Helper (Regex Fixed)
+// Regex Fixed: Removed unnecessary escape characters
 const RenderPreview = ({ text }) => {
     if (!text) return null;
-    const parts = text.split(/(\$[^\$]+\$)/g); // Fixed regex
+    const parts = text.split(/(\$[^$]+\$)/g); 
     return (
         <span>
             {parts.map((part, index) => {
