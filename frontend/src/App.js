@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Login from './Login';
 import AdminDashboard from './AdminDashboard';
 import StudentDashboard from './StudentDashboard';
 
 function App() {
-  // Ambil data user dari penyimpanan lokal agar tahan refresh (Opsional)
+  // Ambil data user dari penyimpanan lokal agar tahan refresh
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('cbt_user');
     return saved ? JSON.parse(saved) : null;
@@ -18,10 +18,10 @@ function App() {
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem('cbt_user');
-    window.location.href = "/"; // Force refresh agar bersih
+    window.location.href = "/";
   };
 
-  // 1. Jika belum login, tampilkan halaman Login Mewah
+  // 1. Jika belum login, tampilkan halaman Login
   if (!user) {
     return <Login onLogin={handleLogin} />;
   }
@@ -31,7 +31,7 @@ function App() {
     return <AdminDashboard user={user} onLogout={handleLogout} />;
   }
 
-  // 3. Jika Siswa, tampilkan Dashboard Siswa Mewah
+  // 3. Jika Siswa, tampilkan Dashboard Siswa
   return <StudentDashboard user={user} onLogout={handleLogout} />;
 }
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  LayoutDashboard, FileText, Users, Video, Plus, LogOut, 
-  Trash2, Upload, Search, ChevronRight, BookOpen, Shield 
+  FileText, Users, Video, Plus, LogOut, 
+  Upload, Shield 
 } from 'lucide-react';
 import { API_URL } from './config';
 
