@@ -1,310 +1,269 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-    Clock, CheckCircle, Play, FileText, LogOut, ChevronRight, BookOpen, X, 
-    ChevronLeft, Flag, GraduationCap, Search, Video, 
-    LayoutGrid, Award, Zap, Target, Music, Home, TrendingUp, Book, MonitorPlay
+    Clock, Play, FileText, LogOut, BookOpen, X, 
+    ChevronLeft, ChevronRight, Flag, Target, Video, 
+    CheckCircle, Zap, LayoutGrid, Award, Home
 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
 
 const StudentDashboard = ({ user, onLogout }) => {
-  // DEFAULT HARUS 'menu' AGAR TIDAK LANGSUNG KE JURUSAN
-  const [tab, setTab] = useState('menu'); 
+  // --- STATE ---
+  const [activeTab, setActiveTab] = useState('home'); // home, exam, lms
   const [periods, setPeriods] = useState([]);
-  const [activeExam, setActiveExam] = useState(null);
-  const [reviewExamData, setReviewExamData] = useState(null);
   const [majors, setMajors] = useState([]);
   const [materials, setMaterials] = useState([]);
-  const [showMajorModal, setShowMajorModal] = useState(false);
-  const [isNavOpen, setIsNavOpen] = useState(false);
   
-  // Data User
-  const [selectedChoice1, setSelectedChoice1] = useState(user.choice1_id || '');
-  const [selectedChoice2, setSelectedChoice2] = useState(user.choice2_id || '');
-  const [searchMajor, setSearchMajor] = useState('');
-  const [userTarget, setUserTarget] = useState(user.pilihan1);
-  
-  // Exam State
+  // State Ujian
+  const [isExamMode, setIsExamMode] = useState(false);
+  const [activeExamId, setActiveExamId] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [currentQIdx, setCurrentQIdx] = useState(0);
   const [answers, setAnswers] = useState({});
   const [timeLeft, setTimeLeft] = useState(0);
   const [markedQuestions, setMarkedQuestions] = useState([]);
-  const [isLoadingExam, setIsLoadingExam] = useState(false);
+  
+  // State Modal/Review
+  const [reviewData, setReviewData] = useState(null);
+  const [showTargetModal, setShowTargetModal] = useState(false);
+  const [target1, setTarget1] = useState(user?.choice1_id || '');
+  const [target2, setTarget2] = useState(user?.choice2_id || '');
+  const [searchJurusan, setSearchJurusan] = useState('');
 
+  // --- EFFECT: LOAD DATA ---
   useEffect(() => {
-    fetch(`${API_URL}/student/periods?username=${user.username}`).then(r => r.json()).then(setPeriods);
-    fetch(`${API_URL}/majors`).then(r => r.json()).then(d => setMajors(Array.isArray(d) ? d : []));
-    fetch(`${API_URL}/materials`).then(r => r.json()).then(d => setMaterials(Array.isArray(d) ? d : []));
-  }, [user.username]);
-
-  useEffect(() => {
-    if (timeLeft > 0 && activeExam) { 
-        const t = setInterval(() => setTimeLeft(p => p - 1), 1000); 
-        return () => clearInterval(t); 
-    } else if (timeLeft === 0 && activeExam) {
-        handleSubmitExam();
+    if(user?.username) {
+        fetch(`${API_URL}/student/periods?username=${user.username}`).then(r=>r.json()).then(d=>setPeriods(Array.isArray(d)?d:[]));
+        fetch(`${API_URL}/majors`).then(r=>r.json()).then(d=>setMajors(Array.isArray(d)?d:[]));
+        fetch(`${API_URL}/materials`).then(r=>r.json()).then(d=>setMaterials(Array.isArray(d)?d:[]));
     }
-  }, [timeLeft, activeExam]);
+  }, [user]);
+
+  // --- EFFECT: TIMER UJIAN ---
+  useEffect(() => {
+    if (isExamMode && timeLeft > 0) {
+        const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
+        return () => clearInterval(timer);
+    } else if (isExamMode && timeLeft === 0) {
+        finishExam();
+    }
+  }, [isExamMode, timeLeft]);
+
+  // --- HELPERS ---
+  const renderTex = (text) => {
+      if (!text) return null;
+      return text.split(/(\$.*?\$)/).map((part, index) => {
+          if (part.startsWith('$') && part.endsWith('$')) return <InlineMath key={index} math={part.slice(1, -1)} />;
+          return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br/>') }} />;
+      });
+  };
 
   const filteredMajors = useMemo(() => {
-      return majors.filter(m => 
-          m.university.toLowerCase().includes(searchMajor.toLowerCase()) || 
-          m.name.toLowerCase().includes(searchMajor.toLowerCase())
-      ).slice(0, 50); 
-  }, [majors, searchMajor]);
+      return majors.filter(m => m.university.toLowerCase().includes(searchJurusan.toLowerCase()) || m.name.toLowerCase().includes(searchJurusan.toLowerCase())).slice(0, 50);
+  }, [majors, searchJurusan]);
 
-  const renderText = (text) => {
-    if (!text) return null;
-    return text.split(/(\$.*?\$)/).map((part, index) => {
-        if (part.startsWith('$') && part.endsWith('$')) return <InlineMath key={index} math={part.slice(1, -1)} />;
-        return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br/>') }} />;
-    });
+  // --- ACTIONS ---
+  const handleStartExam = (examId) => {
+      if(!window.confirm("Mulai kerjakan soal?")) return;
+      fetch(`${API_URL}/exams/${examId}`)
+        .then(r => r.json())
+        .then(data => {
+            if(!data.questions || data.questions.length === 0) return alert("Soal kosong / belum diupload admin.");
+            setQuestions(data.questions);
+            setTimeLeft(data.duration * 60);
+            setAnswers({});
+            setCurrentQIdx(0);
+            setActiveExamId(examId);
+            setIsExamMode(true);
+        })
+        .catch(err => alert("Gagal mengambil soal: " + err.message));
   };
 
-  const handleEnterExam = () => {
-      setTab('exam');
-      // Hanya muncul modal jika BELUM punya pilihan
-      if (!user.choice1_id && !selectedChoice1) {
-          setShowMajorModal(true);
-      }
+  const handleAnswer = (val) => {
+      setAnswers({...answers, [questions[currentQIdx].id]: val});
   };
 
-  const handleEnterLMS = () => {
-      setTab('lms');
+  const finishExam = () => {
+      if(!window.confirm("Kumpulkan jawaban?")) return;
+      fetch(`${API_URL}/exams/${activeExamId}/submit`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ username: user.username, answers: answers })
+      }).then(r=>r.json()).then(d => {
+          alert(`Selesai! Skor: ${Math.round(d.score)}`);
+          setIsExamMode(false);
+          setActiveExamId(null);
+          window.location.reload();
+      });
   };
 
-  const handleSaveMajor = () => {
+  const saveTarget = () => {
       fetch(`${API_URL}/users/select-major`, {
           method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ username: user.username, choice1_id: parseInt(selectedChoice1), choice2_id: selectedChoice2 ? parseInt(selectedChoice2) : null })
-      }).then(r => r.json()).then(d => { 
-          alert("Target Disimpan!"); 
-          setShowMajorModal(false); 
-          const m = majors.find(x => x.id === parseInt(selectedChoice1));
-          if(m) setUserTarget(`${m.university} - ${m.name}`);
-      });
+          body: JSON.stringify({ username: user.username, choice1_id: parseInt(target1), choice2_id: target2 ? parseInt(target2) : null })
+      }).then(()=>{ alert("Target disimpan!"); setShowTargetModal(false); });
   };
 
-  const startExam = (examId) => {
-      if(!window.confirm("Mulai ujian sekarang?")) return;
-      setIsLoadingExam(true);
-      fetch(`${API_URL}/exams/${examId}`).then(r => {
-          if (!r.ok) throw new Error("Gagal mengambil soal.");
-          return r.json();
-      }).then(data => {
-            if(!data.questions || data.questions.length === 0) {
-                alert("Soal belum tersedia.");
-                setIsLoadingExam(false);
-                return;
-            }
-            setQuestions(data.questions); 
-            setTimeLeft(data.duration * 60); 
-            setAnswers({}); 
-            setCurrentQIdx(0); 
-            setActiveExam(examId);
-            setIsLoadingExam(false);
-      }).catch((e) => {
-          alert("Error: " + e.message);
-          setIsLoadingExam(false);
-      });
+  const openReview = (eid) => {
+      fetch(`${API_URL}/student/exams/${eid}/review?username=${user.username}`).then(r=>r.json()).then(setReviewData);
   };
 
-  const handleAnswer = (val) => setAnswers({ ...answers, [questions[currentQIdx].id]: val });
-  const handleSubmitExam = () => { 
-      if(!window.confirm("Yakin selesai?")) return;
-      fetch(`${API_URL}/exams/${activeExam}/submit`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: user.username, answers: answers }) })
-      .then(r=>r.json())
-      .then(d => { alert(`Selesai! Skor: ${Math.round(d.score)}`); setActiveExam(null); window.location.reload(); }); 
-  };
-  
-  const toggleMark = (idx) => setMarkedQuestions(prev => prev.includes(idx) ? prev.filter(i=>i!==idx) : [...prev, idx]);
-  const openReview = (examId) => { fetch(`${API_URL}/student/exams/${examId}/review?username=${user.username}`).then(r => r.ok?r.json():Promise.reject("Belum selesai")).then(setReviewExamData).catch(e=>alert(e)); };
-
-  // --- MODE UJIAN (FULLSCREEN) ---
-  if (activeExam && questions.length > 0) {
+  // --- VIEW: UJIAN (FULLSCREEN) ---
+  if (isExamMode && questions.length > 0) {
       const q = questions[currentQIdx];
       return (
-          <div className="h-screen flex flex-col bg-slate-50 font-sans overflow-hidden">
-              <div className="h-16 bg-white border-b flex items-center justify-between px-4 z-30 shadow-sm">
-                  <div className="flex items-center gap-3">
-                      <div className="bg-blue-600 text-white w-8 h-8 rounded-lg flex items-center justify-center font-bold">{currentQIdx + 1}</div>
-                      <div className="text-sm font-bold text-slate-600">/ {questions.length} Soal</div>
+          <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
+              {/* HEADER UJIAN */}
+              <div className="bg-white px-6 py-4 shadow-sm flex justify-between items-center sticky top-0 z-50">
+                  <div className="font-bold text-lg text-slate-700">Soal {currentQIdx + 1} / {questions.length}</div>
+                  <div className={`px-4 py-2 rounded-lg font-mono font-bold text-white ${timeLeft<300?'bg-red-500':'bg-blue-600'}`}>
+                      {Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}
                   </div>
-                  <div className={`px-4 py-1.5 rounded-full font-mono font-bold text-lg flex items-center gap-2 ${timeLeft < 300 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-700'}`}>
-                      <Clock size={16}/> {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
-                  </div>
-                  <button onClick={()=>setIsNavOpen(!isNavOpen)} className="lg:hidden p-2 bg-slate-100 rounded-lg"><LayoutGrid size={20}/></button>
-                  <button onClick={handleSubmitExam} className="hidden lg:block bg-blue-600 text-white px-4 py-2 rounded-lg font-bold">Selesai</button>
+                  <button onClick={finishExam} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-emerald-700">Selesai</button>
               </div>
 
-              <div className="flex-1 flex overflow-hidden relative">
-                  <div className="flex-1 overflow-y-auto p-4 pb-32">
-                      <div className="max-w-3xl mx-auto space-y-6">
-                          {q.reading_material && <div className="bg-orange-50 p-5 rounded-2xl border-l-4 border-orange-400 text-slate-800 leading-relaxed"><div className="font-bold text-orange-600 mb-2 flex items-center gap-2 text-xs uppercase"><BookOpen size={14}/> Bacaan</div>{renderText(q.reading_material)}</div>}
-                          {q.audio_url && <div className="bg-blue-50 p-4 rounded-xl flex items-center gap-3 border border-blue-100"><div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white"><Music size={20}/></div><div className="flex-1"><div className="text-xs font-bold text-blue-700 uppercase mb-1">Audio Listening</div><audio controls src={q.audio_url.startsWith('http') ? q.audio_url : `${API_URL}${q.audio_url}`} className="w-full h-8"/></div></div>}
+              <div className="flex-1 flex overflow-hidden">
+                  {/* MAIN SOAL */}
+                  <div className="flex-1 overflow-y-auto p-4 md:p-8">
+                      <div className="max-w-4xl mx-auto space-y-6">
+                          {q.reading_material && <div className="bg-white p-6 rounded-xl border-l-4 border-orange-400 shadow-sm">{renderTex(q.reading_material)}</div>}
+                          {q.audio_url && <audio controls src={q.audio_url.startsWith('http')?q.audio_url:`${API_URL}${q.audio_url}`} className="w-full"/>}
                           
-                          <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                              <div className="text-lg font-medium text-slate-800 mb-6">{renderText(q.text)}</div>
-                              {q.image_url && <img src={q.image_url.startsWith('http') ? q.image_url : `${API_URL}${q.image_url}`} alt="Soal" className="mb-6 rounded-xl border border-slate-100 max-h-64 object-contain mx-auto"/>}
+                          <div className="bg-white p-6 md:p-10 rounded-xl shadow-sm">
+                              {q.image_url && <img src={q.image_url.startsWith('http')?q.image_url:`${API_URL}${q.image_url}`} className="max-h-64 mb-4 rounded border"/>}
+                              <div className="text-lg font-medium text-slate-800 mb-6">{renderTex(q.text)}</div>
+                              
                               <div className="space-y-3">
-                                  {q.type === 'multiple_choice' && q.options.map((opt, i) => (
-                                      <label key={opt.id} className={`flex items-center p-4 rounded-2xl border-2 cursor-pointer transition-all ${answers[q.id] === opt.id ? 'border-blue-500 bg-blue-50' : 'border-slate-100 hover:bg-slate-50'}`}>
-                                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold mr-3 ${answers[q.id] === opt.id ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'}`}>{opt.label.length < 3 ? String.fromCharCode(65+i) : String.fromCharCode(65+i)}</div>
-                                          <div className="text-slate-700 font-medium">{renderText(opt.label)}</div>
+                                  {q.type === 'multiple_choice' && q.options.map((opt, idx) => (
+                                      <label key={idx} className={`flex items-center p-4 border rounded-xl cursor-pointer hover:bg-slate-50 transition ${answers[q.id]===opt.id ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' : 'border-slate-200'}`}>
+                                          <div className={`w-8 h-8 flex items-center justify-center rounded-full font-bold mr-3 ${answers[q.id]===opt.id?'bg-blue-600 text-white':'bg-slate-200 text-slate-500'}`}>{String.fromCharCode(65+idx)}</div>
+                                          <div className="flex-1">{renderTex(opt.label)}</div>
+                                          <input type="radio" name={`q-${q.id}`} className="hidden" checked={answers[q.id]===opt.id} onChange={()=>handleAnswer(opt.id)}/>
                                       </label>
                                   ))}
-                                  {q.type === 'complex' && q.options.map(opt => (
-                                      <label key={opt.id} className="flex items-center gap-3 p-4 border-2 rounded-2xl cursor-pointer hover:bg-slate-50">
-                                          <input type="checkbox" className="w-5 h-5 accent-blue-600" checked={(answers[q.id]||[]).includes(opt.id)} onChange={e=>{const curr=answers[q.id]||[]; handleAnswer(e.target.checked?[...curr,opt.id]:curr.filter(x=>x!==opt.id))}} />
-                                          <span className="text-slate-700 font-medium">{renderText(opt.label)}</span>
+                                  {q.type === 'complex' && q.options.map((opt, idx) => (
+                                      <label key={idx} className="flex items-center gap-3 p-4 border rounded-xl hover:bg-slate-50 cursor-pointer">
+                                          <input type="checkbox" className="w-5 h-5" checked={(answers[q.id]||[]).includes(opt.id)} onChange={e=>{
+                                              const curr = answers[q.id] || [];
+                                              handleAnswer(e.target.checked ? [...curr, opt.id] : curr.filter(x=>x!==opt.id));
+                                          }}/>
+                                          <span>{renderTex(opt.label)}</span>
                                       </label>
                                   ))}
-                                  {q.type === 'short_answer' && <input className="w-full p-4 border-2 rounded-2xl focus:border-blue-500 outline-none bg-slate-50 font-bold" placeholder="Jawaban..." value={answers[q.id]||''} onChange={e=>handleAnswer(e.target.value)}/>}
+                                  {q.type === 'short_answer' && (
+                                      <input className="w-full p-4 border rounded-xl font-bold" placeholder="Ketik jawaban..." value={answers[q.id]||''} onChange={e=>handleAnswer(e.target.value)}/>
+                                  )}
                               </div>
                           </div>
                       </div>
                   </div>
-                  <div className={`fixed inset-y-0 right-0 w-72 bg-white border-l shadow-2xl transform transition-transform z-40 ${isNavOpen?'translate-x-0':'translate-x-full lg:translate-x-0 lg:static'}`}>
-                      <div className="p-4 border-b font-bold flex justify-between lg:hidden"><span>Navigasi</span><button onClick={()=>setIsNavOpen(false)}><X/></button></div>
-                      <div className="p-4 grid grid-cols-5 gap-2 overflow-y-auto max-h-[80vh]">
+
+                  {/* NAVIGASI NOMOR */}
+                  <div className="w-72 bg-white border-l p-4 overflow-y-auto hidden md:block">
+                      <div className="font-bold mb-4 text-slate-700">Navigasi</div>
+                      <div className="grid grid-cols-5 gap-2">
                           {questions.map((_, i) => (
-                              <button key={i} onClick={()=>{setCurrentQIdx(i);setIsNavOpen(false)}} className={`aspect-square rounded-lg font-bold text-sm relative ${currentQIdx===i?'bg-blue-600 text-white':answers[questions[i].id]?'bg-blue-100 text-blue-700':'bg-slate-100 text-slate-500'}`}>
-                                  {i+1}{markedQuestions.includes(i)&&<div className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></div>}
-                              </button>
+                              <button key={i} onClick={()=>setCurrentQIdx(i)} className={`p-2 rounded text-sm font-bold ${currentQIdx===i?'bg-blue-600 text-white':answers[questions[i].id]?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}`}>{i+1}</button>
                           ))}
                       </div>
-                      <div className="p-4 border-t"><button onClick={()=>toggleMark(currentQIdx)} className="w-full py-2 bg-slate-100 rounded-lg text-slate-600 font-bold flex justify-center gap-2"><Flag size={16}/> Ragu</button></div>
                   </div>
               </div>
-              <div className="h-20 bg-white border-t flex items-center justify-between px-6 shrink-0 z-30">
-                   <button onClick={() => setCurrentQIdx(Math.max(0, currentQIdx - 1))} disabled={currentQIdx===0} className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 disabled:opacity-50"><ChevronLeft/></button>
-                   <button onClick={handleSubmitExam} className="lg:hidden bg-blue-600 text-white px-6 py-2 rounded-full font-bold">Selesai</button>
-                   <button onClick={() => setCurrentQIdx(Math.min(questions.length-1, currentQIdx + 1))} disabled={currentQIdx===questions.length-1} className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-white disabled:opacity-50"><ChevronRight/></button>
+              
+              {/* FOOTER NAV */}
+              <div className="bg-white p-4 border-t flex justify-between sticky bottom-0 z-50">
+                  <button onClick={()=>setCurrentQIdx(Math.max(0, currentQIdx-1))} disabled={currentQIdx===0} className="px-6 py-2 bg-slate-200 rounded-lg font-bold disabled:opacity-50">Sebelumnya</button>
+                  <button onClick={()=>setCurrentQIdx(Math.min(questions.length-1, currentQIdx+1))} disabled={currentQIdx===questions.length-1} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold disabled:opacity-50">Selanjutnya</button>
               </div>
           </div>
       );
   }
 
-  // --- LOBBY UTAMA ---
+  // --- VIEW: DASHBOARD (NON-UJIAN) ---
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-24 md:pb-0">
-      {/* HEADER */}
-      <div className="bg-white sticky top-0 z-20 border-b shadow-sm px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-4 cursor-pointer" onClick={()=>setTab('menu')}>
-              <div className="font-extrabold text-xl text-blue-600 flex items-center gap-2"><Zap className="text-yellow-400" fill="currentColor"/> EduPrime</div>
-              {/* VERSION MARKER - AGAR ANDA TAHU INI VERSI BARU */}
-              <span className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-400 font-bold">v26.1</span>
-          </div>
-          <div className="flex items-center gap-3">
-              <div className="text-right hidden md:block">
-                  <div className="text-sm font-bold">{user.name}</div>
-                  <div className="text-xs text-slate-500">{user.username}</div>
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-20">
+      {/* NAVBAR */}
+      <div className="bg-white border-b sticky top-0 z-30 px-4 py-3 flex justify-between items-center shadow-sm">
+          <div className="flex items-center gap-6">
+              <div className="font-extrabold text-xl text-blue-600 flex items-center gap-2"><Zap fill="currentColor" className="text-yellow-400"/> EduPrime</div>
+              <div className="hidden md:flex gap-1">
+                  <button onClick={()=>setActiveTab('home')} className={`px-4 py-2 rounded-lg font-bold text-sm ${activeTab==='home'?'bg-blue-50 text-blue-600':'text-slate-500 hover:bg-slate-50'}`}>Dashboard</button>
+                  <button onClick={()=>setActiveTab('exam')} className={`px-4 py-2 rounded-lg font-bold text-sm ${activeTab==='exam'?'bg-blue-50 text-blue-600':'text-slate-500 hover:bg-slate-50'}`}>Ujian</button>
+                  <button onClick={()=>setActiveTab('lms')} className={`px-4 py-2 rounded-lg font-bold text-sm ${activeTab==='lms'?'bg-blue-50 text-blue-600':'text-slate-500 hover:bg-slate-50'}`}>Belajar</button>
               </div>
-              <button onClick={onLogout} className="p-2 bg-rose-50 text-rose-500 rounded-full hover:bg-rose-100" title="Logout"><LogOut size={18}/></button>
           </div>
+          <button onClick={onLogout} className="bg-rose-50 text-rose-500 p-2 rounded-lg hover:bg-rose-100"><LogOut size={18}/></button>
       </div>
 
-      <div className="max-w-5xl mx-auto p-4 md:p-8 space-y-8">
+      <div className="max-w-5xl mx-auto p-4 md:p-8 space-y-6">
           
-          {/* TAB 0: MENU PILIHAN AWAL (LANDING) */}
-          {tab === 'menu' && (
-              <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500">
-                  <div className="text-center py-8">
-                      <h1 className="text-3xl md:text-4xl font-extrabold text-slate-800 mb-2">Mau belajar apa hari ini?</h1>
-                      <p className="text-slate-500">Pilih mode belajar yang kamu inginkan.</p>
-                  </div>
-                  
-                  <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-                      {/* KARTU LMS */}
-                      <div onClick={handleEnterLMS} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl hover:shadow-2xl hover:-translate-y-2 transition-all cursor-pointer group relative overflow-hidden">
-                          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100 rounded-full -mr-10 -mt-10 blur-3xl opacity-50"></div>
-                          <div className="relative z-10">
-                              <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition"><Book size={32}/></div>
-                              <h3 className="text-2xl font-bold text-slate-800 mb-2">Materi & LMS</h3>
-                              <p className="text-slate-500 leading-relaxed mb-6">Akses video pembelajaran, modul PDF, dan rangkuman materi lengkap.</p>
-                              <div className="flex items-center text-blue-600 font-bold">Buka Materi <ChevronRight className="ml-2 group-hover:translate-x-2 transition"/></div>
-                          </div>
-                      </div>
-
-                      {/* KARTU TRYOUT */}
-                      <div onClick={handleEnterExam} className="bg-gradient-to-br from-indigo-600 to-blue-700 p-8 rounded-[2.5rem] shadow-xl hover:shadow-2xl hover:-translate-y-2 transition-all cursor-pointer group text-white relative overflow-hidden">
-                          <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/20 rounded-full -ml-10 -mb-10 blur-3xl"></div>
-                          <div className="relative z-10">
-                              <div className="w-16 h-16 bg-white/20 backdrop-blur-md text-white rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition"><MonitorPlay size={32}/></div>
-                              <h3 className="text-2xl font-bold mb-2">Simulasi Tryout</h3>
-                              <p className="text-indigo-100 leading-relaxed mb-6">Kerjakan latihan soal CBT dengan sistem penilaian IRT / SKD terbaru.</p>
-                              <div className="flex items-center text-white font-bold bg-white/20 w-fit px-4 py-2 rounded-xl backdrop-blur-md">Mulai Ujian <ChevronRight className="ml-2 group-hover:translate-x-2 transition"/></div>
-                          </div>
-                      </div>
-                  </div>
-              </div>
-          )}
-
-          {/* TAB 1: EXAM LIST (Hanya muncul jika klik Tryout) */}
-          {tab === 'exam' && (
+          {/* TAB: HOME */}
+          {activeTab === 'home' && (
               <>
-                <button onClick={()=>setTab('menu')} className="mb-4 flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold transition"><ChevronLeft size={18}/> Kembali ke Menu</button>
-                
-                {/* TARGET CARD */}
-                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4 mb-8">
-                    <div className="flex items-center gap-4">
-                        <div className="bg-indigo-100 p-3 rounded-xl text-indigo-600"><Target size={24}/></div>
-                        <div>
-                            <div className="text-xs font-bold text-slate-400 uppercase">Target Jurusan</div>
-                            <div className="font-bold text-lg text-slate-800">{userTarget || "Belum diset"}</div>
-                        </div>
+                <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-3xl p-8 text-white relative overflow-hidden shadow-lg">
+                    <div className="relative z-10">
+                        <h1 className="text-3xl font-bold mb-2">Halo, {user?.name}! 👋</h1>
+                        <p className="opacity-90 mb-6">Siap untuk belajar hari ini?</p>
+                        <button onClick={()=>setShowTargetModal(true)} className="bg-white/20 backdrop-blur-md px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-white/30 transition border border-white/20"><Target size={16}/> {user.pilihan1 || "Set Target Jurusan"}</button>
                     </div>
-                    <button onClick={()=>setShowMajorModal(true)} className="px-5 py-2 bg-slate-50 text-slate-600 font-bold rounded-xl text-sm hover:bg-slate-100 transition">Ubah Target</button>
+                    <Award className="absolute right-[-20px] bottom-[-20px] opacity-20" size={140}/>
                 </div>
-
-                <h3 className="font-bold text-xl mb-6 flex items-center gap-2"><LayoutGrid className="text-blue-600"/> Daftar Paket Soal</h3>
-                {isLoadingExam && <div className="text-center p-4 bg-blue-50 text-blue-600 rounded-xl mb-4 animate-pulse font-bold">Sedang memuat soal...</div>}
                 
-                <div className="grid gap-4 md:grid-cols-2">
-                    {periods.map(p => (
-                        <div key={p.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition">
-                            <div className="flex justify-between items-start mb-4">
-                                <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-3 py-1 rounded-lg uppercase">{p.type}</span>
-                            </div>
-                            <h4 className="font-bold text-slate-800 mb-1 text-lg">{p.name}</h4>
-                            <p className="text-xs text-slate-400 mb-4">{p.exams.length} Subtes</p>
-                            <div className="space-y-2">
-                                {p.exams.map(e => (
-                                    <div key={e.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl hover:bg-white hover:border-blue-200 border border-transparent transition">
-                                        <div className="text-sm font-bold text-slate-700">{e.title}</div>
-                                        {e.is_done ? (
-                                            <button onClick={()=>openReview(e.id)} className="px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg shadow hover:bg-emerald-600 transition">Nilai</button>
-                                        ) : (
-                                            <button onClick={()=>startExam(e.id)} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition shadow flex items-center gap-2"><Play size={14} fill="currentColor"/> MULAI</button>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
+                <div className="grid grid-cols-2 gap-4">
+                    <div onClick={()=>setActiveTab('exam')} className="bg-white p-6 rounded-2xl border shadow-sm hover:shadow-md cursor-pointer transition text-center group">
+                        <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition"><Play size={24} fill="currentColor"/></div>
+                        <div className="font-bold text-slate-800">Mulai Ujian</div>
+                    </div>
+                    <div onClick={()=>setActiveTab('lms')} className="bg-white p-6 rounded-2xl border shadow-sm hover:shadow-md cursor-pointer transition text-center group">
+                        <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition"><BookOpen size={24}/></div>
+                        <div className="font-bold text-slate-800">Materi Belajar</div>
+                    </div>
                 </div>
               </>
           )}
 
-          {/* TAB 2: LMS (Hanya muncul jika klik Materi) */}
-          {tab === 'lms' && (
-              <div className="space-y-6">
-                  <button onClick={()=>setTab('menu')} className="mb-4 flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold transition"><ChevronLeft size={18}/> Kembali ke Menu</button>
-                  <h3 className="font-bold text-xl flex items-center gap-2"><BookOpen className="text-blue-600"/> Materi Belajar</h3>
-                  {materials.length === 0 && <div className="text-center p-8 bg-slate-50 rounded-2xl text-slate-400">Belum ada materi.</div>}
+          {/* TAB: UJIAN */}
+          {activeTab === 'exam' && (
+              <div className="space-y-4">
+                  <h2 className="font-bold text-xl flex items-center gap-2"><LayoutGrid className="text-blue-600"/> Daftar Tryout</h2>
+                  {periods.length === 0 && <div className="p-8 text-center text-slate-400 bg-slate-100 rounded-xl">Belum ada ujian tersedia.</div>}
                   <div className="grid gap-4 md:grid-cols-2">
-                      {materials.map(m=>(
-                          <div key={m.id} onClick={()=>window.open(m.content_url, '_blank')} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4 cursor-pointer hover:bg-blue-50 transition">
-                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${m.type==='video'?'bg-red-100 text-red-600':'bg-blue-100 text-blue-600'}`}>
-                                  {m.type==='video'?<Video size={20}/>:<FileText size={20}/>}
+                      {periods.map(p => (
+                          <div key={p.id} className="bg-white p-5 rounded-2xl border shadow-sm hover:border-blue-300 transition">
+                              <div className="flex justify-between items-start mb-3">
+                                  <span className="text-xs font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded uppercase">{p.type}</span>
                               </div>
+                              <h3 className="font-bold text-lg mb-4">{p.name}</h3>
+                              <div className="space-y-2">
+                                  {p.exams.map(e => (
+                                      <div key={e.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                                          <span className="text-sm font-bold text-slate-700">{e.title}</span>
+                                          {e.is_done ? (
+                                              <button onClick={()=>openReview(e.id)} className="px-3 py-1.5 bg-emerald-500 text-white text-xs font-bold rounded-lg">Nilai</button>
+                                          ) : (
+                                              <button onClick={()=>handleStartExam(e.id)} className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg flex items-center gap-1 hover:bg-blue-700">MULAI <ChevronRight size={12}/></button>
+                                          )}
+                                      </div>
+                                  ))}
+                              </div>
+                          </div>
+                      ))}
+                  </div>
+              </div>
+          )}
+
+          {/* TAB: LMS */}
+          {activeTab === 'lms' && (
+              <div className="space-y-4">
+                  <h2 className="font-bold text-xl flex items-center gap-2"><BookOpen className="text-blue-600"/> Pustaka Materi</h2>
+                  <div className="grid gap-4 md:grid-cols-2">
+                      {materials.map(m => (
+                          <div key={m.id} onClick={()=>window.open(m.content_url, '_blank')} className="bg-white p-5 rounded-2xl border shadow-sm hover:shadow-md cursor-pointer flex items-center gap-4 transition">
+                              <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center"><FileText size={20}/></div>
                               <div className="flex-1">
-                                  <div className="text-xs font-bold text-slate-400 uppercase">{m.category}</div>
-                                  <h4 className="font-bold text-slate-800 line-clamp-1">{m.title}</h4>
+                                  <div className="text-xs text-slate-400 font-bold uppercase">{m.category}</div>
+                                  <div className="font-bold text-slate-800 line-clamp-1">{m.title}</div>
                               </div>
-                              <ChevronRight size={20} className="text-slate-300"/>
+                              <ChevronRight className="text-slate-300"/>
                           </div>
                       ))}
                   </div>
@@ -312,39 +271,45 @@ const StudentDashboard = ({ user, onLogout }) => {
           )}
       </div>
 
+      {/* MOBILE BOTTOM NAV */}
+      <div className="md:hidden fixed bottom-0 w-full bg-white border-t flex justify-around p-3 z-40 pb-5 shadow-lg">
+          <button onClick={()=>setActiveTab('home')} className={`flex flex-col items-center gap-1 text-[10px] font-bold ${activeTab==='home'?'text-blue-600':'text-slate-400'}`}><Home size={20}/> Home</button>
+          <button onClick={()=>setActiveTab('exam')} className={`flex flex-col items-center gap-1 text-[10px] font-bold ${activeTab==='exam'?'text-blue-600':'text-slate-400'}`}><LayoutGrid size={20}/> Ujian</button>
+          <button onClick={()=>setActiveTab('lms')} className={`flex flex-col items-center gap-1 text-[10px] font-bold ${activeTab==='lms'?'text-blue-600':'text-slate-400'}`}><BookOpen size={20}/> Belajar</button>
+      </div>
+
       {/* MODAL TARGET */}
-      {showMajorModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-3xl w-full max-w-sm p-6">
-                  <div className="text-center mb-6"><h3 className="font-bold text-lg">Pilih Jurusan</h3></div>
-                  <input className="w-full p-3 bg-slate-100 rounded-xl mb-4 text-sm" placeholder="Cari..." value={searchMajor} onChange={e=>setSearchMajor(e.target.value)}/>
-                  <div className="space-y-3 mb-6">
-                      <select className="w-full p-3 border rounded-xl text-sm" value={selectedChoice1} onChange={e=>setSelectedChoice1(e.target.value)}><option value="">Pilihan 1</option>{filteredMajors.map(m=><option key={m.id} value={m.id}>{m.university} - {m.name}</option>)}</select>
-                      <select className="w-full p-3 border rounded-xl text-sm" value={selectedChoice2} onChange={e=>setSelectedChoice2(e.target.value)}><option value="">Pilihan 2</option>{filteredMajors.map(m=><option key={m.id} value={m.id}>{m.university} - {m.name}</option>)}</select>
-                  </div>
+      {showTargetModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white p-6 rounded-2xl w-full max-w-sm">
+                  <h3 className="font-bold text-lg mb-4 text-center">Pilih Jurusan</h3>
+                  <input className="w-full p-2 border rounded-lg mb-4 text-sm" placeholder="Cari..." value={searchJurusan} onChange={e=>setSearchJurusan(e.target.value)}/>
+                  <select className="w-full p-2 border rounded-lg mb-2 text-sm" value={target1} onChange={e=>setTarget1(e.target.value)}><option value="">Pilihan 1</option>{filteredMajors.map(m=><option key={m.id} value={m.id}>{m.university} - {m.name}</option>)}</select>
+                  <select className="w-full p-2 border rounded-lg mb-6 text-sm" value={target2} onChange={e=>setTarget2(e.target.value)}><option value="">Pilihan 2</option>{filteredMajors.map(m=><option key={m.id} value={m.id}>{m.university} - {m.name}</option>)}</select>
                   <div className="flex gap-2">
-                      <button onClick={()=>setShowMajorModal(false)} className="flex-1 py-3 bg-slate-100 rounded-xl font-bold text-sm">Batal</button>
-                      <button onClick={handleSaveMajor} className="flex-1 py-3 bg-blue-600 rounded-xl font-bold text-sm text-white">Simpan</button>
+                      <button onClick={()=>setShowTargetModal(false)} className="flex-1 py-2 bg-slate-100 rounded-lg text-sm font-bold">Batal</button>
+                      <button onClick={saveTarget} className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">Simpan</button>
                   </div>
               </div>
           </div>
       )}
+
       {/* MODAL REVIEW */}
-      {reviewExamData && (
+      {reviewData && (
           <div className="fixed inset-0 bg-white z-50 overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center shadow-sm">
-                  <h3 className="font-bold text-lg">Pembahasan</h3>
-                  <button onClick={()=>setReviewExamData(null)} className="p-2 bg-slate-100 rounded-full"><X/></button>
+              <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
+                  <h3 className="font-bold">Pembahasan</h3>
+                  <button onClick={()=>setReviewData(null)} className="p-2 bg-slate-100 rounded-full"><X/></button>
               </div>
               <div className="p-4 space-y-6 max-w-3xl mx-auto">
-                  <div className="text-center p-6 bg-blue-50 rounded-3xl"><div className="text-4xl font-extrabold text-blue-600">{Math.round(reviewExamData.score)}</div><div className="text-xs font-bold text-blue-400">SKOR AKHIR</div></div>
-                  {reviewExamData.questions.map((q,i)=>(
-                      <div key={q.id} className="pb-6 border-b space-y-4">
+                  <div className="text-center p-6 bg-blue-50 rounded-xl"><div className="text-4xl font-extrabold text-blue-600">{Math.round(reviewData.score)}</div><div className="text-xs font-bold text-blue-400">SKOR ANDA</div></div>
+                  {reviewData.questions.map((q,i)=>(
+                      <div key={q.id} className="pb-6 border-b space-y-3">
                           <div className="font-bold">No. {i+1}</div>
                           {q.image_url && <img src={q.image_url.startsWith('http')?q.image_url:`${API_URL}${q.image_url}`} className="max-h-40 rounded"/>}
-                          <div>{renderText(q.text)}</div>
-                          <div className="bg-slate-50 p-4 rounded-xl text-sm space-y-2">{q.options.map((o,idx)=>(<div key={idx} className={`flex gap-2 ${o.is_correct?'text-green-600 font-bold':''}`}><span>{String.fromCharCode(65+idx)}.</span>{renderText(o.label)} {o.is_correct&&<CheckCircle size={14}/>}</div>))}</div>
-                          <div className="bg-blue-50 p-4 rounded-xl text-sm text-blue-800"><strong>Pembahasan:</strong> {renderText(q.explanation)}</div>
+                          <div>{renderTex(q.text)}</div>
+                          <div className="bg-slate-50 p-3 rounded-lg text-sm space-y-2">{q.options.map((o,idx)=>(<div key={idx} className={`flex gap-2 ${o.is_correct?'text-green-600 font-bold':''}`}><span>{String.fromCharCode(65+idx)}.</span>{renderTex(o.label)} {o.is_correct&&<CheckCircle size={14}/>}</div>))}</div>
+                          <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-800"><strong>Pembahasan:</strong> {renderTex(q.explanation)}</div>
                       </div>
                   ))}
               </div>
