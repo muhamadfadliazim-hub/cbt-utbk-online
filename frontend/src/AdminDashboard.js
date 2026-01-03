@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Users, Database, Plus, Trash2, Eye, X, CheckCircle, FileSpreadsheet, Edit3, Send, GraduationCap } from 'lucide-react';
+import { Users, Database, Trash2, Eye, X, FileSpreadsheet, Edit3, Send, GraduationCap, Upload } from 'lucide-react';
 import { API_URL } from './config';
 
 const AdminDashboard = ({ onLogout }) => {
@@ -15,7 +15,6 @@ const AdminDashboard = ({ onLogout }) => {
         ]
     });
 
-    // Gunakan Array.isArray sebagai pengaman mutlak
     const refreshData = useCallback(() => {
         fetch(`${API_URL}/admin/users`)
             .then(r => r.json())
@@ -38,11 +37,10 @@ const AdminDashboard = ({ onLogout }) => {
 
     return (
         <div className="min-h-screen bg-[#F8FAFC] flex font-sans text-slate-900 overflow-hidden">
-            {/* Sidebar High-End */}
             <aside className="w-72 bg-[#0F172A] text-white p-8 flex flex-col shadow-2xl">
                 <div className="flex items-center gap-3 mb-12">
                     <div className="bg-indigo-600 p-2 rounded-lg"><GraduationCap size={24}/></div>
-                    <h1 className="text-2xl font-black italic tracking-tighter">EDU<span className="text-indigo-400">PRIME</span></h1>
+                    <h1 className="text-2xl font-black italic tracking-tighter uppercase">EduPrime</h1>
                 </div>
                 <nav className="space-y-3 flex-1">
                     <button onClick={() => setActiveTab('users')} className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all font-bold ${activeTab === 'users' ? 'bg-indigo-600 shadow-lg shadow-indigo-500/40' : 'hover:bg-white/5 text-slate-400'}`}>
@@ -53,24 +51,19 @@ const AdminDashboard = ({ onLogout }) => {
                     </button>
                 </nav>
                 <div className="mt-auto pt-6 border-t border-white/10">
-                    <p className="text-[10px] font-black text-slate-500 mb-4 uppercase tracking-[0.2em]">Owner: Fadli Azim</p>
-                    <button onClick={onLogout} className="w-full p-4 bg-rose-500/10 text-rose-500 rounded-2xl border border-rose-500/20 font-black hover:bg-rose-500 hover:text-white transition-all">LOGOUT</button>
+                    <button onClick={onLogout} className="w-full p-4 bg-rose-500/10 text-rose-500 rounded-2xl border border-rose-500/20 font-black hover:bg-rose-50 hover:text-white transition-all">LOGOUT</button>
                 </div>
             </aside>
 
-            {/* Main Area */}
             <main className="flex-1 p-12 overflow-y-auto">
                 <div className="flex justify-between items-end mb-12">
-                    <div>
-                        <h2 className="text-4xl font-black tracking-tight text-slate-900 uppercase">{activeTab}</h2>
-                        <p className="text-slate-500 font-medium italic">Control everything from this command center.</p>
-                    </div>
+                    <h2 className="text-4xl font-black tracking-tight text-slate-900 uppercase">{activeTab} System</h2>
                     {activeTab === 'users' && (
                         <div className="flex gap-4">
-                            <button onClick={handleBulkDelete} className="bg-rose-600 text-white px-8 py-4 rounded-2xl font-black shadow-lg hover:bg-rose-700 transition-all flex items-center gap-2">
+                            <button onClick={handleBulkDelete} className="bg-rose-600 text-white px-8 py-4 rounded-2xl font-black shadow-lg flex items-center gap-2">
                                 <Trash2 size={20}/> HAPUS MASAL
                             </button>
-                            <label className="bg-emerald-600 text-white px-8 py-4 rounded-2xl font-black shadow-lg hover:bg-emerald-700 transition-all cursor-pointer flex items-center gap-2">
+                            <label className="bg-emerald-600 text-white px-8 py-4 rounded-2xl font-black shadow-lg cursor-pointer flex items-center gap-2">
                                 <FileSpreadsheet size={20}/> IMPOR EXCEL
                                 <input type="file" className="hidden" accept=".xlsx" onChange={(e) => {
                                     const f = new FormData(); f.append('file', e.target.files[0]);
@@ -81,7 +74,6 @@ const AdminDashboard = ({ onLogout }) => {
                     )}
                 </div>
 
-                {/* Table Logic dengan Pengaman */}
                 {activeTab === 'users' && (
                     <div className="bg-white rounded-[3rem] shadow-xl border border-slate-100 overflow-hidden">
                         <table className="w-full text-left">
@@ -113,15 +105,19 @@ const AdminDashboard = ({ onLogout }) => {
                     <div className="grid gap-8 md:grid-cols-2">
                         {periods.map(p => (
                             <div key={p.id} className="bg-white p-10 rounded-[3.5rem] shadow-xl border border-slate-100 relative group">
-                                <div className="flex justify-between items-center mb-8">
-                                    <h3 className="text-2xl font-black text-slate-800">{p.name} <span className="text-indigo-600 ml-2">[{p.exam_type}]</span></h3>
-                                </div>
+                                <h3 className="text-2xl font-black text-slate-800 mb-8">{p.name} <span className="text-indigo-600 ml-2">[{p.exam_type}]</span></h3>
                                 <div className="space-y-4">
                                     {p.exams?.map(e => (
-                                        <div key={e.id} className="p-6 bg-slate-50 rounded-3xl flex justify-between items-center border border-transparent hover:border-indigo-200 transition-all group/item">
+                                        <div key={e.id} className="p-6 bg-slate-50 rounded-3xl flex justify-between items-center group/item transition-all hover:bg-slate-100">
                                             <span className="font-bold text-slate-600">{e.title}</span>
-                                            <div className="flex gap-2 opacity-0 group-hover/item:opacity-100 transition-all">
+                                            <div className="flex gap-2">
                                                 <button onClick={() => setShowManualSoal(e.id)} className="p-3 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200"><Edit3 size={18}/></button>
+                                                <label className="p-3 bg-emerald-100 text-emerald-600 rounded-xl cursor-pointer hover:bg-emerald-600 hover:text-white transition-all shadow-sm">
+                                                    <Upload size={18}/><input type="file" className="hidden" onChange={(x) => {
+                                                        const f = new FormData(); f.append('file', x.target.files[0]);
+                                                        fetch(`${API_URL}/admin/upload-questions/${e.id}`, { method: 'POST', body: f }).then(() => alert("Soal Berhasil Diupload!"));
+                                                    }}/>
+                                                </label>
                                                 <button className="p-3 bg-slate-200 text-slate-600 rounded-xl"><Eye size={18}/></button>
                                             </div>
                                         </div>
@@ -133,16 +129,13 @@ const AdminDashboard = ({ onLogout }) => {
                 )}
             </main>
 
-            {/* Modal Editor yang Stabil */}
             {showManualSoal && (
                 <div className="fixed inset-0 bg-[#0F172A]/90 backdrop-blur-md z-[200] flex items-center justify-center p-6">
                     <div className="bg-white rounded-[4rem] p-12 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl relative">
                         <button className="absolute top-10 right-10 p-4 bg-slate-100 rounded-full" onClick={() => setShowManualSoal(null)}><X size={32}/></button>
                         <h3 className="text-3xl font-black italic mb-10 text-indigo-600 underline">Professional Question Editor</h3>
-                        {/* Form Editor Sama Seperti V28 - Namun Pastikan State soalData Diupdate Benar */}
                         <div className="space-y-8">
                            <textarea className="w-full p-8 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] h-48 outline-none focus:border-indigo-500 font-bold text-xl" placeholder="Tulis soal di sini... (Gunakan $...$ untuk rumus)" value={soalData.text} onChange={e => setSoalData({...soalData, text:e.target.value})}/>
-                           {/* Render Opsi Jawaban */}
                            <div className="grid gap-4">
                                 {soalData.options.map((opt, i) => (
                                     <div key={i} className="flex items-center gap-6 p-6 bg-slate-50 rounded-3xl">
