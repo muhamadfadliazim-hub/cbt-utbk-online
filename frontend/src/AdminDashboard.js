@@ -29,7 +29,6 @@ const AdminDashboard = ({ onLogout }) => {
 
     useEffect(() => { refreshData(); }, [activeTab]);
 
-    // --- LOGIKA PESERTA ---
     const handleAddUser = (e) => {
         e.preventDefault();
         fetch(`${API_URL}/admin/users`, {
@@ -38,7 +37,6 @@ const AdminDashboard = ({ onLogout }) => {
         }).then(() => { setShowUserModal(false); refreshData(); });
     };
 
-    // --- LOGIKA BANK SOAL ---
     const handleAddPeriod = (e) => {
         e.preventDefault();
         const formData = new FormData();
@@ -49,14 +47,6 @@ const AdminDashboard = ({ onLogout }) => {
         });
     };
 
-    const handleUploadSoal = (eid, file) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        fetch(`${API_URL}/admin/upload-questions/${eid}`, { method: 'POST', body: formData })
-            .then(() => { alert("Soal Berhasil Masuk!"); refreshData(); });
-    };
-
-    // --- LOGIKA LMS ---
     const handleAddLms = (e) => {
         e.preventDefault();
         const formData = new FormData();
@@ -69,15 +59,22 @@ const AdminDashboard = ({ onLogout }) => {
         });
     };
 
+    const handleUploadSoal = (eid, file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        fetch(`${API_URL}/admin/upload-questions/${eid}`, { method: 'POST', body: formData })
+            .then(() => { alert("Upload Berhasil!"); refreshData(); });
+    };
+
     const handlePreview = (eid) => {
         fetch(`${API_URL}/admin/exams/${eid}/preview`).then(r => r.json()).then(setPreviewExam);
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 flex font-sans">
-            {/* Sidebar Royal */}
+        <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
+            {/* Sidebar */}
             <div className="w-72 bg-[#0F172A] text-white p-8 flex flex-col shadow-2xl">
-                <h2 className="text-2xl font-black mb-12 italic tracking-tighter">EDU<span className="text-indigo-400">PRIME</span></h2>
+                <h2 className="text-2xl font-black mb-12 italic tracking-tighter uppercase">EduPrime</h2>
                 <nav className="space-y-3 flex-1">
                     <button onClick={() => setActiveTab('users')} className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all font-bold ${activeTab === 'users' ? 'bg-indigo-600 shadow-lg' : 'hover:bg-white/5 text-slate-400'}`}>
                         <Users size={20}/> Database Peserta
@@ -89,30 +86,33 @@ const AdminDashboard = ({ onLogout }) => {
                         <BookOpen size={20}/> LMS & Materi
                     </button>
                 </nav>
-                <button onClick={onLogout} className="p-4 bg-rose-500/10 text-rose-500 rounded-2xl border border-rose-500/20 font-black">LOGOUT</button>
+                <button onClick={onLogout} className="p-4 bg-rose-500/10 text-rose-500 rounded-2xl border border-rose-500/20 font-black uppercase text-xs">Logout</button>
             </div>
 
             {/* Main Content */}
             <div className="flex-1 p-12 overflow-y-auto">
                 <header className="flex justify-between items-center mb-12">
-                    <h1 className="text-4xl font-black text-slate-900 capitalize tracking-tight">{activeTab} System</h1>
+                    <h1 className="text-4xl font-black capitalize tracking-tight">{activeTab}</h1>
                     <div className="flex gap-4">
                         {activeTab === 'users' && (
-                            <>
-                                <button className="bg-emerald-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg"><FileSpreadsheet size={18}/> Impor Excel</button>
-                                <button onClick={() => setShowUserModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg"><Plus size={18}/> Tambah Manual</button>
-                            </>
+                            <button onClick={() => setShowUserModal(true)} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-xl hover:bg-indigo-700 transition-all transform active:scale-95">
+                                <Plus size={22}/> TAMBAH PESERTA
+                            </button>
                         )}
                         {activeTab === 'exams' && (
-                            <button onClick={() => setShowPeriodModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg"><Plus size={18}/> Buat Paket Baru</button>
+                            <button onClick={() => setShowPeriodModal(true)} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-xl hover:bg-indigo-700 transition-all transform active:scale-95">
+                                <Plus size={22}/> BUAT PAKET BARU
+                            </button>
                         )}
                         {activeTab === 'lms' && (
-                            <button onClick={() => setShowLmsModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg"><Plus size={18}/> Tambah Materi</button>
+                            <button onClick={() => setShowLmsModal(true)} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-xl hover:bg-indigo-700 transition-all transform active:scale-95">
+                                <Plus size={22}/> TAMBAH MATERI
+                            </button>
                         )}
                     </div>
                 </header>
 
-                {/* --- VIEW: USERS --- */}
+                {/* Tab Users */}
                 {activeTab === 'users' && (
                     <div className="bg-white rounded-[3rem] shadow-2xl border overflow-hidden">
                         <table className="w-full text-left">
@@ -122,11 +122,11 @@ const AdminDashboard = ({ onLogout }) => {
                             <tbody>
                                 {users.map(u => (
                                     <tr key={u.id} className="border-b hover:bg-slate-50/50">
-                                        <td className="p-8 font-black text-slate-800">{u.full_name}</td>
-                                        <td className="p-8 font-mono text-slate-500">{u.username}</td>
+                                        <td className="p-8 font-black">{u.full_name}</td>
+                                        <td className="p-8 font-mono">{u.username}</td>
                                         <td className="p-8"><span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase">{u.role}</span></td>
                                         <td className="p-8 text-right">
-                                            <button onClick={() => fetch(`${API_URL}/admin/users/${u.id}`, {method:'DELETE'}).then(refreshData)} className="p-3 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={20}/></button>
+                                            <button onClick={() => fetch(`${API_URL}/admin/users/${u.id}`, {method:'DELETE'}).then(refreshData)} className="p-3 text-rose-400 hover:text-rose-600 transition-all"><Trash2 size={20}/></button>
                                         </td>
                                     </tr>
                                 ))}
@@ -135,7 +135,7 @@ const AdminDashboard = ({ onLogout }) => {
                     </div>
                 )}
 
-                {/* --- VIEW: BANK SOAL --- */}
+                {/* Tab Bank Soal */}
                 {activeTab === 'exams' && (
                     <div className="grid gap-8 md:grid-cols-2">
                         {periods.map(p => (
@@ -145,10 +145,10 @@ const AdminDashboard = ({ onLogout }) => {
                                     <button onClick={() => fetch(`${API_URL}/admin/periods/${p.id}`, {method:'DELETE'}).then(refreshData)} className="text-rose-400"><Trash2 size={20}/></button>
                                 </div>
                                 <div className="space-y-4">
-                                    {p.exams.map(e => (
-                                        <div key={e.id} className="p-6 bg-slate-50 rounded-3xl flex justify-between items-center group">
-                                            <div><p className="font-bold text-slate-700">{e.title}</p><p className="text-[10px] text-slate-400 font-black">{e.duration} MENIT</p></div>
-                                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                                    {p.exams && p.exams.map(e => (
+                                        <div key={e.id} className="p-6 bg-slate-50 rounded-3xl flex justify-between items-center group transition-all hover:bg-slate-100">
+                                            <div><p className="font-bold text-slate-700">{e.title}</p><p className="text-[10px] text-slate-400 font-black">{e.duration} MINS</p></div>
+                                            <div className="flex gap-2">
                                                 <label className="p-3 bg-emerald-100 text-emerald-600 rounded-xl cursor-pointer hover:bg-emerald-600 hover:text-white transition-all">
                                                     <Upload size={18}/><input type="file" className="hidden" onChange={(x) => handleUploadSoal(e.id, x.target.files[0])}/>
                                                 </label>
@@ -162,17 +162,17 @@ const AdminDashboard = ({ onLogout }) => {
                     </div>
                 )}
 
-                {/* --- VIEW: LMS --- */}
+                {/* Tab LMS */}
                 {activeTab === 'lms' && (
                     <div className="grid gap-8 md:grid-cols-3">
                         {materials.map(m => (
                             <div key={m.id} className="bg-white p-8 rounded-[3rem] shadow-xl border flex flex-col">
                                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-6 ${m.type==='video'?'bg-rose-50 text-rose-500':'bg-blue-50 text-blue-500'}`}>
-                                    {m.type==='video' ? <Video/> : <FileSpreadsheet/>}
+                                    {m.type==='video' ? <Video size={24}/> : <FileSpreadsheet size={24}/>}
                                 </div>
                                 <h4 className="text-xl font-black mb-4 flex-1">{m.title}</h4>
                                 <div className="flex justify-between items-center pt-6 border-t">
-                                    <button onClick={() => window.open(m.content_url)} className="text-indigo-600 font-black text-xs flex items-center gap-2 tracking-widest"><LinkIcon size={14}/> BUKA</button>
+                                    <button onClick={() => window.open(m.content_url)} className="text-indigo-600 font-black text-xs flex items-center gap-2"><LinkIcon size={14}/> BUKA</button>
                                     <button onClick={() => fetch(`${API_URL}/materials/${m.id}`, {method:'DELETE'}).then(refreshData)} className="text-rose-400"><Trash2 size={16}/></button>
                                 </div>
                             </div>
@@ -181,35 +181,85 @@ const AdminDashboard = ({ onLogout }) => {
                 )}
             </div>
 
-            {/* MODAL: TAMBAH USER */}
+            {/* Modal User */}
             {showUserModal && (
                 <div className="fixed inset-0 bg-[#0F172A]/80 backdrop-blur-md z-50 flex items-center justify-center p-6">
-                    <form onSubmit={handleAddUser} className="bg-white rounded-[3.5rem] p-12 w-full max-w-md shadow-2xl">
-                        <h3 className="text-3xl font-black mb-8 text-center">Data Peserta Baru</h3>
+                    <form onSubmit={handleAddUser} className="bg-white rounded-[3.5rem] p-12 w-full max-w-md">
+                        <h3 className="text-2xl font-black mb-8 text-center">Data Peserta Baru</h3>
                         <div className="space-y-4">
                             <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" placeholder="Nama Lengkap" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name: e.target.value})} required/>
-                            <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" placeholder="ID Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username: e.target.value})} required/>
+                            <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username: e.target.value})} required/>
                             <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" type="password" placeholder="Password" value={newUser.password} onChange={e=>setNewUser({...newUser, password: e.target.value})} required/>
                             <select className="w-full p-5 bg-slate-50 border rounded-2xl font-black" value={newUser.role} onChange={e=>setNewUser({...newUser, role: e.target.value})}>
                                 <option value="student">STUDENT (PESERTA)</option>
                                 <option value="admin">ADMIN (STAFF)</option>
                             </select>
                         </div>
-                        <div className="flex gap-4 mt-10">
-                            <button type="button" onClick={()=>setShowUserModal(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black">BATAL</button>
-                            <button type="submit" className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-xl shadow-indigo-600/30">DAFTARKAN</button>
+                        <div className="flex gap-4 mt-8">
+                            <button type="button" onClick={()=>setShowUserModal(false)} className="flex-1 py-4 bg-slate-100 font-black rounded-2xl">BATAL</button>
+                            <button type="submit" className="flex-1 py-4 bg-indigo-600 text-white font-black rounded-2xl">SIMPAN</button>
                         </div>
                     </form>
                 </div>
             )}
 
-            {/* MODAL: PREVIEW SOAL */}
+            {/* Modal Paket Ujian */}
+            {showPeriodModal && (
+                <div className="fixed inset-0 bg-[#0F172A]/80 backdrop-blur-md z-50 flex items-center justify-center p-6">
+                    <form onSubmit={handleAddPeriod} className="bg-white rounded-[3.5rem] p-12 w-full max-w-md">
+                        <h3 className="text-2xl font-black mb-8 text-center">Buat Paket Tryout</h3>
+                        <div className="space-y-4">
+                            <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" placeholder="Nama Paket (Contoh: TO 1)" value={newPeriod.name} onChange={e=>setNewPeriod({...newPeriod, name: e.target.value})} required/>
+                            <select className="w-full p-5 bg-slate-50 border rounded-2xl font-black" value={newPeriod.exam_type} onChange={e=>setNewPeriod({...newPeriod, exam_type: e.target.value})}>
+                                <option value="UTBK">UTBK SNBT</option>
+                                <option value="CPNS">CPNS BKN</option>
+                                <option value="MANDIRI">UJIAN MANDIRI</option>
+                                <option value="TKA">TKA SAINTEK/SOSHUM</option>
+                            </select>
+                        </div>
+                        <div className="flex gap-4 mt-8">
+                            <button type="button" onClick={()=>setShowPeriodModal(false)} className="flex-1 py-4 bg-slate-100 font-black rounded-2xl">BATAL</button>
+                            <button type="submit" className="flex-1 py-4 bg-indigo-600 text-white font-black rounded-2xl">BUAT PAKET</button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {/* Modal LMS */}
+            {showLmsModal && (
+                <div className="fixed inset-0 bg-[#0F172A]/80 backdrop-blur-md z-50 flex items-center justify-center p-6">
+                    <form onSubmit={handleAddLms} className="bg-white rounded-[3.5rem] p-12 w-full max-w-md">
+                        <h3 className="text-2xl font-black mb-8 text-center">Tambah Materi Belajar</h3>
+                        <div className="space-y-4">
+                            <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" placeholder="Judul Materi" value={newLms.title} onChange={e=>setNewLms({...newLms, title: e.target.value})} required/>
+                            <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" placeholder="URL (YouTube/PDF/Link)" value={newLms.url} onChange={e=>setNewLms({...newLms, url: e.target.value})} required/>
+                            <div className="flex gap-4">
+                                <select className="flex-1 p-5 bg-slate-50 border rounded-2xl font-black" value={newLms.type} onChange={e=>setNewLms({...newLms, type: e.target.value})}>
+                                    <option value="video">VIDEO</option>
+                                    <option value="document">MODUL PDF</option>
+                                </select>
+                                <select className="flex-1 p-5 bg-slate-50 border rounded-2xl font-black" value={newLms.category} onChange={e=>setNewLms({...newLms, category: e.target.value})}>
+                                    <option value="UTBK">UTBK</option>
+                                    <option value="CPNS">CPNS</option>
+                                    <option value="UMUM">UMUM</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="flex gap-4 mt-8">
+                            <button type="button" onClick={()=>setShowLmsModal(false)} className="flex-1 py-4 bg-slate-100 font-black rounded-2xl">BATAL</button>
+                            <button type="submit" className="flex-1 py-4 bg-indigo-600 text-white font-black rounded-2xl">SIMPAN MATERI</button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {/* Modal Preview */}
             {previewExam && (
                 <div className="fixed inset-0 bg-white z-[100] overflow-y-auto p-12 animate-in slide-in-from-bottom-10">
                     <div className="max-w-4xl mx-auto">
                         <div className="flex justify-between items-center mb-12 border-b pb-8">
                             <h2 className="text-4xl font-black italic">{previewExam.title} - Preview</h2>
-                            <button onClick={() => setPreviewExam(null)} className="p-5 bg-slate-100 rounded-full"><X size={32}/></button>
+                            <button onClick={() => setPreviewExam(null)} className="p-5 bg-slate-100 rounded-full hover:bg-rose-50 transition-all"><X size={32}/></button>
                         </div>
                         <div className="space-y-8">
                             {previewExam.questions && previewExam.questions.map((q, i) => (
