@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Users, Database, BookOpen, Trash2, Plus, Edit3, Eye, FileSpreadsheet, Send, X, LogOut, CheckCircle } from 'lucide-react';
+import { Users, Database, BookOpen, Trash2, Plus, Edit3, Eye, FileSpreadsheet, Send, X, LogOut } from 'lucide-react';
 import { API_URL } from './config';
 
 const AdminDashboard = ({ onLogout }) => {
@@ -54,7 +54,6 @@ const AdminDashboard = ({ onLogout }) => {
 
     return (
         <div className="min-h-screen bg-slate-50 flex text-slate-900 overflow-hidden font-sans">
-            {/* Sidebar High-End */}
             <aside className="w-72 bg-[#0F172A] text-white p-8 flex flex-col shadow-2xl">
                 <h2 className="text-3xl font-black mb-12 italic tracking-tighter uppercase text-indigo-400">EduPrime</h2>
                 <nav className="space-y-4 flex-1">
@@ -65,7 +64,6 @@ const AdminDashboard = ({ onLogout }) => {
                 <button onClick={onLogout} className="mt-auto p-4 bg-rose-500/10 text-rose-500 rounded-2xl border border-rose-500/20 font-black uppercase flex items-center justify-center gap-2 hover:bg-rose-500 hover:text-white transition-all"><LogOut size={18}/> Logout</button>
             </aside>
 
-            {/* Main Area */}
             <main className="flex-1 p-12 overflow-y-auto">
                 <header className="flex justify-between items-center mb-12">
                     <h1 className="text-5xl font-black capitalize tracking-tight">{activeTab}</h1>
@@ -82,7 +80,6 @@ const AdminDashboard = ({ onLogout }) => {
                     </div>
                 </header>
 
-                {/* Content Render Logic */}
                 {activeTab === 'users' && (
                     <div className="bg-white rounded-[3rem] shadow-2xl border overflow-hidden">
                         <table className="w-full text-left">
@@ -128,9 +125,6 @@ const AdminDashboard = ({ onLogout }) => {
                     <div className="grid gap-8 md:grid-cols-3">
                         {materials.map(m => (
                             <div key={m.id} className="bg-white p-8 rounded-[3rem] shadow-xl border relative">
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-6 ${m.type==='video'?'bg-rose-50 text-rose-500':'bg-blue-50 text-blue-500'}`}>
-                                    {m.type==='video'?<Send/>:<Database/>}
-                                </div>
                                 <h4 className="text-2xl font-black mb-4">{m.title}</h4>
                                 <div className="flex justify-between items-center pt-6 border-t">
                                     <button onClick={()=>window.open(m.content_url)} className="text-indigo-600 font-black text-xs">BUKA MATERI</button>
@@ -142,7 +136,6 @@ const AdminDashboard = ({ onLogout }) => {
                 )}
             </main>
 
-            {/* Modals - Simplified for success build */}
             {showUserModal && (
                 <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[100] flex items-center justify-center p-6">
                     <form onSubmit={handleAddUser} className="bg-white p-12 rounded-[4rem] w-full max-w-md shadow-2xl">
@@ -164,7 +157,6 @@ const AdminDashboard = ({ onLogout }) => {
                 </div>
             )}
             
-            {/* Modal Period & LMS & Soal manual (Same Logic as V28 but restored) */}
             {showPeriodModal && (
                 <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[100] flex items-center justify-center p-6">
                     <form onSubmit={handleAddPeriod} className="bg-white p-12 rounded-[4rem] w-full max-w-md shadow-2xl">
