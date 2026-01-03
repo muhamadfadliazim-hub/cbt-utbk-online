@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Play, Clock, Menu, X, LayoutDashboard, BookOpen, LogOut, ArrowRight, CheckCircle, GraduationCap } from 'lucide-react';
+import { Play, Clock, Menu, LayoutDashboard, BookOpen, LogOut, ArrowRight, CheckCircle, GraduationCap } from 'lucide-react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import { API_URL } from './config';
 
