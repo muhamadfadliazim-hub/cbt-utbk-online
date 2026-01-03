@@ -1,27 +1,42 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Users, Database, BookOpen, Trash2, Plus, FileSpreadsheet, Upload, CheckSquare, Square, LogOut, Edit3 } from 'lucide-react';
+import { Users, Database, BookOpen, Trash2, Plus, FileSpreadsheet, Upload, CheckSquare, Square, LogOut, Edit3, Eye, X } from 'lucide-react';
 import { API_URL } from './config';
+import 'katex/dist/katex.min.css';
+import { InlineMath, BlockMath } from 'react-katex';
+
+// Render Soal Helper untuk Admin Preview
+const RenderPreview = ({ text }) => {
+    if (!text) return null;
+    const parts = text.split(/(\$[^\$]+\$)/g);
+    return (
+        <span>
+            {parts.map((part, index) => {
+                if (part.startsWith('$') && part.endsWith('$')) return <InlineMath key={index} math={part.slice(1, -1)} />;
+                return <span key={index}>{part}</span>;
+            })}
+        </span>
+    );
+};
 
 const AdminDashboard = ({ onLogout }) => {
+    // ... (State lama sama, tambah state Preview)
     const [activeTab, setActiveTab] = useState('users');
     const [users, setUsers] = useState([]);
     const [periods, setPeriods] = useState([]);
     const [materials, setMaterials] = useState([]);
-    const [selectedUsers, setSelectedUsers] = useState([]); // Ceklis State
+    const [selectedUsers, setSelectedUsers] = useState([]);
 
-    // Modals
     const [showUserModal, setShowUserModal] = useState(false);
     const [showPeriodModal, setShowPeriodModal] = useState(false);
     const [showLmsModal, setShowLmsModal] = useState(false);
-    const [showManualSoal, setShowManualSoal] = useState(null);
+    
+    // NEW: PREVIEW STATE
+    const [previewExamId, setPreviewExamId] = useState(null);
+    const [previewQuestions, setPreviewQuestions] = useState([]);
 
     const [newUser, setNewUser] = useState({ username: '', full_name: '', password: '', role: 'student' });
     const [newPeriod, setNewPeriod] = useState({ name: '', exam_type: 'UTBK' });
     const [newLms, setNewLms] = useState({ title: '', type: 'video', category: 'UTBK', url: '' });
-    const [soalData, setSoalData] = useState({ 
-        text: '', difficulty: 1.0, explanation: '', passage: '', media: '', type: 'PG',
-        options: [{idx:'A', label:'', is_correct:true}, {idx:'B', label:'', is_correct:false}, {idx:'C', label:'', is_correct:false}, {idx:'D', label:'', is_correct:false}, {idx:'E', label:'', is_correct:false}] 
-    });
 
     const refresh = useCallback(() => {
         fetch(`${API_URL}/admin/users`).then(r=>r.json()).then(d=>{setUsers(Array.isArray(d)?d:[]); setSelectedUsers([]);});
@@ -31,47 +46,41 @@ const AdminDashboard = ({ onLogout }) => {
 
     useEffect(() => { refresh(); }, [refresh]);
 
-    // --- LOGIC HAPUS CEKLIS ---
-    const toggleSelect = (id) => {
-        setSelectedUsers(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-    };
-    const toggleSelectAll = () => {
-        if (selectedUsers.length === users.length) setSelectedUsers([]);
-        else setSelectedUsers(users.map(u => u.id));
-    };
+    // ... (Fungsi Toggle, Delete, Upload sama seperti V33) ...
+    const toggleSelect = (id) => setSelectedUsers(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    const toggleSelectAll = () => setSelectedUsers(selectedUsers.length === users.length ? [] : users.map(u => u.id));
     const deleteSelected = () => {
         if(!window.confirm(`Hapus ${selectedUsers.length} user?`)) return;
-        fetch(`${API_URL}/admin/users/delete-list`, {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ ids: selectedUsers })
-        }).then(() => { alert("Terhapus!"); refresh(); });
+        fetch(`${API_URL}/admin/users/delete-list`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ ids: selectedUsers })})
+        .then(() => { alert("Terhapus!"); refresh(); });
     };
-
+    
     const handleUploadSoal = (eid, file) => {
         const f = new FormData(); f.append('file', file);
         fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:f}).then(()=>alert("Upload Sukses!"));
     };
-
     const handleUploadPassingGrade = (file) => {
         const f = new FormData(); f.append('file', file);
         fetch(`${API_URL}/admin/majors/bulk`, {method:'POST', body:f}).then(()=>alert("Passing Grade Updated!"));
     };
 
-    // Handlers Simpan
+    // LOGIC PREVIEW
+    const openPreview = (eid) => {
+        fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d => {
+            setPreviewQuestions(d.questions);
+            setPreviewExamId(eid);
+        });
+    };
+
+    // Handlers
     const handleAddUser = (e) => { e.preventDefault(); fetch(`${API_URL}/admin/users`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(newUser)}).then(()=>{setShowUserModal(false);refresh()}); };
     const handleAddPeriod = (e) => { e.preventDefault(); const f=new FormData();f.append('name',newPeriod.name);f.append('exam_type',newPeriod.exam_type); fetch(`${API_URL}/admin/periods`,{method:'POST',body:f}).then(()=>{setShowPeriodModal(false);refresh()}); };
     const handleAddLms = (e) => { e.preventDefault(); const f=new FormData();f.append('title',newLms.title);f.append('type',newLms.type);f.append('category',newLms.category);f.append('url',newLms.url); fetch(`${API_URL}/materials`,{method:'POST',body:f}).then(()=>{setShowLmsModal(false);refresh()}); };
-    const handleSaveSoal = (e) => {
-        e.preventDefault();
-        fetch(`${API_URL}/admin/exams/${showManualSoal}/manual`, {
-            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(soalData)
-        }).then(() => { alert("Tersimpan!"); setShowManualSoal(null); });
-    };
 
     return (
         <div className="min-h-screen bg-slate-50 flex text-slate-900 font-sans">
             <aside className="w-64 bg-[#0F172A] text-white p-6 flex flex-col shadow-2xl">
-                <h2 className="text-2xl font-black mb-10 italic text-indigo-400">EduPrime</h2>
+                <h2 className="text-2xl font-black mb-10 italic text-indigo-400">EduPrime V36</h2>
                 <nav className="space-y-2 flex-1">
                     <button onClick={()=>setActiveTab('users')} className={`w-full text-left p-3 rounded-xl font-bold flex items-center gap-3 ${activeTab==='users'?'bg-indigo-600':'hover:bg-white/5'}`}><Users size={18}/> Peserta</button>
                     <button onClick={()=>setActiveTab('exams')} className={`w-full text-left p-3 rounded-xl font-bold flex items-center gap-3 ${activeTab==='exams'?'bg-indigo-600':'hover:bg-white/5'}`}><Database size={18}/> Bank Soal</button>
@@ -81,6 +90,7 @@ const AdminDashboard = ({ onLogout }) => {
             </aside>
 
             <main className="flex-1 p-10 overflow-y-auto">
+                {/* Header & Buttons (Sama V33) */}
                 <div className="flex justify-between items-center mb-8">
                     <h1 className="text-4xl font-black uppercase tracking-tight">{activeTab}</h1>
                     {activeTab === 'users' && (
@@ -95,7 +105,7 @@ const AdminDashboard = ({ onLogout }) => {
                     {activeTab === 'lms' && <button onClick={()=>setShowLmsModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg flex items-center gap-2"><Plus size={18}/> Tambah Materi</button>}
                 </div>
 
-                {/* USER TABLE (CEKLIS) */}
+                {/* USER TABLE */}
                 {activeTab === 'users' && (
                     <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100">
                         <table className="w-full text-left">
@@ -121,7 +131,7 @@ const AdminDashboard = ({ onLogout }) => {
                     </div>
                 )}
 
-                {/* EXAM PERIODS (GROUPED) */}
+                {/* EXAM PERIODS */}
                 {activeTab === 'exams' && (
                     <div className="grid gap-8 md:grid-cols-2">
                         {periods.map(p => (
@@ -135,7 +145,7 @@ const AdminDashboard = ({ onLogout }) => {
                                         <div key={e.id} className="p-4 bg-slate-50 rounded-2xl flex justify-between items-center hover:bg-slate-100 transition-all">
                                             <div><p className="font-bold text-slate-700">{e.title}</p><p className="text-xs text-slate-400">Order: {e.order_index} | {e.duration} m</p></div>
                                             <div className="flex gap-2">
-                                                <button onClick={()=>setShowManualSoal(e.id)} className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><Edit3 size={14}/></button>
+                                                <button onClick={()=>openPreview(e.id)} className="p-2 bg-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all" title="Preview Soal"><Eye size={14}/></button>
                                                 <label className="p-2 bg-white border rounded-lg cursor-pointer hover:border-indigo-500 text-indigo-600 flex items-center gap-2 text-xs font-bold">
                                                     <Upload size={14}/> Excel
                                                     <input type="file" className="hidden" onChange={x=>handleUploadSoal(e.id, x.target.files[0])}/>
@@ -149,7 +159,7 @@ const AdminDashboard = ({ onLogout }) => {
                     </div>
                 )}
 
-                {/* LMS & MODALS */}
+                {/* LMS (Sama) */}
                 {activeTab === 'lms' && (
                     <div className="grid gap-6 md:grid-cols-3">
                         {materials.map(m => (
@@ -165,59 +175,40 @@ const AdminDashboard = ({ onLogout }) => {
                 )}
             </main>
             
-            {/* Modal Components */}
-            {showUserModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <form onSubmit={handleAddUser} className="bg-white p-8 rounded-3xl w-full max-w-sm">
-                        <h3 className="text-xl font-bold mb-4">Tambah User</h3>
-                        <input className="w-full mb-3 p-3 border rounded-xl" placeholder="Nama" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name: e.target.value})} required/>
-                        <input className="w-full mb-3 p-3 border rounded-xl" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username: e.target.value})} required/>
-                        <input className="w-full mb-3 p-3 border rounded-xl" placeholder="Password" value={newUser.password} onChange={e=>setNewUser({...newUser, password: e.target.value})} required/>
-                        <div className="flex gap-2 mt-4"><button type="button" onClick={()=>setShowUserModal(false)} className="flex-1 p-3 bg-slate-100 rounded-xl font-bold">Batal</button><button type="submit" className="flex-1 p-3 bg-indigo-600 text-white rounded-xl font-bold">Simpan</button></div>
-                    </form>
-                </div>
-            )}
-            {showPeriodModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <form onSubmit={handleAddPeriod} className="bg-white p-8 rounded-3xl w-full max-w-sm">
-                        <h3 className="text-xl font-bold mb-4">Paket Baru</h3>
-                        <input className="w-full mb-3 p-3 border rounded-xl" placeholder="Nama Paket" value={newPeriod.name} onChange={e=>setNewPeriod({...newPeriod, name: e.target.value})} required/>
-                        <select className="w-full mb-3 p-3 border rounded-xl" value={newPeriod.exam_type} onChange={e=>setNewPeriod({...newPeriod, exam_type: e.target.value})}><option value="UTBK">UTBK</option><option value="CPNS">CPNS</option><option value="TKA">TKA</option></select>
-                        <div className="flex gap-2 mt-4"><button type="button" onClick={()=>setShowPeriodModal(false)} className="flex-1 p-3 bg-slate-100 rounded-xl font-bold">Batal</button><button type="submit" className="flex-1 p-3 bg-indigo-600 text-white rounded-xl font-bold">Buat</button></div>
-                    </form>
-                </div>
-            )}
-            {showLmsModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <form onSubmit={handleAddLms} className="bg-white p-8 rounded-3xl w-full max-w-sm">
-                        <h3 className="text-xl font-bold mb-4">Materi Baru</h3>
-                        <input className="w-full mb-3 p-3 border rounded-xl" placeholder="Judul" value={newLms.title} onChange={e=>setNewLms({...newLms, title: e.target.value})} required/>
-                        <input className="w-full mb-3 p-3 border rounded-xl" placeholder="URL" value={newLms.url} onChange={e=>setNewLms({...newLms, url: e.target.value})} required/>
-                        <div className="flex gap-2 mt-4"><button type="button" onClick={()=>setShowLmsModal(false)} className="flex-1 p-3 bg-slate-100 rounded-xl font-bold">Batal</button><button type="submit" className="flex-1 p-3 bg-indigo-600 text-white rounded-xl font-bold">Simpan</button></div>
-                    </form>
-                </div>
-            )}
-            {showManualSoal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <form onSubmit={handleSaveSoal} className="bg-white p-8 rounded-3xl w-full max-w-2xl h-[80vh] overflow-y-auto">
-                        <h3 className="text-xl font-bold mb-4">Edit Soal Manual</h3>
-                        <textarea className="w-full mb-3 p-3 border rounded-xl h-32" placeholder="Teks Soal..." value={soalData.text} onChange={e=>setSoalData({...soalData, text:e.target.value})}/>
-                        <textarea className="w-full mb-3 p-3 border rounded-xl h-24" placeholder="Wacana (Opsional)..." value={soalData.passage} onChange={e=>setSoalData({...soalData, passage:e.target.value})}/>
-                        <input className="w-full mb-3 p-3 border rounded-xl" placeholder="URL Gambar (Opsional)" value={soalData.media} onChange={e=>setSoalData({...soalData, media:e.target.value})}/>
-                        <div className="grid gap-2">
-                            {soalData.options.map((o, i)=>(
-                                <div key={i} className="flex gap-2">
-                                    <span className="font-bold w-6">{o.idx}</span>
-                                    <input className="flex-1 border rounded p-1" value={o.label} onChange={e=>{const n=[...soalData.options];n[i].label=e.target.value;setSoalData({...soalData, options:n})}}/>
-                                    <input type="radio" checked={o.is_correct} onChange={()=>{const n=soalData.options.map((opt,idx)=>({...opt, is_correct:idx===i}));setSoalData({...soalData, options:n})}}/>
+            {/* Modal PREVIEW SOAL (FITUR BARU) */}
+            {previewExamId && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-6 z-[100] backdrop-blur-sm">
+                    <div className="bg-white w-full max-w-4xl h-[90vh] rounded-[3rem] overflow-hidden flex flex-col relative">
+                        <div className="bg-indigo-900 p-6 flex justify-between items-center text-white">
+                            <h3 className="font-bold text-xl">PREVIEW SOAL ({previewQuestions.length} Butir)</h3>
+                            <button onClick={()=>setPreviewExamId(null)} className="p-2 bg-white/10 rounded-full hover:bg-rose-500"><X size={20}/></button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-slate-50">
+                            {previewQuestions.map((q, i) => (
+                                <div key={q.id} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+                                    <div className="font-bold text-indigo-600 mb-2">NO {i+1} ({q.type})</div>
+                                    {q.passage && <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4 text-sm font-serif leading-relaxed whitespace-pre-wrap"><RenderPreview text={q.passage}/></div>}
+                                    {q.media && <img src={q.media} alt="Soal" className="h-40 object-contain mb-4 border rounded"/>}
+                                    <div className="text-lg font-medium mb-4"><RenderPreview text={q.text}/></div>
+                                    <div className="grid gap-2">
+                                        {q.options.map(o => (
+                                            <div key={o.id} className="p-3 border rounded-xl flex gap-3 items-center">
+                                                <span className="font-bold w-6 h-6 bg-slate-200 flex items-center justify-center rounded-full text-xs">{o.id}</span>
+                                                <RenderPreview text={o.label}/>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             ))}
                         </div>
-                        <button type="submit" className="w-full mt-4 bg-indigo-600 text-white p-3 rounded-xl font-bold">Simpan Soal</button>
-                        <button type="button" onClick={()=>setShowManualSoal(null)} className="w-full mt-2 bg-slate-100 p-3 rounded-xl font-bold">Batal</button>
-                    </form>
+                    </div>
                 </div>
             )}
+
+            {/* Modal User & Period & LMS (Sama V33 - Saya singkat agar muat) */}
+            {showUserModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><form onSubmit={handleAddUser} className="bg-white p-8 rounded-3xl w-full max-w-sm"><h3 className="text-xl font-bold mb-4">Tambah User</h3><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Nama" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name: e.target.value})}/><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username: e.target.value})}/><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Password" value={newUser.password} onChange={e=>setNewUser({...newUser, password: e.target.value})}/><button type="submit" className="w-full p-3 bg-indigo-600 text-white rounded-xl font-bold">Simpan</button><button type="button" onClick={()=>setShowUserModal(false)} className="w-full mt-2 p-3 bg-slate-100 rounded-xl font-bold">Batal</button></form></div>}
+            {showPeriodModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><form onSubmit={handleAddPeriod} className="bg-white p-8 rounded-3xl w-full max-w-sm"><h3 className="text-xl font-bold mb-4">Paket Baru</h3><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Nama Paket" value={newPeriod.name} onChange={e=>setNewPeriod({...newPeriod, name: e.target.value})}/><select className="w-full mb-3 p-3 border rounded-xl" value={newPeriod.exam_type} onChange={e=>setNewPeriod({...newPeriod, exam_type: e.target.value})}><option value="UTBK">UTBK</option><option value="CPNS">CPNS</option><option value="TKA">TKA</option></select><button type="submit" className="w-full p-3 bg-indigo-600 text-white rounded-xl font-bold">Buat</button><button type="button" onClick={()=>setShowPeriodModal(false)} className="w-full mt-2 p-3 bg-slate-100 rounded-xl font-bold">Batal</button></form></div>}
+            {showLmsModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><form onSubmit={handleAddLms} className="bg-white p-8 rounded-3xl w-full max-w-sm"><h3 className="text-xl font-bold mb-4">Materi Baru</h3><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Judul" value={newLms.title} onChange={e=>setNewLms({...newLms, title: e.target.value})}/><input className="w-full mb-3 p-3 border rounded-xl" placeholder="URL" value={newLms.url} onChange={e=>setNewLms({...newLms, url: e.target.value})}/><button type="submit" className="w-full p-3 bg-indigo-600 text-white rounded-xl font-bold">Simpan</button><button type="button" onClick={()=>setShowLmsModal(false)} className="w-full mt-2 p-3 bg-slate-100 rounded-xl font-bold">Batal</button></form></div>}
         </div>
     );
 };

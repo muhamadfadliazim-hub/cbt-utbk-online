@@ -1,15 +1,27 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Play, LogOut, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Clock, Play, BarChart2, LogOut, ChevronLeft, ChevronRight, Home, BookOpen, Award, FileText } from 'lucide-react';
 import { API_URL } from './config';
+import 'katex/dist/katex.min.css';
+import { InlineMath } from 'react-katex';
 
-// Mock Radar Chart (Pengganti BarChart2 yang error)
-const RadarChartMock = () => (
-    <div className="w-full h-40 bg-indigo-900/50 rounded-xl flex items-center justify-center text-indigo-200 text-xs font-bold border border-indigo-500/30">
-        ANALISIS KEMAMPUAN (RADAR CHART)
-    </div>
-);
+// Helper Render Math
+const RenderSoal = ({ text }) => {
+    if (!text) return null;
+    const parts = text.split(/(\$[^\$]+\$)/g);
+    return (
+        <span className="text-lg leading-loose text-slate-800 font-serif">
+            {parts.map((part, index) => {
+                if (part.startsWith('$') && part.endsWith('$')) return <InlineMath key={index} math={part.slice(1, -1)} />;
+                return <span key={index}>{part}</span>;
+            })}
+        </span>
+    );
+};
+
+const RadarChartMock = () => <div className="w-full h-40 bg-indigo-900/50 rounded-xl flex items-center justify-center text-indigo-200 text-xs font-bold border border-indigo-500/30">ANALISIS KEMAMPUAN</div>;
 
 const StudentDashboard = ({ user, onLogout }) => {
+    const [view, setView] = useState('home'); // home, results, lms
     const [data, setData] = useState(null);
     const [majors, setMajors] = useState([]);
     const [selectedMajor, setSelectedMajor] = useState({ m1: user.c1||'', m2: user.c2||'' });
@@ -22,15 +34,8 @@ const StudentDashboard = ({ user, onLogout }) => {
     const [timeLeft, setTimeLeft] = useState(0);
 
     const refresh = useCallback(() => {
-        fetch(`${API_URL}/student/data?username=${user.username}`)
-            .then(r => r.json())
-            .then(setData)
-            .catch(() => setData(null));
-            
-        fetch(`${API_URL}/majors`)
-            .then(r => r.json())
-            .then(setMajors)
-            .catch(() => setMajors([]));
+        fetch(`${API_URL}/student/data?username=${user.username}`).then(r=>r.json()).then(setData);
+        fetch(`${API_URL}/majors`).then(r=>r.json()).then(setMajors);
     }, [user.username]);
 
     useEffect(() => { refresh(); }, [refresh]);
@@ -39,11 +44,12 @@ const StudentDashboard = ({ user, onLogout }) => {
         fetch(`${API_URL}/student/majors`, {
             method: 'POST', headers: {'Content-Type':'application/json'},
             body: JSON.stringify({username: user.username, m1: selectedMajor.m1, m2: selectedMajor.m2})
-        }).then(()=>alert("Jurusan Disimpan!"));
+        }).then(()=>alert("Target Disimpan!"));
     };
 
+    // --- LOGIC TIMER & SUBMIT ---
     const startExam = (eid) => {
-        if(!window.confirm("Mulai subtes berjalan. Fokus!")) return;
+        if(!window.confirm("Waktu berjalan. Fokus!")) return;
         fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{
             setExamContent(d); setActiveExamId(eid); setQIdx(0); setTimeLeft(d.duration * 60);
         });
@@ -55,9 +61,8 @@ const StudentDashboard = ({ user, onLogout }) => {
             method: 'POST', headers: {'Content-Type':'application/json'},
             body: JSON.stringify({username: user.username, answers})
         }).then(r=>r.json()).then(res => {
-            alert(`Selesai! Skor IRT: ${res.score}`);
-            setActiveExamId(null); 
-            refresh();
+            alert(`Ujian Selesai! Skor: ${res.score}`);
+            setActiveExamId(null); refresh();
         });
     }, [activeExamId, user.username, answers, refresh]);
 
@@ -65,125 +70,164 @@ const StudentDashboard = ({ user, onLogout }) => {
         if(timeLeft > 0 && activeExamId) {
             const t = setInterval(()=>setTimeLeft(p=>p-1), 1000);
             return ()=>clearInterval(t);
-        } else if(timeLeft===0 && activeExamId) submitExam();
+        } else if(timeLeft===0 && activeExamId) {
+            alert("WAKTU HABIS! Jawaban tersimpan otomatis.");
+            submitExam();
+        }
     }, [timeLeft, activeExamId, submitExam]);
 
-    // --- MODE UJIAN ---
+    // --- RENDER EXAM MODE (FULL SCREEN) ---
     if(activeExamId && examContent) {
         const q = examContent.questions[qIdx];
         return (
-            <div className="h-screen flex flex-col bg-slate-50 font-sans">
-                {/* Header Ujian */}
-                <div className="h-16 bg-[#0F172A] text-white flex items-center justify-between px-6 shadow-md">
-                    <span className="font-bold tracking-wide">{examContent.title}</span>
-                    <div className="flex items-center gap-2 bg-blue-600 px-3 py-1 rounded font-mono font-bold text-sm">
-                        {/* Clock variable removed, using inline display */}
-                        <span>{Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}</span>
-                    </div>
+            <div className="h-screen flex flex-col bg-white font-sans">
+                <div className="h-14 bg-[#0F172A] text-white flex items-center justify-between px-6 shadow-md z-50">
+                    <div className="font-bold text-sm tracking-wider">{examContent.title}</div>
+                    <div className="bg-blue-600 px-4 py-1 rounded text-lg font-mono font-bold">{Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}</div>
                 </div>
-
                 <div className="flex-1 flex overflow-hidden">
-                    {/* Panel Kiri: Wacana */}
                     {q.passage && (
-                        <div className="w-1/2 p-8 bg-white border-r border-slate-300 overflow-y-auto">
-                            <h4 className="font-bold text-slate-400 text-xs mb-4 uppercase tracking-widest">Wacana / Bacaan</h4>
-                            <div className="prose max-w-none text-slate-800 leading-relaxed font-serif whitespace-pre-wrap">{q.passage}</div>
+                        <div className="w-1/2 h-full overflow-y-auto p-8 border-r-4 border-slate-200 bg-[#F8FAFC]">
+                            <span className="bg-slate-200 px-2 py-1 rounded text-[10px] font-bold uppercase mb-4 inline-block">Wacana</span>
+                            <div className="prose max-w-none text-slate-800 leading-8 font-serif whitespace-pre-wrap text-justify"><RenderSoal text={q.passage}/></div>
                         </div>
                     )}
-
-                    {/* Panel Kanan: Soal */}
-                    <div className={`flex-1 p-8 overflow-y-auto bg-[#F8FAFC] ${!q.passage?'max-w-4xl mx-auto':''}`}>
-                        {q.media && <img src={q.media} alt="Soal Media" className="max-w-full h-48 object-contain mb-4 border rounded-lg"/>}
-                        <p className="text-lg font-medium text-slate-900 mb-6 leading-relaxed">{q.text}</p>
-                        
+                    <div className={`h-full overflow-y-auto p-8 bg-white ${q.passage ? 'w-1/2' : 'w-full max-w-5xl mx-auto'}`}>
+                        {q.media && <img src={q.media} alt="Soal" className="max-h-64 object-contain mb-6 border rounded-lg"/>}
+                        <div className="mb-8"><RenderSoal text={q.text}/></div>
                         {q.type === 'ISIAN' ? (
-                            <input className="w-full p-4 border-2 border-slate-300 rounded-xl text-lg font-bold focus:border-indigo-600 outline-none" placeholder="Ketik jawaban singkat..." value={answers[q.id]||''} onChange={e=>setAnswers({...answers, [q.id]:e.target.value})}/>
+                            <input className="w-full p-4 border-2 rounded-xl text-xl font-bold focus:border-blue-600 outline-none" placeholder="Jawaban..." value={answers[q.id]||''} onChange={e=>setAnswers({...answers, [q.id]:e.target.value})}/>
                         ) : (
                             <div className="space-y-3">
                                 {q.options.map(o=>(
-                                    <button key={o.id} onClick={()=>setAnswers({...answers, [q.id]:o.id})} className={`w-full p-4 text-left border-2 rounded-xl font-medium transition-all ${answers[q.id]===o.id?'border-blue-600 bg-blue-50 text-blue-800':'border-slate-200 bg-white hover:border-blue-300'}`}>
-                                        <span className={`inline-block w-6 h-6 text-center rounded-full mr-3 text-xs leading-6 ${answers[q.id]===o.id?'bg-blue-600 text-white':'bg-slate-200 text-slate-600'}`}>{o.id}</span>
-                                        {o.label}
+                                    <button key={o.id} onClick={()=>setAnswers({...answers, [q.id]:o.id})} className={`w-full p-4 text-left border-2 rounded-xl flex gap-4 transition-all hover:bg-slate-50 ${answers[q.id]===o.id ? 'border-blue-600 bg-blue-50 ring-2' : 'border-slate-200'}`}>
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${answers[q.id]===o.id ? 'bg-blue-600 text-white' : 'bg-slate-200'}`}>{o.id}</div>
+                                        <div className="mt-1"><RenderSoal text={o.label}/></div>
                                     </button>
                                 ))}
                             </div>
                         )}
                     </div>
                 </div>
-
-                {/* Footer Navigasi */}
-                <div className="h-16 bg-white border-t flex items-center justify-between px-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-                    <button onClick={()=>setQIdx(Math.max(0, qIdx-1))} disabled={qIdx===0} className="px-4 py-2 border rounded-lg font-bold text-slate-600 flex gap-2 disabled:opacity-50 hover:bg-slate-50"><ChevronLeft size={18}/> Sebelumnya</button>
-                    
+                <div className="h-16 border-t bg-slate-50 flex items-center justify-between px-8 z-50">
+                    <button onClick={()=>setQIdx(Math.max(0, qIdx-1))} disabled={qIdx===0} className="px-5 py-2 border rounded-lg font-bold hover:bg-slate-100 disabled:opacity-50"><ChevronLeft/></button>
                     {qIdx === examContent.questions.length-1 ? 
-                        <button onClick={submitExam} className="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow-lg hover:bg-emerald-700 transition-all">SELESAI UJIAN</button> : 
-                        <button onClick={()=>setQIdx(Math.min(examContent.questions.length-1, qIdx+1))} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold flex gap-2 hover:bg-blue-700 transition-all">Selanjutnya <ChevronRight size={18}/></button>
+                        <button onClick={submitExam} className="px-8 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow-lg hover:bg-emerald-700">SELESAI</button> : 
+                        <button onClick={()=>setQIdx(Math.min(examContent.questions.length-1, qIdx+1))} className="px-5 py-2 bg-blue-600 text-white rounded-lg font-bold"><ChevronRight/></button>
                     }
                 </div>
             </div>
         )
     }
 
-    if(!data) return <div className="h-screen flex items-center justify-center font-bold text-slate-400 animate-pulse">Memuat Data...</div>;
+    if(!data) return <div className="h-screen flex items-center justify-center font-bold text-slate-400">Memuat Data V37...</div>;
 
     return (
-        <div className="min-h-screen bg-slate-50 font-sans p-6 pb-24">
-            <div className="max-w-6xl mx-auto space-y-8">
-                {/* Header Profile */}
-                <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 flex flex-col md:flex-row justify-between gap-8">
-                    <div>
-                        <h1 className="text-3xl font-black text-slate-800">Halo, {data.user.full_name}</h1>
-                        <p className="text-slate-500 font-medium">Pejuang PTN 2026</p>
-                    </div>
-                    <div className="flex flex-col gap-2 w-full md:w-1/3">
-                        <label className="text-xs font-bold text-slate-400 uppercase">Pilihan Jurusan</label>
-                        <select className="p-3 border rounded-xl font-bold text-sm bg-slate-50 outline-none focus:border-indigo-500" value={selectedMajor.m1} onChange={e=>setSelectedMajor({...selectedMajor, m1:e.target.value})}>
-                            <option value="">Pilih Jurusan 1</option>
-                            {majors.map(m=><option key={m.id} value={m.id}>{m.university} - {m.program} ({m.passing_grade})</option>)}
-                        </select>
-                        <button onClick={saveMajors} className="bg-indigo-600 text-white py-2 rounded-xl font-bold text-sm shadow-lg hover:bg-indigo-700 transition-all">Simpan Pilihan</button>
-                    </div>
-                </div>
-
-                {/* Dashboard Grid */}
-                <div className="grid md:grid-cols-3 gap-8">
-                    {/* Kiri: Statistik */}
-                    <div className="bg-[#0F172A] text-white p-8 rounded-[2.5rem] shadow-xl md:col-span-1 border border-white/10 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/20 blur-3xl rounded-full"></div>
-                        <h3 className="font-bold text-indigo-400 mb-6 flex items-center gap-2">ANALISIS KEMAMPUAN</h3>
-                        <RadarChartMock/>
-                        <p className="mt-6 text-xs text-slate-400 leading-relaxed border-t border-white/10 pt-4">Grafik ini menunjukkan peta kekuatan Anda berdasarkan hasil Tryout.</p>
-                    </div>
-
-                    {/* Kanan: Daftar Ujian */}
-                    <div className="md:col-span-2 space-y-6">
-                        {data.periods.map(p => (
-                            <div key={p.id} className="bg-white p-8 rounded-[2.5rem] shadow-lg border border-slate-100 relative overflow-hidden">
-                                <div className="flex justify-between items-center mb-6">
-                                    <h3 className="text-xl font-black text-slate-800">{p.name}</h3>
-                                    <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded text-xs font-bold">{p.type}</span>
-                                </div>
-                                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {p.exams.map(e => (
-                                        <div key={e.id} className={`p-5 rounded-2xl border-2 transition-all group ${e.status==='done'?'bg-emerald-50 border-emerald-200 opacity-70':'bg-white border-slate-100 hover:border-indigo-500 hover:shadow-md'}`}>
-                                            <p className="font-bold text-sm text-slate-700 mb-4 truncate">{e.title}</p>
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-xs text-slate-400 font-bold">{e.duration} m</span>
-                                                {e.status==='done' ? (
-                                                    <span className="text-emerald-600 font-black text-lg">{e.score}</span>
-                                                ) : (
-                                                    <button onClick={()=>startExam(e.id)} className="bg-indigo-600 text-white p-2 rounded-lg shadow-lg hover:scale-110 transition-all"><Play size={14}/></button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+        <div className="min-h-screen bg-[#F1F5F9] font-sans pb-24">
+            {/* Header */}
+            <div className="bg-white p-6 shadow-sm mb-6 flex justify-between items-center">
+                <h1 className="text-2xl font-black text-slate-800">EduPrime</h1>
+                <div className="flex gap-4 items-center">
+                    <p className="font-bold text-sm">{data.user.full_name}</p>
+                    <button onClick={onLogout} className="bg-rose-50 p-2 rounded-lg text-rose-600"><LogOut size={18}/></button>
                 </div>
             </div>
-            <button onClick={onLogout} className="fixed bottom-8 right-8 bg-rose-600 text-white p-4 rounded-full shadow-2xl hover:scale-110 transition-all z-50"><LogOut/></button>
+
+            {/* Content Based on Tab */}
+            <div className="max-w-6xl mx-auto px-6">
+                
+                {/* 1. TAB HOME (UJIAN) */}
+                {view === 'home' && (
+                    <div className="space-y-8">
+                        {/* Profile & Jurusan */}
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border flex flex-col md:flex-row justify-between gap-4">
+                            <div><h2 className="font-bold text-lg">Target Kampus</h2><p className="text-xs text-slate-500">Pilih jurusan impianmu untuk analisis peluang.</p></div>
+                            <div className="flex gap-2">
+                                <select className="p-2 border rounded-lg text-sm font-bold w-64" value={selectedMajor.m1} onChange={e=>setSelectedMajor({...selectedMajor, m1:e.target.value})}>
+                                    <option value="">Pilihan 1</option>{majors.map(m=><option key={m.id} value={m.id}>{m.university} - {m.program}</option>)}
+                                </select>
+                                <button onClick={saveMajors} className="bg-indigo-600 text-white px-4 rounded-lg font-bold text-xs">SIMPAN</button>
+                            </div>
+                        </div>
+
+                        {/* Radar Chart */}
+                        <div className="bg-indigo-900 text-white p-6 rounded-2xl shadow-lg relative overflow-hidden">
+                            <div className="flex justify-between items-start">
+                                <div><h3 className="font-bold mb-2"><BarChart2 className="inline mr-2"/> Analisis Kemampuan</h3><p className="text-xs text-indigo-300">Grafik perkembangan skor Tryout Anda.</p></div>
+                                <RadarChartMock/>
+                            </div>
+                        </div>
+
+                        {/* Exam List */}
+                        <div className="grid gap-6">
+                            {data.periods.map(p => (
+                                <div key={p.id} className="bg-white p-6 rounded-2xl shadow-sm border">
+                                    <h3 className="font-black text-lg mb-4">{p.name} <span className="text-indigo-600 text-xs bg-indigo-50 px-2 py-1 rounded ml-2">{p.type}</span></h3>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        {p.exams.map(e => (
+                                            <div key={e.id} className={`p-4 rounded-xl border-2 transition-all ${e.status==='done'?'bg-emerald-50 border-emerald-100':'bg-white hover:border-indigo-500'}`}>
+                                                <p className="font-bold text-sm truncate mb-2">{e.title}</p>
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-xs font-bold text-slate-400">{e.duration}m</span>
+                                                    {e.status==='done' ? <span className="text-emerald-600 font-black">{e.score}</span> : <button onClick={()=>startExam(e.id)} className="bg-indigo-600 text-white p-2 rounded-lg"><Play size={14}/></button>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* 2. TAB HASIL (REKAP NILAI) */}
+                {view === 'results' && (
+                    <div className="bg-white p-8 rounded-3xl shadow-sm border">
+                        <h2 className="text-2xl font-black mb-6 flex items-center gap-3"><Award className="text-emerald-500"/> Riwayat Hasil Ujian</h2>
+                        <table className="w-full text-left">
+                            <thead className="bg-slate-50 border-b text-xs font-bold text-slate-500 uppercase">
+                                <tr><th className="p-4">Nama Ujian</th><th className="p-4">Tanggal</th><th className="p-4">Benar</th><th className="p-4">Skor IRT</th></tr>
+                            </thead>
+                            <tbody>
+                                {data.history && data.history.length > 0 ? data.history.map((h, i) => (
+                                    <tr key={i} className="border-b hover:bg-slate-50">
+                                        <td className="p-4 font-bold">{h.exam}</td>
+                                        <td className="p-4 text-xs text-slate-500">{new Date(h.date).toLocaleDateString()}</td>
+                                        <td className="p-4 font-mono">{h.correct}</td>
+                                        <td className="p-4 font-black text-emerald-600 text-lg">{h.score}</td>
+                                    </tr>
+                                )) : <tr><td colSpan="4" className="p-8 text-center text-slate-400">Belum ada riwayat ujian.</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {/* 3. TAB LMS (MATERI) */}
+                {view === 'lms' && (
+                    <div className="space-y-6">
+                        <h2 className="text-2xl font-black flex items-center gap-3"><BookOpen className="text-blue-500"/> Materi Belajar</h2>
+                        <div className="grid md:grid-cols-3 gap-6">
+                            {data.materials && data.materials.length > 0 ? data.materials.map(m => (
+                                <div key={m.id} className="bg-white p-6 rounded-2xl shadow-sm border hover:shadow-md transition-all">
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div className={`p-3 rounded-xl ${m.type==='video'?'bg-rose-50 text-rose-500':'bg-blue-50 text-blue-500'}`}><FileText size={24}/></div>
+                                        <span className="text-[10px] font-bold uppercase bg-slate-100 px-2 py-1 rounded">{m.category}</span>
+                                    </div>
+                                    <h3 className="font-bold text-lg mb-2">{m.title}</h3>
+                                    <button onClick={()=>window.open(m.content_url)} className="w-full mt-4 py-2 border-2 border-indigo-600 text-indigo-600 rounded-lg font-bold text-xs hover:bg-indigo-50">PELAJARI SEKARANG</button>
+                                </div>
+                            )) : <p className="text-slate-400">Belum ada materi.</p>}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Bottom Navigation */}
+            <div className="fixed bottom-0 left-0 w-full bg-white border-t flex justify-around py-4 z-40 shadow-[0_-10px_20px_rgba(0,0,0,0.05)]">
+                <button onClick={()=>setView('home')} className={`flex flex-col items-center gap-1 text-xs font-bold ${view==='home'?'text-indigo-600':'text-slate-400'}`}><Home size={20}/> Beranda</button>
+                <button onClick={()=>setView('results')} className={`flex flex-col items-center gap-1 text-xs font-bold ${view==='results'?'text-indigo-600':'text-slate-400'}`}><Award size={20}/> Hasil</button>
+                <button onClick={()=>setView('lms')} className={`flex flex-col items-center gap-1 text-xs font-bold ${view==='lms'?'text-indigo-600':'text-slate-400'}`}><BookOpen size={20}/> LMS</button>
+            </div>
         </div>
     );
 };
