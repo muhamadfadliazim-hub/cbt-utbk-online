@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Lock, Loader2, ArrowRight } from 'lucide-react';
+import { Loader2, ArrowRight, Sparkles } from 'lucide-react';
 import { API_URL } from './config';
 
 const Login = ({ onLogin }) => {
@@ -21,41 +21,73 @@ const Login = ({ onLogin }) => {
         });
         const d = await res.json();
         if(res.ok) onLogin(d);
-        else setError("Login Gagal: Cek Username/Password");
-    } catch(e) { setError("Gagal koneksi ke server"); }
+        else setError("Username atau password salah.");
+    } catch(e) { setError("Gagal terhubung ke server."); }
     setLoading(false);
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm md:max-w-md overflow-hidden">
-        <div className="bg-indigo-600 p-8 text-center">
-            <h1 className="text-2xl font-black text-white tracking-tighter">CBT PRO</h1>
-            <p className="text-indigo-100 text-sm">Masuk untuk memulai ujian</p>
-        </div>
-        <div className="p-8">
-            {error && <div className="bg-red-50 text-red-600 p-3 rounded mb-4 text-sm font-bold text-center">{error}</div>}
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase">Username</label>
-                    <div className="relative mt-1">
-                        <User className="absolute left-3 top-3 text-slate-400" size={20}/>
-                        <input className="w-full pl-10 p-3 border rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
-                            value={username} onChange={e=>setUsername(e.target.value)} placeholder="Username"/>
-                    </div>
+    <div className="min-h-screen flex w-full">
+      {/* KIRI: VISUAL ART */}
+      <div className="hidden lg:flex w-1/2 relative bg-slate-900 overflow-hidden items-center justify-center">
+         <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop')] bg-cover bg-center opacity-40 mix-blend-overlay"></div>
+         <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent"></div>
+         
+         <div className="relative z-10 p-12 max-w-xl">
+             <div className="w-16 h-16 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center mb-8 border border-white/20 shadow-2xl">
+                <Sparkles className="text-indigo-400" size={32}/>
+             </div>
+             <h1 className="text-6xl font-extrabold text-white tracking-tight leading-tight mb-6">
+                 Masa Depan <br/>
+                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Dimulai Di Sini.</span>
+             </h1>
+             <p className="text-slate-400 text-lg leading-relaxed">Platform Computer Based Test (CBT) tercanggih dengan analisis IRT Real-time. Fokus kerjakan soal, biarkan kami mencatat prestasi Anda.</p>
+         </div>
+      </div>
+
+      {/* KANAN: FORM LOGIN */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white/80 backdrop-blur-sm">
+        <div className="w-full max-w-md fade-in-up">
+            <div className="mb-10">
+                <h2 className="text-3xl font-bold text-slate-900">Welcome Back</h2>
+                <p className="text-slate-500 mt-2">Masuk untuk melanjutkan sesi ujian Anda.</p>
+            </div>
+
+            {error && (
+                <div className="p-4 mb-6 text-sm text-red-600 bg-red-50 border-l-4 border-red-500 rounded-r-lg font-medium animate-pulse">
+                    {error}
                 </div>
-                <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase">Password</label>
-                    <div className="relative mt-1">
-                        <Lock className="absolute left-3 top-3 text-slate-400" size={20}/>
-                        <input type="password" className="w-full pl-10 p-3 border rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
-                            value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••"/>
-                    </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-5">
+                <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Username</label>
+                    <input 
+                        className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all"
+                        placeholder="Masukkan ID Peserta"
+                        value={username} 
+                        onChange={e=>setUsername(e.target.value)}
+                    />
                 </div>
-                <button disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-xl font-bold transition flex justify-center items-center gap-2">
-                    {loading ? <Loader2 className="animate-spin"/> : <>MASUK <ArrowRight/></>}
+                <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Password</label>
+                    <input 
+                        type="password"
+                        className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all"
+                        placeholder="••••••••"
+                        value={password} 
+                        onChange={e=>setPassword(e.target.value)}
+                    />
+                </div>
+
+                <button disabled={loading} className="w-full py-4 bg-slate-900 hover:bg-indigo-600 text-white rounded-xl font-bold text-lg shadow-xl hover:shadow-indigo-500/30 transition-all transform hover:-translate-y-1 active:scale-95 flex justify-center items-center gap-2">
+                    {loading ? <Loader2 className="animate-spin"/> : <>Masuk Sekarang <ArrowRight size={20}/></>}
                 </button>
             </form>
+            
+            <div className="mt-8 text-center">
+                <span className="text-slate-400 text-sm">Belum punya akun? Hubungi Admin Sekolah.</span>
+            </div>
         </div>
       </div>
     </div>
