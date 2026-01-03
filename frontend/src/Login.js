@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { API_URL } from './config';
-import { User, Lock, Loader2, ArrowRight, BookOpen, Award, Crown } from 'lucide-react';
+import { User, Lock, Loader2, ArrowRight, BookOpen, Crown } from 'lucide-react';
 
 const Login = ({ onLogin }) => {
   const [username, setUsername] = useState('');
@@ -27,11 +27,10 @@ const Login = ({ onLogin }) => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4 font-sans relative overflow-hidden">
       <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
-      
       <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-5xl flex flex-col md:flex-row overflow-hidden relative z-10 border border-white/10">
         <div className="w-full md:w-1/2 bg-indigo-900 p-12 text-white text-center flex flex-col items-center justify-center">
           <BookOpen size={60} className="text-amber-400 mb-6"/>
-          <h1 className="text-4xl font-black mb-4 tracking-tighter uppercase">Mastering Your Future</h1>
+          <h1 className="text-4xl font-black mb-4 tracking-tighter uppercase leading-tight">Mastering Your Future</h1>
           <p className="text-indigo-200 font-medium leading-relaxed opacity-80">
             Platform simulasi ujian presisi tinggi dengan sistem penilaian IRT dan analisis potensi kelulusan berbasis data.
           </p>
@@ -43,13 +42,10 @@ const Login = ({ onLogin }) => {
             </div>
           </div>
         </div>
-
         <div className="w-full md:w-1/2 p-12 bg-white flex flex-col justify-center">
           <h2 className="text-3xl font-black text-slate-800 mb-2">Login Portal</h2>
           <p className="text-slate-400 mb-8 font-medium">Masukkan kredensial untuk akses eksklusif.</p>
-          
           {errorMsg && <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl mb-6 font-bold text-sm border border-rose-100 italic">{errorMsg}</div>}
-          
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="relative">
               <User className="absolute left-4 top-4 text-slate-300" size={20}/>
@@ -62,7 +58,7 @@ const Login = ({ onLogin }) => {
                 placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} required/>
             </div>
             <button type="submit" disabled={loading} className="w-full bg-indigo-900 py-5 rounded-2xl text-white font-black text-lg hover:bg-black transition-all flex items-center justify-center gap-2 shadow-xl">
-              {loading ? <Loader2 className="animate-spin"/> : <>MASUK SEKARANG <ArrowRight/></>}
+              {loading ? <Loader2 className="animate-spin" size={20}/> : <>MASUK SEKARANG <ArrowRight/></>}
             </button>
           </form>
         </div>
