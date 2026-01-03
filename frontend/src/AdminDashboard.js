@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-    Users, BookOpen, Database, Plus, Trash2, Eye, X 
+    Users, BookOpen, Database, Plus, Trash2, Eye, X, CheckCircle
 } from 'lucide-react';
 import { API_URL } from './config';
 
@@ -68,7 +68,6 @@ const AdminDashboard = ({ onLogout }) => {
                 </nav>
 
                 <div className="pt-8 border-t border-white/5">
-                    <p className="text-[10px] font-black text-slate-500 mb-4 uppercase tracking-widest">Administrator</p>
                     <button onClick={onLogout} className="w-full p-4 bg-rose-500/10 text-rose-500 rounded-2xl border border-rose-500/20 font-black hover:bg-rose-500 hover:text-white transition-all">LOGOUT</button>
                 </div>
             </div>
@@ -78,7 +77,7 @@ const AdminDashboard = ({ onLogout }) => {
                 <header className="flex justify-between items-center mb-12">
                     <div>
                         <h1 className="text-4xl font-black text-slate-900 capitalize tracking-tight">{activeTab} Management</h1>
-                        <p className="text-slate-500 font-medium">Kelola sistem EduPrime dengan otoritas penuh.</p>
+                        <p className="text-slate-500 font-medium italic">Muhamad Fadli Azim Official Console</p>
                     </div>
                     {activeTab === 'users' && (
                         <button onClick={() => setShowUserModal(true)} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-xl hover:bg-indigo-700 transition-all transform active:scale-95">
@@ -90,7 +89,7 @@ const AdminDashboard = ({ onLogout }) => {
                 {/* Content: Users */}
                 {activeTab === 'users' && (
                     <div className="bg-white rounded-[3rem] shadow-2xl border border-slate-100 overflow-hidden">
-                        <table className="w-full text-left border-collapse">
+                        <table className="w-full text-left">
                             <thead>
                                 <tr className="bg-slate-50/50 border-b border-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-widest">
                                     <th className="p-8">Full Name</th>
@@ -123,10 +122,9 @@ const AdminDashboard = ({ onLogout }) => {
 
                 {/* Content: Exams */}
                 {activeTab === 'exams' && (
-                    <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-2">
+                    <div className="grid gap-8 md:grid-cols-2">
                         {periods.map(p => (
-                            <div key={p.id} className="bg-white p-10 rounded-[3.5rem] shadow-2xl border border-slate-100 relative group overflow-hidden">
-                                <div className="absolute top-0 right-0 w-2 h-full bg-indigo-600 opacity-20"></div>
+                            <div key={p.id} className="bg-white p-10 rounded-[3.5rem] shadow-2xl border border-slate-100">
                                 <div className="flex justify-between items-center mb-8">
                                     <h3 className="text-2xl font-black text-slate-800">{p.name}</h3>
                                     <button onClick={() => { if(window.confirm("Hapus paket ini?")) fetch(`${API_URL}/admin/periods/${p.id}`, {method:'DELETE'}).then(refreshData) }} className="text-slate-300 hover:text-rose-500 p-2"><Trash2 size={20}/></button>
@@ -135,7 +133,7 @@ const AdminDashboard = ({ onLogout }) => {
                                     {p.exams && p.exams.map(e => (
                                         <div key={e.id} className="flex justify-between items-center p-6 bg-slate-50 rounded-[2rem] border border-transparent hover:border-indigo-100 transition-all">
                                             <div className="font-bold text-slate-600">{e.title}</div>
-                                            <button onClick={() => handlePreview(e.id)} className="flex items-center gap-2 text-indigo-600 font-black text-xs hover:text-indigo-800 tracking-tighter">
+                                            <button onClick={() => handlePreview(e.id)} className="flex items-center gap-2 text-indigo-600 font-black text-xs">
                                                 <Eye size={18}/> PREVIEW SOAL
                                             </button>
                                         </div>
@@ -147,29 +145,23 @@ const AdminDashboard = ({ onLogout }) => {
                 )}
             </div>
 
-            {/* Modal: Tambah User (Lengkap dengan Role) */}
+            {/* Modal: Tambah User */}
             {showUserModal && (
                 <div className="fixed inset-0 bg-[#0F172A]/80 backdrop-blur-md z-50 flex items-center justify-center p-6">
-                    <form onSubmit={handleAddUser} className="bg-white rounded-[3.5rem] p-12 w-full max-w-md shadow-2xl relative">
-                        <div className="text-center mb-10">
-                            <h3 className="text-3xl font-black text-slate-800 tracking-tight">Daftarkan Anggota</h3>
-                            <p className="text-slate-500 font-medium">Tentukan nama, ID, dan otoritas akses.</p>
-                        </div>
-                        <div className="space-y-5">
+                    <form onSubmit={handleAddUser} className="bg-white rounded-[3.5rem] p-12 w-full max-w-md shadow-2xl">
+                        <h3 className="text-2xl font-black text-center mb-8">Daftarkan Anggota</h3>
+                        <div className="space-y-4">
                             <input className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-indigo-600 font-bold" placeholder="Nama Lengkap" value={newUser.full_name} onChange={e => setNewUser({...newUser, full_name: e.target.value})} required/>
                             <input className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-indigo-600 font-bold" placeholder="Username ID" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} required/>
-                            <input className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-indigo-600 font-bold" type="password" placeholder="Password Access" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} required/>
-                            <div className="pt-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2 block">Authority Role</label>
-                                <select className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-indigo-600 font-black text-slate-700" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
-                                    <option value="student">Student (Peserta Ujian)</option>
-                                    <option value="admin">Administrator (Penuh)</option>
-                                </select>
-                            </div>
+                            <input className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-indigo-600 font-bold" type="password" placeholder="Password" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} required/>
+                            <select className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-indigo-600 font-black" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
+                                <option value="student">Student (Peserta)</option>
+                                <option value="admin">Administrator (Penuh)</option>
+                            </select>
                         </div>
-                        <div className="flex gap-4 mt-12">
-                            <button type="button" onClick={() => setShowUserModal(false)} className="flex-1 py-5 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase tracking-widest text-xs">BATAL</button>
-                            <button type="submit" className="flex-1 py-5 bg-indigo-600 text-white rounded-2xl font-black shadow-xl shadow-indigo-600/20 uppercase tracking-widest text-xs hover:bg-indigo-700">DAFTARKAN</button>
+                        <div className="flex gap-4 mt-10">
+                            <button type="button" onClick={() => setShowUserModal(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black">BATAL</button>
+                            <button type="submit" className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black">SIMPAN</button>
                         </div>
                     </form>
                 </div>
@@ -177,28 +169,24 @@ const AdminDashboard = ({ onLogout }) => {
 
             {/* Modal: Preview Soal */}
             {previewExam && (
-                <div className="fixed inset-0 bg-white z-[100] overflow-y-auto p-12 animate-in slide-in-from-bottom-10 duration-700">
+                <div className="fixed inset-0 bg-white z-[100] overflow-y-auto p-12 animate-in slide-in-from-bottom-10">
                     <div className="max-w-4xl mx-auto">
-                        <div className="flex justify-between items-center mb-16 border-b border-slate-100 pb-8">
-                            <div>
-                                <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">{previewExam.title}</h2>
-                                <p className="text-slate-500 font-bold mt-1 tracking-widest uppercase text-xs">Review Segmen Soal & Kunci Jawaban</p>
-                            </div>
-                            <button onClick={() => setPreviewExam(null)} className="p-5 bg-slate-100 rounded-full hover:bg-rose-50 hover:text-rose-500 transition-all shadow-inner"><X size={32}/></button>
+                        <div className="flex justify-between items-center mb-16 border-b pb-8">
+                            <h2 className="text-4xl font-black italic">{previewExam.title} - Preview</h2>
+                            <button onClick={() => setPreviewExam(null)} className="p-5 bg-slate-100 rounded-full hover:bg-rose-50"><X size={32}/></button>
                         </div>
                         <div className="space-y-12">
                             {previewExam.questions && previewExam.questions.map((q, i) => (
-                                <div key={i} className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-xl relative overflow-hidden">
-                                    <div className="absolute top-0 left-0 w-2 h-full bg-indigo-600"></div>
+                                <div key={i} className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-xl relative">
                                     <div className="flex justify-between mb-8 items-center">
-                                        <span className="bg-indigo-900 text-white px-6 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest">Question {i+1}</span>
-                                        <button onClick={() => {if(window.confirm("Hapus soal ini dari paket?")) fetch(`${API_URL}/admin/questions/${q.id}`, {method:'DELETE'}).then(() => handlePreview(previewExam.id))}} className="p-3 text-slate-300 hover:text-rose-600 transition-all"><Trash2 size={20}/></button>
+                                        <span className="bg-indigo-900 text-white px-6 py-1.5 rounded-full text-[10px] font-black uppercase">Soal {i+1}</span>
+                                        <button onClick={() => {if(window.confirm("Hapus soal ini?")) fetch(`${API_URL}/admin/questions/${q.id}`, {method:'DELETE'}).then(() => handlePreview(previewExam.id))}} className="text-rose-500 hover:bg-rose-50 p-2 rounded-lg"><Trash2 size={20}/></button>
                                     </div>
-                                    <p className="text-2xl font-bold mb-10 text-slate-800 leading-snug italic">{q.text}</p>
+                                    <p className="text-2xl font-bold mb-10 text-slate-800">{q.text}</p>
                                     <div className="grid gap-4">
                                         {q.options && q.options.map((o, idx) => (
-                                            <div key={idx} className={`p-6 rounded-2xl border-2 flex items-center justify-between ${o.is_correct ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-black' : 'border-slate-50 bg-slate-50/50 text-slate-400 opacity-60'}`}>
-                                                <span className="text-lg">{o.option_index}. {o.label}</span>
+                                            <div key={idx} className={`p-6 rounded-2xl border-2 flex items-center justify-between ${o.is_correct ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-black' : 'border-slate-50 bg-slate-50/50 opacity-60'}`}>
+                                                <span>{o.option_index}. {o.label}</span>
                                                 {o.is_correct && <CheckCircle size={24}/>}
                                             </div>
                                         ))}
