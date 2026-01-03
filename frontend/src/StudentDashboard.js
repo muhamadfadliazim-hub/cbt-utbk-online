@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Play, FileText, CheckCircle, BarChart2, Clock, Menu, X, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Play, Clock, ChevronRight } from 'lucide-react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import { API_URL } from './config';
 
@@ -17,21 +17,57 @@ const StudentDashboard = ({ user, onLogout }) => {
     const [examResult, setExamResult] = useState(null);
 
     useEffect(() => {
-        fetch(`${API_URL}/periods?active_only=true`).then(r=>r.json()).then(setPeriods);
+        fetch(`${API_URL}/student/periods?username=${user.username}`).then(r=>r.json()).then(setPeriods);
         fetch(`${API_URL}/lms/materials`).then(r=>r.json()).then(setMaterials);
+    }, [user.username]);
+
+    // --- LOGIC PINDAH SUBTES & SELESAI ---
+    const finishExam = useCallback(async () => {
+        if (!activePeriod) return;
+        const res = await fetch(`${API_URL}/exams/${activePeriod.id}/finish`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({username:user.username, answers})
+        });
+        const result = await res.json();
+        setExamResult(result);
+        setView('result');
+    }, [activePeriod, answers, user.username]);
+
+    const enterSubtest = useCallback(async (ex) => {
+        const res = await fetch(`${API_URL}/exams/${ex.id}/questions`);
+        const data = await res.json();
+        setQuestions(data);
+        setActiveSubtest(ex);
+        setTimeLeft(ex.duration * 60);
     }, []);
 
-    // TIMER & BLOCKING LOGIC
+    const handleNextSubtest = useCallback(() => {
+        if (!activePeriod || !activeSubtest) return;
+        const idx = activePeriod.exams.findIndex(e => e.id === activeSubtest.id);
+        if(idx < activePeriod.exams.length - 1) {
+            alert("Waktu Habis / Lanjut Subtes Berikutnya.");
+            enterSubtest(activePeriod.exams[idx+1]);
+        } else {
+            finishExam();
+        }
+    }, [activePeriod, activeSubtest, enterSubtest, finishExam]);
+
+    // --- TIMER SYSTEM ---
     useEffect(() => {
         if(!activeSubtest || timeLeft <= 0) return;
+        
         const t = setInterval(() => {
-            setTimeLeft(p => {
-                if(p<=1) { handleNextSubtest(); return 0; }
-                return p-1;
+            setTimeLeft(prev => {
+                if(prev <= 1) { 
+                    handleNextSubtest(); 
+                    return 0; 
+                }
+                return prev - 1;
             });
         }, 1000);
+        
         return () => clearInterval(t);
-    }, [timeLeft, activeSubtest]);
+    }, [timeLeft, activeSubtest, handleNextSubtest]);
 
     const startExam = (p) => {
         setActivePeriod(p);
@@ -39,33 +75,7 @@ const StudentDashboard = ({ user, onLogout }) => {
         setView('exam');
     };
 
-    const enterSubtest = async (ex) => {
-        const res = await fetch(`${API_URL}/exams/${ex.id}/questions`);
-        setQuestions(await res.json());
-        setActiveSubtest(ex);
-        setTimeLeft(ex.duration * 60);
-    };
-
-    const handleNextSubtest = () => {
-        const idx = activePeriod.exams.findIndex(e => e.id === activeSubtest.id);
-        if(idx < activePeriod.exams.length - 1) {
-            alert("Waktu Habis! Lanjut Subtes Berikutnya.");
-            enterSubtest(activePeriod.exams[idx+1]);
-        } else {
-            finishExam();
-        }
-    };
-
-    const finishExam = async () => {
-        const res = await fetch(`${API_URL}/exams/${activePeriod.id}/finish`, {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({username:user.username, answers})
-        });
-        setExamResult(await res.json());
-        setView('result');
-    };
-
-    // UI RENDER
+    // --- UI RENDER ---
     if(view === 'result' && examResult) {
         const data = Object.keys(examResult.detail).map(k=>({ subj:k, A:examResult.detail[k], full:1000 }));
         return (
@@ -111,9 +121,8 @@ const StudentDashboard = ({ user, onLogout }) => {
                                     <span className="bg-slate-800 text-white px-3 py-1 rounded font-bold h-fit">#{i+1}</span>
                                     <div className="flex-1">
                                         {q.wacana && <div className="bg-slate-50 p-4 border-l-4 border-indigo-500 text-sm italic mb-4 whitespace-pre-line">{q.wacana}</div>}
-                                        <p className="text-lg mb-4">{q.text}</p>
+                                        <div dangerouslySetInnerHTML={{__html: q.text}} className="text-lg mb-4"/>
                                         
-                                        {/* RENDER OPSI SESUAI TIPE */}
                                         <div className="space-y-2">
                                             {q.q_type === 'ISIAN' ? (
                                                 <input className="border-2 p-3 rounded w-full font-bold" placeholder="Ketik jawaban..." onBlur={(e)=>setAnswers({...answers, [activeSubtest.id]:{...answers[activeSubtest.id], [q.id]:e.target.value}})} />

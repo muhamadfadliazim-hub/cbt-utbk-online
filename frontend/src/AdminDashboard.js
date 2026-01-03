@@ -1,35 +1,48 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, FileText, Upload, Users, Video, Plus, Trash2, LogOut } from 'lucide-react';
+import { FileText, Upload, Users, Video, Plus, LogOut, Loader2 } from 'lucide-react';
 import { API_URL } from './config';
 
 const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('bank'); // bank | lms | users
   const [periods, setPeriods] = useState([]);
   const [materials, setMaterials] = useState([]);
+  const [loading, setLoading] = useState(false);
   
   useEffect(() => {
-    if(tab==='bank') fetch(`${API_URL}/periods`).then(r=>r.json()).then(setPeriods);
+    if(tab==='bank') fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(setPeriods);
     if(tab==='lms') fetch(`${API_URL}/lms/materials`).then(r=>r.json()).then(setMaterials);
   }, [tab]);
 
   // UPLOAD SOAL EXCEL
   const handleUploadSoal = async (e, examId) => {
+    const file = e.target.files[0];
+    if(!file) return;
+
     const fd = new FormData();
-    fd.append('file', e.target.files[0]);
+    fd.append('file', file);
     fd.append('exam_id', examId);
-    await fetch(`${API_URL}/admin/upload/questions`, {method:'POST', body:fd});
-    alert("Soal Berhasil Diupload!");
+    
+    setLoading(true);
+    try {
+        const res = await fetch(`${API_URL}/admin/upload/questions`, {method:'POST', body:fd});
+        const d = await res.json();
+        alert(d.message);
+    } catch(err) { alert("Gagal Upload"); }
+    setLoading(false);
   };
 
   // BUAT PAKET BARU
   const handleCreatePeriod = async () => {
     const name = prompt("Nama Paket (misal: TO UTBK 1):");
-    const type = prompt("Tipe (UTBK/CPNS/TOEFL):").toUpperCase();
+    const type = prompt("Tipe (UTBK/CPNS/TOEFL):")?.toUpperCase();
     if(name && type) {
+        setLoading(true);
         await fetch(`${API_URL}/admin/periods`, {
             method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, exam_type:type})
         });
-        window.location.reload();
+        setLoading(false);
+        // Refresh
+        fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(setPeriods);
     }
   };
 
@@ -52,7 +65,9 @@ const AdminDashboard = ({ onLogout }) => {
             <div>
                 <div className="flex justify-between mb-6">
                     <h2 className="text-2xl font-bold">Manajemen Ujian</h2>
-                    <button onClick={handleCreatePeriod} className="bg-slate-900 text-white px-4 py-2 rounded flex items-center gap-2"><Plus size={16}/> Buat Paket</button>
+                    <button onClick={handleCreatePeriod} disabled={loading} className="bg-slate-900 text-white px-4 py-2 rounded flex items-center gap-2">
+                        {loading ? <Loader2 className="animate-spin"/> : <Plus size={16}/>} Buat Paket
+                    </button>
                 </div>
                 {periods.map(p => (
                     <div key={p.id} className="bg-white p-6 rounded-xl shadow mb-4 border">
@@ -62,7 +77,9 @@ const AdminDashboard = ({ onLogout }) => {
                                 <div key={ex.id} className="p-3 border rounded bg-slate-50">
                                     <div className="text-sm font-bold mb-2">{ex.title}</div>
                                     <label className="block w-full text-center border-dashed border-2 border-slate-300 p-2 cursor-pointer hover:bg-white transition text-xs font-bold text-slate-500">
-                                        Upload Excel
+                                        <div className="flex justify-center items-center gap-1">
+                                            <Upload size={14}/> Upload Excel
+                                        </div>
                                         <input type="file" className="hidden" onChange={(e)=>handleUploadSoal(e, ex.id)} />
                                     </label>
                                 </div>
