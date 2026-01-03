@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # DB v6 = Final Version with Full Features
-SQLALCHEMY_DATABASE_URL = "sqlite:///./utbk_v6.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///./utbk_v20_final.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
