@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
-    Users, BookOpen, Database, Plus, Trash2, Eye, X, CheckCircle
+    Users, BookOpen, Database, Plus, Trash2, Eye, X, 
+    CheckCircle, FileSpreadsheet, Video, Link as LinkIcon, Upload
 } from 'lucide-react';
 import { API_URL } from './config';
 
@@ -8,38 +9,64 @@ const AdminDashboard = ({ onLogout }) => {
     const [activeTab, setActiveTab] = useState('users');
     const [users, setUsers] = useState([]);
     const [periods, setPeriods] = useState([]);
+    const [materials, setMaterials] = useState([]);
     
-    // Modal State
+    // Form States
     const [showUserModal, setShowUserModal] = useState(false);
-    const [newUser, setNewUser] = useState({ username: '', full_name: '', password: '', role: 'student' });
+    const [showPeriodModal, setShowPeriodModal] = useState(false);
+    const [showLmsModal, setShowLmsModal] = useState(false);
     const [previewExam, setPreviewExam] = useState(null);
+
+    const [newUser, setNewUser] = useState({ username: '', full_name: '', password: '', role: 'student' });
+    const [newPeriod, setNewPeriod] = useState({ name: '', exam_type: 'UTBK' });
+    const [newLms, setNewLms] = useState({ title: '', type: 'video', category: 'UTBK', url: '' });
 
     const refreshData = () => {
         fetch(`${API_URL}/admin/users`).then(r => r.json()).then(data => setUsers(Array.isArray(data) ? data : []));
         fetch(`${API_URL}/admin/periods`).then(r => r.json()).then(data => setPeriods(Array.isArray(data) ? data : []));
+        fetch(`${API_URL}/materials`).then(r => r.json()).then(data => setMaterials(Array.isArray(data) ? data : []));
     };
 
-    useEffect(() => {
-        refreshData();
-    }, [activeTab]);
+    useEffect(() => { refreshData(); }, [activeTab]);
 
+    // --- LOGIKA PESERTA ---
     const handleAddUser = (e) => {
         e.preventDefault();
         fetch(`${API_URL}/admin/users`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newUser)
-        }).then(() => {
-            setShowUserModal(false);
-            setNewUser({ username: '', full_name: '', password: '', role: 'student' });
-            refreshData();
+        }).then(() => { setShowUserModal(false); refreshData(); });
+    };
+
+    // --- LOGIKA BANK SOAL ---
+    const handleAddPeriod = (e) => {
+        e.preventDefault();
+        const formData = new FormData();
+        formData.append('name', newPeriod.name);
+        formData.append('exam_type', newPeriod.exam_type);
+        fetch(`${API_URL}/admin/periods`, { method: 'POST', body: formData }).then(() => {
+            setShowPeriodModal(false); refreshData();
         });
     };
 
-    const deleteUser = (id) => {
-        if(window.confirm("Hapus pengguna ini secara permanen?")) {
-            fetch(`${API_URL}/admin/users/${id}`, { method: 'DELETE' }).then(refreshData);
-        }
+    const handleUploadSoal = (eid, file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        fetch(`${API_URL}/admin/upload-questions/${eid}`, { method: 'POST', body: formData })
+            .then(() => { alert("Soal Berhasil Masuk!"); refreshData(); });
+    };
+
+    // --- LOGIKA LMS ---
+    const handleAddLms = (e) => {
+        e.preventDefault();
+        const formData = new FormData();
+        formData.append('title', newLms.title);
+        formData.append('type', newLms.type);
+        formData.append('category', newLms.category);
+        formData.append('url', newLms.url);
+        fetch(`${API_URL}/materials`, { method: 'POST', body: formData }).then(() => {
+            setShowLmsModal(false); refreshData();
+        });
     };
 
     const handlePreview = (eid) => {
@@ -48,70 +75,58 @@ const AdminDashboard = ({ onLogout }) => {
 
     return (
         <div className="min-h-screen bg-slate-50 flex font-sans">
-            {/* Sidebar Royal Admin */}
+            {/* Sidebar Royal */}
             <div className="w-72 bg-[#0F172A] text-white p-8 flex flex-col shadow-2xl">
-                <div className="mb-12">
-                    <h2 className="text-2xl font-black tracking-tighter italic">EDU<span className="text-indigo-400">PRIME</span></h2>
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.3em]">Management Console</p>
-                </div>
-                
+                <h2 className="text-2xl font-black mb-12 italic tracking-tighter">EDU<span className="text-indigo-400">PRIME</span></h2>
                 <nav className="space-y-3 flex-1">
                     <button onClick={() => setActiveTab('users')} className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all font-bold ${activeTab === 'users' ? 'bg-indigo-600 shadow-lg' : 'hover:bg-white/5 text-slate-400'}`}>
-                        <Users size={20}/> Peserta & Staff
+                        <Users size={20}/> Database Peserta
                     </button>
                     <button onClick={() => setActiveTab('exams')} className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all font-bold ${activeTab === 'exams' ? 'bg-indigo-600 shadow-lg' : 'hover:bg-white/5 text-slate-400'}`}>
-                        <Database size={20}/> Bank Soal & Tryout
+                        <Database size={20}/> Bank Soal & TO
                     </button>
                     <button onClick={() => setActiveTab('lms')} className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all font-bold ${activeTab === 'lms' ? 'bg-indigo-600 shadow-lg' : 'hover:bg-white/5 text-slate-400'}`}>
-                        <BookOpen size={20}/> LMS Materi
+                        <BookOpen size={20}/> LMS & Materi
                     </button>
                 </nav>
-
-                <div className="pt-8 border-t border-white/5">
-                    <button onClick={onLogout} className="w-full p-4 bg-rose-500/10 text-rose-500 rounded-2xl border border-rose-500/20 font-black hover:bg-rose-500 hover:text-white transition-all">LOGOUT</button>
-                </div>
+                <button onClick={onLogout} className="p-4 bg-rose-500/10 text-rose-500 rounded-2xl border border-rose-500/20 font-black">LOGOUT</button>
             </div>
 
-            {/* Main Content Area */}
+            {/* Main Content */}
             <div className="flex-1 p-12 overflow-y-auto">
                 <header className="flex justify-between items-center mb-12">
-                    <div>
-                        <h1 className="text-4xl font-black text-slate-900 capitalize tracking-tight">{activeTab} Management</h1>
-                        <p className="text-slate-500 font-medium italic">Muhamad Fadli Azim Official Console</p>
+                    <h1 className="text-4xl font-black text-slate-900 capitalize tracking-tight">{activeTab} System</h1>
+                    <div className="flex gap-4">
+                        {activeTab === 'users' && (
+                            <>
+                                <button className="bg-emerald-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg"><FileSpreadsheet size={18}/> Impor Excel</button>
+                                <button onClick={() => setShowUserModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg"><Plus size={18}/> Tambah Manual</button>
+                            </>
+                        )}
+                        {activeTab === 'exams' && (
+                            <button onClick={() => setShowPeriodModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg"><Plus size={18}/> Buat Paket Baru</button>
+                        )}
+                        {activeTab === 'lms' && (
+                            <button onClick={() => setShowLmsModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg"><Plus size={18}/> Tambah Materi</button>
+                        )}
                     </div>
-                    {activeTab === 'users' && (
-                        <button onClick={() => setShowUserModal(true)} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-xl hover:bg-indigo-700 transition-all transform active:scale-95">
-                            <Plus size={22}/> TAMBAH ANGGOTA
-                        </button>
-                    )}
                 </header>
 
-                {/* Content: Users */}
+                {/* --- VIEW: USERS --- */}
                 {activeTab === 'users' && (
-                    <div className="bg-white rounded-[3rem] shadow-2xl border border-slate-100 overflow-hidden">
+                    <div className="bg-white rounded-[3rem] shadow-2xl border overflow-hidden">
                         <table className="w-full text-left">
-                            <thead>
-                                <tr className="bg-slate-50/50 border-b border-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-widest">
-                                    <th className="p-8">Full Name</th>
-                                    <th className="p-8">Username ID</th>
-                                    <th className="p-8">Authority Role</th>
-                                    <th className="p-8 text-right">Action</th>
-                                </tr>
+                            <thead className="bg-slate-50 border-b text-slate-400 text-[10px] font-black uppercase">
+                                <tr><th className="p-8">Nama</th><th className="p-8">Username</th><th className="p-8">Role</th><th className="p-8 text-right">Aksi</th></tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-50">
+                            <tbody>
                                 {users.map(u => (
-                                    <tr key={u.id} className="group hover:bg-slate-50/50 transition-all">
+                                    <tr key={u.id} className="border-b hover:bg-slate-50/50">
                                         <td className="p-8 font-black text-slate-800">{u.full_name}</td>
-                                        <td className="p-8 font-mono text-sm text-slate-500">{u.username}</td>
-                                        <td className="p-8">
-                                            <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase border ${u.role === 'admin' ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-indigo-50 text-indigo-600 border-indigo-200'}`}>
-                                                {u.role}
-                                            </span>
-                                        </td>
+                                        <td className="p-8 font-mono text-slate-500">{u.username}</td>
+                                        <td className="p-8"><span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase">{u.role}</span></td>
                                         <td className="p-8 text-right">
-                                            <button onClick={() => deleteUser(u.id)} className="p-3 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-2xl transition-all">
-                                                <Trash2 size={20}/>
-                                            </button>
+                                            <button onClick={() => fetch(`${API_URL}/admin/users/${u.id}`, {method:'DELETE'}).then(refreshData)} className="p-3 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={20}/></button>
                                         </td>
                                     </tr>
                                 ))}
@@ -120,22 +135,25 @@ const AdminDashboard = ({ onLogout }) => {
                     </div>
                 )}
 
-                {/* Content: Exams */}
+                {/* --- VIEW: BANK SOAL --- */}
                 {activeTab === 'exams' && (
                     <div className="grid gap-8 md:grid-cols-2">
                         {periods.map(p => (
-                            <div key={p.id} className="bg-white p-10 rounded-[3.5rem] shadow-2xl border border-slate-100">
+                            <div key={p.id} className="bg-white p-10 rounded-[3.5rem] shadow-2xl border relative">
                                 <div className="flex justify-between items-center mb-8">
-                                    <h3 className="text-2xl font-black text-slate-800">{p.name}</h3>
-                                    <button onClick={() => { if(window.confirm("Hapus paket ini?")) fetch(`${API_URL}/admin/periods/${p.id}`, {method:'DELETE'}).then(refreshData) }} className="text-slate-300 hover:text-rose-500 p-2"><Trash2 size={20}/></button>
+                                    <h3 className="text-2xl font-black">{p.name} <span className="text-indigo-600 ml-2">[{p.exam_type}]</span></h3>
+                                    <button onClick={() => fetch(`${API_URL}/admin/periods/${p.id}`, {method:'DELETE'}).then(refreshData)} className="text-rose-400"><Trash2 size={20}/></button>
                                 </div>
                                 <div className="space-y-4">
-                                    {p.exams && p.exams.map(e => (
-                                        <div key={e.id} className="flex justify-between items-center p-6 bg-slate-50 rounded-[2rem] border border-transparent hover:border-indigo-100 transition-all">
-                                            <div className="font-bold text-slate-600">{e.title}</div>
-                                            <button onClick={() => handlePreview(e.id)} className="flex items-center gap-2 text-indigo-600 font-black text-xs">
-                                                <Eye size={18}/> PREVIEW SOAL
-                                            </button>
+                                    {p.exams.map(e => (
+                                        <div key={e.id} className="p-6 bg-slate-50 rounded-3xl flex justify-between items-center group">
+                                            <div><p className="font-bold text-slate-700">{e.title}</p><p className="text-[10px] text-slate-400 font-black">{e.duration} MENIT</p></div>
+                                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                                                <label className="p-3 bg-emerald-100 text-emerald-600 rounded-xl cursor-pointer hover:bg-emerald-600 hover:text-white transition-all">
+                                                    <Upload size={18}/><input type="file" className="hidden" onChange={(x) => handleUploadSoal(e.id, x.target.files[0])}/>
+                                                </label>
+                                                <button onClick={() => handlePreview(e.id)} className="p-3 bg-indigo-100 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><Eye size={18}/></button>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -143,49 +161,67 @@ const AdminDashboard = ({ onLogout }) => {
                         ))}
                     </div>
                 )}
+
+                {/* --- VIEW: LMS --- */}
+                {activeTab === 'lms' && (
+                    <div className="grid gap-8 md:grid-cols-3">
+                        {materials.map(m => (
+                            <div key={m.id} className="bg-white p-8 rounded-[3rem] shadow-xl border flex flex-col">
+                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-6 ${m.type==='video'?'bg-rose-50 text-rose-500':'bg-blue-50 text-blue-500'}`}>
+                                    {m.type==='video' ? <Video/> : <FileSpreadsheet/>}
+                                </div>
+                                <h4 className="text-xl font-black mb-4 flex-1">{m.title}</h4>
+                                <div className="flex justify-between items-center pt-6 border-t">
+                                    <button onClick={() => window.open(m.content_url)} className="text-indigo-600 font-black text-xs flex items-center gap-2 tracking-widest"><LinkIcon size={14}/> BUKA</button>
+                                    <button onClick={() => fetch(`${API_URL}/materials/${m.id}`, {method:'DELETE'}).then(refreshData)} className="text-rose-400"><Trash2 size={16}/></button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
-            {/* Modal: Tambah User */}
+            {/* MODAL: TAMBAH USER */}
             {showUserModal && (
                 <div className="fixed inset-0 bg-[#0F172A]/80 backdrop-blur-md z-50 flex items-center justify-center p-6">
                     <form onSubmit={handleAddUser} className="bg-white rounded-[3.5rem] p-12 w-full max-w-md shadow-2xl">
-                        <h3 className="text-2xl font-black text-center mb-8">Daftarkan Anggota</h3>
+                        <h3 className="text-3xl font-black mb-8 text-center">Data Peserta Baru</h3>
                         <div className="space-y-4">
-                            <input className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-indigo-600 font-bold" placeholder="Nama Lengkap" value={newUser.full_name} onChange={e => setNewUser({...newUser, full_name: e.target.value})} required/>
-                            <input className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-indigo-600 font-bold" placeholder="Username ID" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} required/>
-                            <input className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-indigo-600 font-bold" type="password" placeholder="Password" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} required/>
-                            <select className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-indigo-600 font-black" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
-                                <option value="student">Student (Peserta)</option>
-                                <option value="admin">Administrator (Penuh)</option>
+                            <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" placeholder="Nama Lengkap" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name: e.target.value})} required/>
+                            <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" placeholder="ID Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username: e.target.value})} required/>
+                            <input className="w-full p-5 bg-slate-50 border rounded-2xl font-bold" type="password" placeholder="Password" value={newUser.password} onChange={e=>setNewUser({...newUser, password: e.target.value})} required/>
+                            <select className="w-full p-5 bg-slate-50 border rounded-2xl font-black" value={newUser.role} onChange={e=>setNewUser({...newUser, role: e.target.value})}>
+                                <option value="student">STUDENT (PESERTA)</option>
+                                <option value="admin">ADMIN (STAFF)</option>
                             </select>
                         </div>
                         <div className="flex gap-4 mt-10">
-                            <button type="button" onClick={() => setShowUserModal(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black">BATAL</button>
-                            <button type="submit" className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black">SIMPAN</button>
+                            <button type="button" onClick={()=>setShowUserModal(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black">BATAL</button>
+                            <button type="submit" className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-xl shadow-indigo-600/30">DAFTARKAN</button>
                         </div>
                     </form>
                 </div>
             )}
 
-            {/* Modal: Preview Soal */}
+            {/* MODAL: PREVIEW SOAL */}
             {previewExam && (
                 <div className="fixed inset-0 bg-white z-[100] overflow-y-auto p-12 animate-in slide-in-from-bottom-10">
                     <div className="max-w-4xl mx-auto">
-                        <div className="flex justify-between items-center mb-16 border-b pb-8">
+                        <div className="flex justify-between items-center mb-12 border-b pb-8">
                             <h2 className="text-4xl font-black italic">{previewExam.title} - Preview</h2>
-                            <button onClick={() => setPreviewExam(null)} className="p-5 bg-slate-100 rounded-full hover:bg-rose-50"><X size={32}/></button>
+                            <button onClick={() => setPreviewExam(null)} className="p-5 bg-slate-100 rounded-full"><X size={32}/></button>
                         </div>
-                        <div className="space-y-12">
+                        <div className="space-y-8">
                             {previewExam.questions && previewExam.questions.map((q, i) => (
-                                <div key={i} className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-xl relative">
-                                    <div className="flex justify-between mb-8 items-center">
+                                <div key={i} className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-xl">
+                                    <div className="flex justify-between mb-6">
                                         <span className="bg-indigo-900 text-white px-6 py-1.5 rounded-full text-[10px] font-black uppercase">Soal {i+1}</span>
-                                        <button onClick={() => {if(window.confirm("Hapus soal ini?")) fetch(`${API_URL}/admin/questions/${q.id}`, {method:'DELETE'}).then(() => handlePreview(previewExam.id))}} className="text-rose-500 hover:bg-rose-50 p-2 rounded-lg"><Trash2 size={20}/></button>
+                                        <button onClick={() => fetch(`${API_URL}/admin/questions/${q.id}`, {method:'DELETE'}).then(() => handlePreview(previewExam.id))} className="text-rose-500"><Trash2 size={20}/></button>
                                     </div>
-                                    <p className="text-2xl font-bold mb-10 text-slate-800">{q.text}</p>
-                                    <div className="grid gap-4">
+                                    <p className="text-2xl font-bold mb-8 text-slate-800 italic">"{q.text}"</p>
+                                    <div className="grid gap-3">
                                         {q.options && q.options.map((o, idx) => (
-                                            <div key={idx} className={`p-6 rounded-2xl border-2 flex items-center justify-between ${o.is_correct ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-black' : 'border-slate-50 bg-slate-50/50 opacity-60'}`}>
+                                            <div key={idx} className={`p-6 rounded-2xl border-2 flex items-center justify-between ${o.is_correct ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-black' : 'bg-slate-50 text-slate-400 opacity-60'}`}>
                                                 <span>{o.option_index}. {o.label}</span>
                                                 {o.is_correct && <CheckCircle size={24}/>}
                                             </div>
