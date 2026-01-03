@@ -1,12 +1,34 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float, Text, DateTime
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float, Text, DateTime, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
+import enum
 
-class SystemConfig(Base):
-    __tablename__ = "system_config"
-    key = Column(String, primary_key=True, index=True)
-    value = Column(String)
+class UserRole(str, enum.Enum):
+    STUDENT = "student"
+    ADMIN = "admin"
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True)
+    password = Column(String)
+    full_name = Column(String)
+    role = Column(String, default="student") 
+    
+    # --- FITUR KOMERSIL ---
+    is_premium = Column(Boolean, default=False)
+    premium_until = Column(DateTime, nullable=True)
+    phone_number = Column(String, nullable=True)
+    
+    # Relasi Pilihan Kampus
+    choice1_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
+    choice2_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
+    
+    choice1 = relationship("Major", foreign_keys=[choice1_id])
+    choice2 = relationship("Major", foreign_keys=[choice2_id])
+    results = relationship("ExamResult", back_populates="user")
+    transactions = relationship("Transaction", back_populates="user")
 
 class Major(Base):
     __tablename__ = "majors"
@@ -15,20 +37,16 @@ class Major(Base):
     name = Column(String)
     passing_grade = Column(Float)
 
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    password = Column(String)
-    full_name = Column(String)
-    role = Column(String, default="student") # student / admin
+class Transaction(Base):
+    __tablename__ = "transactions"
+    id = Column(String, primary_key=True, index=True) # Order ID (misal: TRX-001)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    amount = Column(Integer)
+    status = Column(String, default="pending") # pending, success, failed
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    payment_method = Column(String, nullable=True)
     
-    choice1_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
-    choice2_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
-    
-    choice1 = relationship("Major", foreign_keys=[choice1_id])
-    choice2 = relationship("Major", foreign_keys=[choice2_id])
-    results = relationship("ExamResult", back_populates="user")
+    user = relationship("User", back_populates="transactions")
 
 class ExamPeriod(Base):
     __tablename__ = "exam_periods"
@@ -36,21 +54,23 @@ class ExamPeriod(Base):
     name = Column(String)
     is_active = Column(Boolean, default=True)
     allow_submit = Column(Boolean, default=True)
-    is_random = Column(Boolean, default=True)
-    is_flexible = Column(Boolean, default=False)
-    allowed_usernames = Column(Text, nullable=True)
-    exam_type = Column(String, default="UTBK") # UTBK, CPNS, KEDINASAN, dll
+    
+    # Fitur Premium: Apakah paket ini berbayar?
+    is_vip_only = Column(Boolean, default=False) 
+    price = Column(Integer, default=0)
+    
+    banner_img = Column(String, nullable=True) # URL Gambar Banner
+    exam_type = Column(String) 
     
     exams = relationship("Exam", back_populates="period", cascade="all, delete-orphan")
 
 class Exam(Base):
     __tablename__ = "exams"
-    id = Column(String, primary_key=True, index=True) # Format: P1_PU (PeriodId_Code)
+    id = Column(String, primary_key=True, index=True)
     period_id = Column(Integer, ForeignKey("exam_periods.id"))
-    code = Column(String) # PU, PBM, TWK, dll
+    code = Column(String) 
     title = Column(String)
-    description = Column(String)
-    duration = Column(Integer) # Menit
+    duration = Column(Integer) 
     
     period = relationship("ExamPeriod", back_populates="exams")
     questions = relationship("Question", back_populates="exam", cascade="all, delete-orphan")
@@ -59,23 +79,14 @@ class Question(Base):
     __tablename__ = "questions"
     id = Column(Integer, primary_key=True, index=True)
     exam_id = Column(String, ForeignKey("exams.id"))
+    
     text = Column(Text)
-    type = Column(String) # multiple_choice, complex, short_answer, table_boolean
-    difficulty = Column(Float, default=1.0)
-    
-    reading_material = Column(Text, nullable=True)
-    explanation = Column(Text, nullable=True)
-    
     image_url = Column(String, nullable=True)
-    audio_url = Column(String, nullable=True)  # <--- KOLOM BARU YANG SEBELUMNYA HILANG
     
-    label_true = Column(String, default="Benar")
-    label_false = Column(String, default="Salah")
+    # Pembahasan (LMS Feature)
+    explanation = Column(Text, nullable=True)
+    explanation_video_url = Column(String, nullable=True) 
     
-    # Statistik Soal (Untuk Analisis)
-    total_correct = Column(Integer, default=0)
-    total_attempts = Column(Integer, default=0)
-
     exam = relationship("Exam", back_populates="questions")
     options = relationship("Option", back_populates="question", cascade="all, delete-orphan")
 
@@ -84,7 +95,7 @@ class Option(Base):
     id = Column(Integer, primary_key=True, index=True)
     question_id = Column(Integer, ForeignKey("questions.id"))
     label = Column(Text)
-    option_index = Column(String) # A, B, C, D, E atau 1, 2, 3 (untuk tabel)
+    option_index = Column(String)
     is_correct = Column(Boolean, default=False)
     
     question = relationship("Question", back_populates="options")
@@ -101,12 +112,3 @@ class ExamResult(Base):
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
     
     user = relationship("User", back_populates="results")
-
-class Material(Base):
-    __tablename__ = "materials"
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String)
-    type = Column(String) # pdf, video, link
-    content_url = Column(String)
-    category = Column(String) # UTBK, CPNS, etc
-    description = Column(Text, nullable=True)
