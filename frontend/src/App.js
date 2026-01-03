@@ -1,38 +1,46 @@
 import React, { useState } from 'react';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import Login from './Login';
-import AdminDashboard from './AdminDashboard';
-import StudentDashboard from './StudentDashboard';
+import StudentDashboard from './StudentDashboard'; 
+import AdminDashboard from './AdminDashboard'; 
+import './App.css';
 
-function App() {
-  // Ambil data user dari penyimpanan lokal agar tahan refresh
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('cbt_user');
+const getSafeUserData = () => {
+  try {
+    const saved = localStorage.getItem('utbk_user');
     return saved ? JSON.parse(saved) : null;
-  });
+  } catch (e) {
+    localStorage.removeItem('utbk_user');
+    return null;
+  }
+};
 
-  const handleLogin = (userData) => {
-    setUser(userData);
-    localStorage.setItem('cbt_user', JSON.stringify(userData));
+export default function App() {
+  const navigate = useNavigate();
+  const [userData, setUserData] = useState(getSafeUserData());
+
+  const handleLoginSuccess = (data) => {
+    localStorage.setItem('utbk_user', JSON.stringify(data));
+    setUserData(data);
+    if (data.role === 'admin') navigate('/admin');
+    else navigate('/dashboard');
   };
 
   const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('cbt_user');
-    window.location.href = "/";
+    localStorage.removeItem('utbk_user');
+    setUserData(null);
+    navigate('/login');
   };
 
-  // 1. Jika belum login, tampilkan halaman Login
-  if (!user) {
-    return <Login onLogin={handleLogin} />;
-  }
-
-  // 2. Jika Admin, tampilkan Dashboard Admin
-  if (user.role === 'admin') {
-    return <AdminDashboard user={user} onLogout={handleLogout} />;
-  }
-
-  // 3. Jika Siswa, tampilkan Dashboard Siswa
-  return <StudentDashboard user={user} onLogout={handleLogout} />;
+  return (
+    <div className="App font-sans">
+      <Routes>
+        <Route path="/login" element={!userData ? <Login onLoginSuccess={handleLoginSuccess} /> : <Navigate to={userData.role === 'admin' ? "/admin" : "/dashboard"} />} />
+        <Route path="/dashboard" element={userData && userData.role !== 'admin' ? <StudentDashboard user={userData} onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        <Route path="/admin" element={userData && userData.role === 'admin' ? <AdminDashboard onLogout={handleLogout} /> : <Navigate to="/login" />} />
+        <Route path="/" element={<Navigate to={userData ? (userData.role === 'admin' ? "/admin" : "/dashboard") : "/login"} />} />
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </div>
+  );
 }
-
-export default App;
