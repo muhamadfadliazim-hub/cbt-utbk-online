@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { API_URL } from './config';
-import { User, Lock, Loader2, ArrowRight, Zap, GraduationCap, AlertCircle } from 'lucide-react';
+import { User, Lock, Loader2, ArrowRight, BookOpen, Award, Crown } from 'lucide-react';
 
 const Login = ({ onLogin }) => {
   const [username, setUsername] = useState('');
@@ -13,83 +13,58 @@ const Login = ({ onLogin }) => {
     setLoading(true);
     setErrorMsg('');
     try {
-      const cleanUrl = `${API_URL}/login`.replace(/([^:]\/)\/+/g, "$1");
-      const res = await fetch(cleanUrl, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const res = await fetch(`${API_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Akun tidak ditemukan");
-      onLogin(data);
-    } catch (err) { setErrorMsg(err.message === "Failed to fetch" ? "Koneksi ke server gagal." : err.message); } finally { setLoading(false); }
+      if (!res.ok) throw new Error(data.detail || "Login Gagal");
+      if (onLogin) onLogin(data);
+    } catch (err) { setErrorMsg(err.message); } finally { setLoading(false); }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 font-sans">
-      <div className="w-full max-w-4xl bg-white rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col md:flex-row">
-        
-        {/* LEFT SIDE: Visual Ceria ala Ruangguru */}
-        <div className="w-full md:w-5/12 bg-gradient-to-br from-sky-400 to-blue-600 p-10 flex flex-col justify-between text-white relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
-            <div className="absolute bottom-0 left-0 w-40 h-40 bg-yellow-300/20 rounded-full -ml-10 -mb-10 blur-xl"></div>
-            
-            <div className="relative z-10">
-                <div className="flex items-center gap-2 mb-6">
-                    <div className="bg-white p-2 rounded-xl text-blue-600 shadow-sm"><Zap size={24} fill="currentColor"/></div>
-                    <span className="font-extrabold text-2xl tracking-tight">EduPrime</span>
-                </div>
-                <h1 className="text-4xl font-extrabold leading-tight mb-4">
-                    Belajar Jadi <br/><span className="text-yellow-300">Lebih Seru!</span>
-                </h1>
-                <p className="text-blue-50 font-medium leading-relaxed">
-                    Platform ujian #1 dengan analisis pintar untuk bantu kamu raih mimpi.
-                </p>
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4 font-sans relative overflow-hidden">
+      <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
+      
+      <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-5xl flex flex-col md:flex-row overflow-hidden relative z-10 border border-white/10">
+        <div className="w-full md:w-1/2 bg-indigo-900 p-12 text-white text-center flex flex-col items-center justify-center">
+          <BookOpen size={60} className="text-amber-400 mb-6"/>
+          <h1 className="text-4xl font-black mb-4 tracking-tighter uppercase">Mastering Your Future</h1>
+          <p className="text-indigo-200 font-medium leading-relaxed opacity-80">
+            Platform simulasi ujian presisi tinggi dengan sistem penilaian IRT dan analisis potensi kelulusan berbasis data.
+          </p>
+          <div className="mt-12 pt-8 border-t border-white/10 w-full">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-amber-500 font-bold mb-2">Executive Owner</p>
+            <div className="inline-flex items-center gap-2 px-6 py-2 bg-white/5 rounded-full border border-white/10">
+              <Crown size={16} className="text-amber-400"/>
+              <span className="text-xl font-serif italic">Muhamad Fadli Azim</span>
             </div>
-            
-            <div className="relative z-10 mt-8">
-                <div className="bg-white/20 backdrop-blur-md rounded-2xl p-4 border border-white/20">
-                    <p className="text-xs font-bold uppercase tracking-wider opacity-80 mb-1">Founder</p>
-                    <p className="font-bold text-lg flex items-center gap-2">Muhamad Fadli Azim <GraduationCap size={18}/></p>
-                </div>
-            </div>
+          </div>
         </div>
 
-        {/* RIGHT SIDE: Form Bersih */}
-        <div className="w-full md:w-7/12 p-8 md:p-12 bg-white flex flex-col justify-center">
-            <div className="mb-8">
-                <h2 className="text-3xl font-extrabold text-slate-800">Selamat Datang 👋</h2>
-                <p className="text-slate-500 mt-2">Masukan akun belajarmu untuk memulai.</p>
+        <div className="w-full md:w-1/2 p-12 bg-white flex flex-col justify-center">
+          <h2 className="text-3xl font-black text-slate-800 mb-2">Login Portal</h2>
+          <p className="text-slate-400 mb-8 font-medium">Masukkan kredensial untuk akses eksklusif.</p>
+          
+          {errorMsg && <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl mb-6 font-bold text-sm border border-rose-100 italic">{errorMsg}</div>}
+          
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="relative">
+              <User className="absolute left-4 top-4 text-slate-300" size={20}/>
+              <input className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-500 outline-none font-bold transition-all" 
+                placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)} required/>
             </div>
-
-            {errorMsg && (
-                <div className="bg-rose-50 text-rose-600 p-4 rounded-xl mb-6 flex items-center gap-3 border border-rose-100 animate-pulse">
-                    <AlertCircle size={20}/> <span className="text-sm font-bold">{errorMsg}</span>
-                </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-5">
-                <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2 ml-1">Username Siswa / Admin</label>
-                    <div className="relative">
-                        <User className="absolute left-4 top-3.5 text-slate-400" size={20}/>
-                        <input className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold focus:ring-4 focus:ring-sky-100 focus:border-sky-400 outline-none transition-all" 
-                            placeholder="Contoh: siswa01" value={username} onChange={e=>setUsername(e.target.value)} required/>
-                    </div>
-                </div>
-                <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2 ml-1">Kata Sandi</label>
-                    <div className="relative">
-                        <Lock className="absolute left-4 top-3.5 text-slate-400" size={20}/>
-                        <input type="password" className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold focus:ring-4 focus:ring-sky-100 focus:border-sky-400 outline-none transition-all" 
-                            placeholder="••••••••" value={password} onChange={e=>setPassword(e.target.value)} required/>
-                    </div>
-                </div>
-                <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-4 rounded-xl shadow-lg shadow-blue-200 transition-all transform active:scale-95 flex items-center justify-center gap-2">
-                    {loading ? <Loader2 className="animate-spin"/> : <>Masuk Sekarang <ArrowRight/></>}
-                </button>
-            </form>
-            
-            <p className="mt-8 text-center text-xs text-slate-400 font-medium">© 2026 EduPrime by Muhamad Fadli Azim</p>
+            <div className="relative">
+              <Lock className="absolute left-4 top-4 text-slate-300" size={20}/>
+              <input type="password" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-500 outline-none font-bold transition-all" 
+                placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} required/>
+            </div>
+            <button type="submit" disabled={loading} className="w-full bg-indigo-900 py-5 rounded-2xl text-white font-black text-lg hover:bg-black transition-all flex items-center justify-center gap-2 shadow-xl">
+              {loading ? <Loader2 className="animate-spin"/> : <>MASUK SEKARANG <ArrowRight/></>}
+            </button>
+          </form>
         </div>
       </div>
     </div>
