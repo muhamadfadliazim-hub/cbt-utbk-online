@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Trash2, Plus, Upload, FileText, Users, LogOut, Lock, Eye, 
   ChevronDown, CheckCircle, XCircle, Download, Search, X, Filter, Clock, Key, 
-  Building2, PieChart, PenTool, BookOpen, Grid, LayoutDashboard, Menu, FileCode, Info, Save, Video, Link, Unlock, Music, Image, Edit, AlertTriangle
+  Building2, PieChart, PenTool, BookOpen, Grid, LayoutDashboard, Menu, FileCode, Info, Save, Video, Link, Unlock, Music, Edit
 } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
@@ -10,7 +10,7 @@ import { API_URL } from './config';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// --- KONFIGURASI DATA ---
+// Daftar lengkap subtes
 const EXAM_CODES = [
     "PU", "PBM", "PPU", "PK", "LBI", "LBE", "PM", 
     "TWK", "TIU", "TKP", 
@@ -37,7 +37,7 @@ const LMS_SUBTESTS = {
 const AdminDashboard = ({ onLogout }) => {
   const [tab, setTab] = useState('periods');
   
-  // Data State
+  // Data
   const [periods, setPeriods] = useState([]);
   const [users, setUsers] = useState([]);
   const [recap, setRecap] = useState([]);
@@ -55,11 +55,11 @@ const AdminDashboard = ({ onLogout }) => {
   const [lmsSubtest, setLmsSubtest] = useState('');
   const [newMaterial, setNewMaterial] = useState({ title: '', type: 'pdf', content_url: '', description: '' });
 
-  // Config State
+  // Config
   const [isReleased, setIsReleased] = useState(false);
   const [isMajorSelectionEnabled, setIsMajorSelectionEnabled] = useState(true);
 
-  // UI/Modal States
+  // UI States
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewData, setPreviewData] = useState(null); 
   const [analysisData, setAnalysisData] = useState(null); 
@@ -77,7 +77,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [selectedIds, setSelectedIds] = useState([]); 
   const [selectedRecapPeriod, setSelectedRecapPeriod] = useState('');
 
-  // Manual Question State
+  // Manual Question
   const [showManualInput, setShowManualInput] = useState(false);
   const [activeExamIdForManual, setActiveExamIdForManual] = useState(null);
   const [editingQuestionId, setEditingQuestionId] = useState(null);
@@ -88,7 +88,6 @@ const AdminDashboard = ({ onLogout }) => {
       image_url: '', audio_url: '', options: [] 
   });
 
-  // --- HELPERS ---
   const renderText = (text) => {
     if (!text) return null;
     return text.split(/(\$.*?\$)/).map((part, index) => {
@@ -97,12 +96,6 @@ const AdminDashboard = ({ onLogout }) => {
     });
   };
 
-  const getStatusBadge = (s) => {
-      if (s && s.startsWith('LULUS')) return <span className="text-emerald-600 font-bold text-xs flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded"><CheckCircle size={12}/> {s}</span>;
-      return <span className="text-rose-600 font-bold text-xs flex items-center gap-1 bg-rose-50 px-2 py-1 rounded"><XCircle size={12}/> TIDAK LULUS</span>;
-  };
-
-  // --- API CALLS ---
   const fetchData = useCallback(() => { 
       fetch(`${API_URL}/admin/periods`).then(r=>r.json()).then(d=>setPeriods(Array.isArray(d)?d:[])); 
       fetch(`${API_URL}/admin/users`).then(r=>r.json()).then(d=>setUsers(Array.isArray(d)?d:[])); 
@@ -113,7 +106,7 @@ const AdminDashboard = ({ onLogout }) => {
   }, []);
 
   const fetchRecap = useCallback(() => {
-      const url = selectedRecapPeriod ? `${API_URL}/admin/recap?pid=${selectedRecapPeriod}` : `${API_URL}/admin/recap`;
+      const url = selectedRecapPeriod ? `${API_URL}/admin/recap?period_id=${selectedRecapPeriod}` : `${API_URL}/admin/recap`;
       fetch(url).then(r=>r.json()).then(d=>setRecap(Array.isArray(d)?d:[]));
   }, [selectedRecapPeriod]);
 
@@ -134,7 +127,11 @@ const AdminDashboard = ({ onLogout }) => {
       if(type==='audio') setManualQ({...manualQ, audio_url: data.url});
   };
 
-  // --- HANDLERS ---
+  const getStatusBadge = (s) => {
+      if (s && s.startsWith('LULUS')) return <span className="text-emerald-600 font-bold text-xs flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded"><CheckCircle size={12}/> {s}</span>;
+      return <span className="text-rose-600 font-bold text-xs flex items-center gap-1 bg-rose-50 px-2 py-1 rounded"><XCircle size={12}/> TIDAK LULUS</span>;
+  };
+
   const handleCreatePeriod = () => { if(!newPeriodName)return; apiAction(`${API_URL}/admin/periods`, 'POST', { name: newPeriodName, allowed_usernames: selectedWhitelist.length>0?selectedWhitelist.join(','):null, is_random: isRandom, is_flexible: isFlexible, exam_type: examType }, ()=>{setNewPeriodName(''); setSelectedWhitelist([]); fetchData();}); };
   const updatePeriod = (id, data) => { apiAction(`${API_URL}/admin/periods/${id}`, 'PUT', data, fetchData); };
   const handleDeletePeriod = (id) => { if(window.confirm("Hapus?")) apiAction(`${API_URL}/admin/periods/${id}`, 'DELETE'); };
@@ -156,7 +153,7 @@ const AdminDashboard = ({ onLogout }) => {
   const handleUploadQuestion = (eid, f) => { const d=new FormData(); d.append('file',f); fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:d}).then(r=>r.json()).then(d=>{alert(d.message); fetchData();}); };
 
   const handleDownloadPDF = () => { if(recap.length===0) return alert("Data kosong"); const doc = new jsPDF('landscape'); doc.text("REKAP NILAI", 14, 15); const tableColumn = ["Nama", "Username", ...EXAM_CODES, "Avg", "Status"]; const tableRows = recap.map(r => [r.full_name, r.username, ...EXAM_CODES.map(k=>r[k]||0), r.average, r.status]); autoTable(doc, { head: [tableColumn], body: tableRows, startY: 20 }); doc.save('rekap.pdf'); };
-  const handleDownloadExcel = () => window.open(`${API_URL}/admin/recap/download?pid=${selectedRecapPeriod}`, '_blank');
+  const handleDownloadExcel = () => window.open(`${API_URL}/admin/recap/download?period_id=${selectedRecapPeriod}`, '_blank');
   const handleDownloadTemplate = () => window.open(`${API_URL}/admin/download-template`, '_blank');
   
   const handleShowAnalysis = (eid) => { fetch(`${API_URL}/admin/exams/${eid}/analysis`).then(r => r.json()).then(d => { setAnalysisData(d); setActiveAnalysisId(eid); setShowAnalysis(true); }); };
@@ -211,7 +208,6 @@ const AdminDashboard = ({ onLogout }) => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-800 selection:bg-indigo-100 selection:text-indigo-900">
-      {/* SIDEBAR */}
       <aside className={`bg-slate-900 text-white w-72 flex flex-col fixed h-full z-30 transition-transform duration-300 border-r border-slate-800 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
           <div className="p-6 border-b border-slate-800 flex items-center gap-3"><div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-600/20"><Building2 size={24} className="text-white"/></div><div><h1 className="font-bold text-lg tracking-tight">EduPrime</h1><span className="text-xs text-slate-500 font-medium px-2 py-0.5 bg-slate-800 rounded-full">Admin Pro</span></div></div>
           <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
@@ -228,7 +224,6 @@ const AdminDashboard = ({ onLogout }) => {
           </div>
       </aside>
 
-      {/* MAIN CONTENT */}
       <main className="flex-1 md:ml-72 p-6 md:p-10 overflow-y-auto h-screen relative">
         <div className="md:hidden flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200"><span className="font-bold text-slate-700">Menu Admin</span><button onClick={()=>setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 bg-slate-100 rounded-lg"><Menu/></button></div>
 
@@ -288,7 +283,7 @@ const AdminDashboard = ({ onLogout }) => {
         {/* TAB 2: LMS */}
         {tab === 'lms' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
                     <div className="grid md:grid-cols-4 gap-6 items-end">
                         <div className="md:col-span-2"><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Judul Materi</label><input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl" value={newMaterial.title} onChange={e=>setNewMaterial({...newMaterial, title:e.target.value})}/></div>
                         <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Kategori</label><select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer" value={lmsCategory} onChange={e=>setLmsCategory(e.target.value)}>{Object.keys(LMS_SUBTESTS).map(k=><option key={k} value={k}>{k}</option>)}</select></div>
@@ -384,11 +379,19 @@ const AdminDashboard = ({ onLogout }) => {
                                 {q.audio_url && <audio controls src={q.audio_url.startsWith('http') ? q.audio_url : `${API_URL}${q.audio_url}`} className="w-full mb-4"/>}
                                 {q.reading_material && <div className="p-4 bg-amber-50 rounded-lg border-l-4 border-amber-300 text-sm mb-4 leading-relaxed italic text-slate-700">{renderText(q.reading_material)}</div>}
                                 <div className="text-lg mb-4 text-slate-800">{renderText(q.text)}</div>
+                                
                                 {q.type === 'table_boolean' ? (
-                                    <table className="w-full text-sm border mt-2"><thead><tr className="bg-slate-50"><th>Pernyataan</th><th>{q.label_true}</th><th>{q.label_false}</th></tr></thead><tbody>{q.options.map(o=><tr key={o.id} className="border-t"><td className="p-2">{renderText(o.label)}</td><td className="text-center">{o.is_correct?'✓':''}</td><td className="text-center">{!o.is_correct?'✓':''}</td></tr>)}</tbody></table>
+                                    <table className="w-full text-sm border mt-2">
+                                        <thead><tr className="bg-slate-50"><th>Pernyataan</th><th>{q.label_true}</th><th>{q.label_false}</th></tr></thead>
+                                        <tbody>{q.options.map(o=><tr key={o.id} className="border-t"><td className="p-2">{renderText(o.label)}</td><td className="text-center">{o.is_correct?'✓':''}</td><td className="text-center">{!o.is_correct?'✓':''}</td></tr>)}</tbody>
+                                    </table>
                                 ) : (
                                     <div className="ml-4 space-y-2">
-                                        {q.options.map((o,idx)=>(<div key={idx} className={`p-2 rounded flex gap-2 ${o.is_correct?'bg-emerald-50 border border-emerald-100 font-semibold text-emerald-800':''}`}><span className="w-6 text-center opacity-50">{String.fromCharCode(65+idx)}</span> {renderText(o.label)} {o.is_correct&&<CheckCircle size={16} className="text-emerald-600"/>}</div>))}
+                                        {q.options.map((o,idx)=>(
+                                            <div key={idx} className={`p-2 rounded flex gap-2 ${o.is_correct?'bg-emerald-50 border border-emerald-100 font-semibold text-emerald-800':''}`}>
+                                                <span className="w-6 text-center opacity-50">{String.fromCharCode(65+idx)}</span> {renderText(o.label)} {o.is_correct&&<CheckCircle size={16} className="text-emerald-600"/>}
+                                            </div>
+                                        ))}
                                     </div>
                                 )}
                                 {q.explanation && <div className="mt-4 p-4 bg-blue-50 text-blue-900 rounded-lg text-sm"><strong>Pembahasan:</strong> {renderText(q.explanation)}</div>}
