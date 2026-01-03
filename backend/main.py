@@ -33,12 +33,15 @@ class PeriodCreateSchema(BaseModel): name: str; exam_type: str
 class ConfigSchema(BaseModel): value: str
 
 # --- AUTH & CORE ---
+# Pastikan bagian startup_event di main.py seperti ini:
 @app.on_event("startup")
 def startup_event():
+    # Ini akan membuat tabel majors terlebih dahulu baru tabel users
     models.Base.metadata.create_all(bind=database.engine)
     db = database.SessionLocal()
     if not db.query(models.User).filter_by(username="admin").first():
-        db.add(models.User(username="admin", password="123", full_name="Muhamad Fadli Azim", role="admin"))
+        admin = models.User(username="admin", password="123", full_name="Muhamad Fadli Azim", role="admin")
+        db.add(admin)
         db.commit()
     db.close()
 
