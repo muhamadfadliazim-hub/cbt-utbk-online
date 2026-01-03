@@ -1,13 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import Login from './Login';
-import Dashboard from './Dashboard';
-import ExamSimulation from './ExamSimulation';
-import UploadExam from './UploadExam';
+// IMPORT StudentDashboard, BUKAN Dashboard lama
+import StudentDashboard from './StudentDashboard'; 
 import AdminDashboard from './AdminDashboard'; 
-import { MajorSelection, Confirmation, ResultSummary } from './FlowComponents';
-import StudentRecap from './StudentRecap'; 
-import { Loader2 } from 'lucide-react';
 import { API_URL } from './config';
 import './App.css';
 
@@ -21,114 +17,44 @@ const getSafeUserData = () => {
   }
 };
 
-const AppContent = () => {
+export default function App() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const [userData, setUserData] = useState(getSafeUserData);
-  const [loading, setLoading] = useState(true);
-  const [examResult, setExamResult] = useState(null);
-  
-  // State config
-  const [config, setConfig] = useState({ enableMajorSelection: true });
+  const [userData, setUserData] = useState(getSafeUserData());
 
-  // Fetch Config Awal
-  useEffect(() => {
-    fetch(`${API_URL}/config/enable_major_selection`)
-      .then(res => res.json())
-      .then(data => setConfig(prev => ({ ...prev, enableMajorSelection: data.value === 'true' })))
-      .catch(console.error);
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-        if (userData) {
-            if (userData.role === 'admin') {
-                if (location.pathname === '/' || location.pathname === '/login') navigate('/admin');
-            } else {
-                // FIX NO. 2: Cek config sebelum paksa pilih jurusan
-                if (config.enableMajorSelection && !userData.display1 && location.pathname !== '/select-major') {
-                    navigate('/select-major');
-                } else if (location.pathname === '/' || location.pathname === '/login') {
-                    navigate('/dashboard');
-                }
-            }
-        } else {
-            if (location.pathname !== '/login') navigate('/login');
-        }
-        setLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [userData, navigate, location.pathname, config.enableMajorSelection]);
-
-  const handleLogin = (loginData) => {
-    const newData = { ...loginData, 
-        display1: loginData.pilihan1 || '', pg1: loginData.pg1 || '',
-        display2: loginData.pilihan2 || '', pg2: loginData.pg2 || '',
-        choice1_id: loginData.choice1_id, choice2_id: loginData.choice2_id
-    };
-    setUserData(newData);
-    localStorage.setItem('utbk_user', JSON.stringify(newData));
-
-    if (newData.role === 'admin') navigate('/admin');
-    // Cek config lagi saat login
-    else if (config.enableMajorSelection && !newData.display1) navigate('/select-major');
+  const handleLoginSuccess = (data) => {
+    localStorage.setItem('utbk_user', JSON.stringify(data));
+    setUserData(data);
+    if (data.role === 'admin') navigate('/admin');
     else navigate('/dashboard');
   };
 
   const handleLogout = () => {
-    if(window.confirm("Keluar aplikasi?")) {
-        localStorage.clear();
-        setUserData(null);
-        navigate('/login');
-    }
+    localStorage.removeItem('utbk_user');
+    setUserData(null);
+    navigate('/login');
   };
-
-  const handleMajorSelected = async (selectionData) => {
-    const newData = { ...userData, ...selectionData };
-    setUserData(newData);
-    localStorage.setItem('utbk_user', JSON.stringify(newData));
-    navigate('/confirmation');
-  };
-
-  const handleExamFinish = (resultData) => {
-      setExamResult(resultData);
-      navigate('/result');
-  };
-
-  if (loading) return <div className="flex h-screen items-center justify-center bg-gray-50"><Loader2 className="animate-spin text-indigo-600" size={40}/></div>;
 
   return (
-    <Routes>
-        <Route path="/login" element={!userData ? <Login onLogin={handleLogin} /> : <Navigate to="/" />} />
-        <Route path="/admin" element={userData?.role === 'admin' ? <AdminDashboard onLogout={handleLogout} /> : <Navigate to="/login" />} />
-        <Route path="/upload" element={userData?.role === 'admin' ? <UploadExam onBack={() => navigate('/admin')} /> : <Navigate to="/login" />} />
-        <Route path="/select-major" element={userData ? <MajorSelection onNext={handleMajorSelected} onLogout={handleLogout}/> : <Navigate to="/login" />} />
-        <Route path="/confirmation" element={userData ? <Confirmation userData={userData} onStart={() => navigate('/dashboard')} onBack={() => navigate('/select-major')}/> : <Navigate to="/login" />} />
-        <Route path="/dashboard" element={userData?.role === 'student' ? <Dashboard userName={userData?.name} username={userData?.username} onSelectExam={(examId) => navigate(`/exam/${examId}`)} onLogout={handleLogout} onGoToUpload={() => navigate('/upload')} onGoToRecap={() => navigate('/recap')} /> : <Navigate to="/login" />} />
-        <Route path="/exam/:examId" element={userData ? <ExamSimulation onFinish={handleExamFinish} /> : <Navigate to="/login" />} />
-        <Route path="/result" element={userData && examResult ? <ResultSummary result={examResult} onBack={() => navigate('/dashboard')} /> : <Navigate to="/dashboard" />} />
-        <Route path="/recap" element={userData ? <StudentRecap username={userData.username} onBack={() => navigate('/dashboard')} /> : <Navigate to="/login" />} />
-        <Route path="*" element={<Navigate to={userData ? "/" : "/login"} />} />
-    </Routes>
-  );
-};
+    <div className="App font-sans">
+      <Routes>
+        <Route path="/login" element={!userData ? <Login onLoginSuccess={handleLoginSuccess} /> : <Navigate to={userData.role === 'admin' ? "/admin" : "/dashboard"} />} />
+        
+        {/* PASTIKAN ROUTE INI MENGGUNAKAN StudentDashboard */}
+        <Route path="/dashboard" element={
+          userData && userData.role !== 'admin' ? 
+          <StudentDashboard user={userData} onLogout={handleLogout} /> : 
+          <Navigate to="/login" />
+        } />
 
-class ErrorBoundary extends React.Component {
-  state = { hasError: false };
-  static getDerivedStateFromError(error) { return { hasError: true }; }
-  componentDidCatch(error, info) { console.error("Error:", error, info); }
-  render() {
-    if (this.state.hasError) return <div className="p-4 text-center">Terjadi kesalahan. <button onClick={() => window.location.reload()} className="underline text-blue-600">Muat Ulang</button></div>;
-    return this.props.children;
-  }
-}
+        <Route path="/admin" element={
+          userData && userData.role === 'admin' ? 
+          <AdminDashboard onLogout={handleLogout} /> : 
+          <Navigate to="/login" />
+        } />
 
-export default function App() {
-  return (
-    <div className="App font-sans text-gray-800">
-        <ErrorBoundary>
-            <AppContent />
-        </ErrorBoundary>
+        <Route path="/" element={<Navigate to={userData ? (userData.role === 'admin' ? "/admin" : "/dashboard") : "/login"} />} />
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
     </div>
   );
 }
