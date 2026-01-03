@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
     CheckCircle, LogOut, ChevronLeft, ChevronRight, 
-    Award, Target, Home, Video, FileText, Play, Link, Trophy
+    Target, Home, Video, FileText, Play, Link, Trophy
 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
@@ -56,7 +56,7 @@ const StudentDashboard = ({ user, onLogout }) => {
                     <div className="bg-indigo-600 text-white w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl shadow-xl">{currentQIdx+1}</div>
                     <p className="text-lg font-bold text-indigo-300 tracking-tight">{currentQIdx+1} of {questions.length}</p>
                 </div>
-                <div className="bg-white/5 px-8 py-4 rounded-[2rem] border border-white/10 font-mono font-black text-3xl text-white">
+                <div className="bg-white/5 px-8 py-4 rounded-[2rem] border border-white/10 font-mono font-black text-3xl">
                     {Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}
                 </div>
                 <button onClick={() => window.location.reload()} className="bg-rose-500/10 text-rose-500 border border-rose-500/20 px-10 py-4 rounded-2xl font-black">EXIT</button>
@@ -64,7 +64,7 @@ const StudentDashboard = ({ user, onLogout }) => {
             <div className="flex-1 overflow-y-auto p-8 md:p-16">
                 <div className="max-w-5xl mx-auto space-y-12">
                     {q?.reading_material && <div className="bg-white/[0.03] p-10 rounded-[3rem] border border-white/10 text-slate-300 italic text-xl shadow-inner">{renderText(q.reading_material)}</div>}
-                    <div className="bg-white/[0.02] p-10 rounded-[4rem] border border-white/5 shadow-2xl relative">
+                    <div className="bg-white/[0.02] p-10 rounded-[4rem] border border-white/5 shadow-2xl">
                         <div className="text-3xl font-bold text-white mb-16 leading-snug">{renderText(q?.text)}</div>
                         <div className="grid gap-6">
                             {q?.options.map((o, i) => (
@@ -115,7 +115,7 @@ const StudentDashboard = ({ user, onLogout }) => {
                   
                   <div className="grid gap-12 md:grid-cols-2">
                       {periods.map(p => (
-                          <div key={p.id} className="bg-[#0F172A] p-12 rounded-[4rem] shadow-2xl border border-white/5 hover:border-indigo-500/30 transition-all duration-700">
+                          <div key={p.id} className="bg-[#0F172A] p-12 rounded-[4rem] shadow-2xl border border-white/5">
                                   <div className="flex justify-between items-center mb-12">
                                       <div className="bg-indigo-600/20 text-indigo-400 p-6 rounded-[2rem] font-black text-4xl">{p.name[0]}</div>
                                       <span className="px-8 py-2.5 rounded-full bg-slate-950 text-indigo-400 text-xs font-black tracking-[0.2em] uppercase border border-indigo-500/20">{p.type}</span>
@@ -153,9 +153,9 @@ const StudentDashboard = ({ user, onLogout }) => {
                               </div>
                               <span className="text-[11px] font-black text-indigo-500 uppercase tracking-[0.3em] mb-4">Premium Module</span>
                               <h4 className="text-3xl font-bold text-white leading-tight flex-1 mb-12 tracking-tight">{m.title}</h4>
-                              <div className="flex items-center justify-between pt-10 border-t border-white/5">
-                                  <span className="text-xs font-black text-indigo-400 tracking-[0.2em] uppercase">Open Link</span>
-                                  <Link size={20} className="text-indigo-400"/>
+                              <div className="flex items-center justify-between pt-10 border-t border-white/5 text-indigo-400">
+                                  <span className="text-xs font-black uppercase tracking-[0.2em]">Open Link</span>
+                                  <Link size={20}/>
                               </div>
                       </div>
                   ))}
