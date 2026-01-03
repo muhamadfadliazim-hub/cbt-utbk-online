@@ -8,36 +8,23 @@ class User(Base):
     username = Column(String, unique=True, index=True)
     password = Column(String)
     full_name = Column(String)
-    role = Column(String, default="student")
+    role = Column(String, default="student") # Admin / Student
     choice1_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
-    choice2_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
     results = relationship("ExamResult", back_populates="user", cascade="all, delete-orphan")
-    choice1 = relationship("Major", foreign_keys=[choice1_id])
-
-class Major(Base):
-    __tablename__ = "majors"
-    id = Column(Integer, primary_key=True, index=True)
-    university = Column(String)
-    name = Column(String)
-    passing_grade = Column(Float)
 
 class ExamPeriod(Base):
     __tablename__ = "exam_periods"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
-    exam_type = Column(String)
-    is_active = Column(Boolean, default=False)
-    allow_submit = Column(Boolean, default=True)
-    allowed_usernames = Column(Text, nullable=True)
-    is_random = Column(Boolean, default=True)
-    is_flexible = Column(Boolean, default=False)
+    exam_type = Column(String) # UTBK, CPNS, TKA
+    is_active = Column(Boolean, default=True)
     exams = relationship("Exam", back_populates="period", cascade="all, delete-orphan")
 
 class Exam(Base):
     __tablename__ = "exams"
     id = Column(String, primary_key=True)
     period_id = Column(Integer, ForeignKey("exam_periods.id"))
-    code = Column(String)
+    code = Column(String) # PU, TWK, dsb
     title = Column(String)
     duration = Column(Integer)
     period = relationship("ExamPeriod", back_populates="exams")
@@ -50,10 +37,8 @@ class Question(Base):
     text = Column(Text)
     type = Column(String, default="multiple_choice")
     difficulty = Column(Float, default=1.0)
-    image_url = Column(String, nullable=True)
-    audio_url = Column(String, nullable=True)
-    reading_material = Column(Text, nullable=True)
     explanation = Column(Text, nullable=True)
+    image_url = Column(String, nullable=True)
     options = relationship("Option", back_populates="question", cascade="all, delete-orphan")
     exam = relationship("Exam", back_populates="questions")
 
@@ -62,7 +47,7 @@ class Option(Base):
     id = Column(Integer, primary_key=True, index=True)
     question_id = Column(Integer, ForeignKey("questions.id"))
     label = Column(Text)
-    option_index = Column(String)
+    option_index = Column(String) # A, B, C, D, E
     is_correct = Column(Boolean, default=False)
     question = relationship("Question", back_populates="options")
 
@@ -71,8 +56,6 @@ class ExamResult(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     exam_id = Column(String)
-    correct_count = Column(Integer)
-    wrong_count = Column(Integer)
     irt_score = Column(Float)
     user = relationship("User", back_populates="results")
 
@@ -80,10 +63,9 @@ class Material(Base):
     __tablename__ = "materials"
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String)
-    type = Column(String)
+    type = Column(String) # video / document
     category = Column(String)
     content_url = Column(String)
-    description = Column(Text, nullable=True)
 
 class SystemConfig(Base):
     __tablename__ = "system_configs"
