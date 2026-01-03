@@ -9,7 +9,7 @@ import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
 
 const StudentDashboard = ({ user, onLogout }) => {
-  // Tab Default: 'menu' (Halaman Pilihan Awal)
+  // DEFAULT HARUS 'menu' AGAR TIDAK LANGSUNG KE JURUSAN
   const [tab, setTab] = useState('menu'); 
   const [periods, setPeriods] = useState([]);
   const [activeExam, setActiveExam] = useState(null);
@@ -23,7 +23,7 @@ const StudentDashboard = ({ user, onLogout }) => {
   const [selectedChoice1, setSelectedChoice1] = useState(user.choice1_id || '');
   const [selectedChoice2, setSelectedChoice2] = useState(user.choice2_id || '');
   const [searchMajor, setSearchMajor] = useState('');
-  const [userTarget, setUserTarget] = useState(user.pilihan1); // Local state update
+  const [userTarget, setUserTarget] = useState(user.pilihan1);
   
   // Exam State
   const [questions, setQuestions] = useState([]);
@@ -63,19 +63,16 @@ const StudentDashboard = ({ user, onLogout }) => {
     });
   };
 
-  // --- NEW LOGIC: ENTER EXAM & LMS ---
   const handleEnterExam = () => {
       setTab('exam');
-      // Cek apakah user sudah punya target jurusan?
-      // Jika belum (choice1_id null), paksa buka modal
-      if (!user.choice1_id && !userTarget) {
+      // Hanya muncul modal jika BELUM punya pilihan
+      if (!user.choice1_id && !selectedChoice1) {
           setShowMajorModal(true);
       }
   };
 
   const handleEnterLMS = () => {
       setTab('lms');
-      // Tidak perlu cek jurusan, langsung masuk
   };
 
   const handleSaveMajor = () => {
@@ -85,7 +82,6 @@ const StudentDashboard = ({ user, onLogout }) => {
       }).then(r => r.json()).then(d => { 
           alert("Target Disimpan!"); 
           setShowMajorModal(false); 
-          // Update tampilan lokal tanpa logout
           const m = majors.find(x => x.id === parseInt(selectedChoice1));
           if(m) setUserTarget(`${m.university} - ${m.name}`);
       });
@@ -155,7 +151,7 @@ const StudentDashboard = ({ user, onLogout }) => {
                               <div className="space-y-3">
                                   {q.type === 'multiple_choice' && q.options.map((opt, i) => (
                                       <label key={opt.id} className={`flex items-center p-4 rounded-2xl border-2 cursor-pointer transition-all ${answers[q.id] === opt.id ? 'border-blue-500 bg-blue-50' : 'border-slate-100 hover:bg-slate-50'}`}>
-                                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold mr-3 ${answers[q.id] === opt.id ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'}`}>{opt.label.length < 3 && !isNaN(opt.label) ? String.fromCharCode(65+i) : String.fromCharCode(65+i)}</div>
+                                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold mr-3 ${answers[q.id] === opt.id ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'}`}>{opt.label.length < 3 ? String.fromCharCode(65+i) : String.fromCharCode(65+i)}</div>
                                           <div className="text-slate-700 font-medium">{renderText(opt.label)}</div>
                                       </label>
                                   ))}
@@ -198,6 +194,8 @@ const StudentDashboard = ({ user, onLogout }) => {
       <div className="bg-white sticky top-0 z-20 border-b shadow-sm px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-4 cursor-pointer" onClick={()=>setTab('menu')}>
               <div className="font-extrabold text-xl text-blue-600 flex items-center gap-2"><Zap className="text-yellow-400" fill="currentColor"/> EduPrime</div>
+              {/* VERSION MARKER - AGAR ANDA TAHU INI VERSI BARU */}
+              <span className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-400 font-bold">v26.1</span>
           </div>
           <div className="flex items-center gap-3">
               <div className="text-right hidden md:block">
