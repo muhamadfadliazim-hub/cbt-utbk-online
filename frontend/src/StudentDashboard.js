@@ -1,37 +1,29 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
     Clock, CheckCircle, Play, FileText, LogOut, ChevronRight, BookOpen, X, 
-    ChevronLeft, Flag, GraduationCap, Search, Video, 
-    LayoutGrid, Award, Zap, Target, Music, Home, Menu, User
+    LayoutGrid, Award, Zap, Target, Home, Menu
 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 import { API_URL } from './config';
 
 const StudentDashboard = ({ user, onLogout }) => {
-  const [tab, setTab] = useState('dashboard'); // dashboard, exam, lms
+  const [tab, setTab] = useState('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  
-  // Data
   const [periods, setPeriods] = useState([]);
   const [majors, setMajors] = useState([]);
   const [materials, setMaterials] = useState([]);
-  
-  // Exam Engine
-  const [activeExam, setActiveExam] = useState(null); // ID Ujian yg sedang dikerjakan
+  const [activeExam, setActiveExam] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [currentQIdx, setCurrentQIdx] = useState(0);
   const [answers, setAnswers] = useState({});
   const [timeLeft, setTimeLeft] = useState(0);
-  
-  // UI Helpers
   const [reviewData, setReviewData] = useState(null);
   const [showTargetModal, setShowTargetModal] = useState(false);
   const [target1, setTarget1] = useState(user?.choice1_id || '');
   const [target2, setTarget2] = useState(user?.choice2_id || '');
   const [searchJurusan, setSearchJurusan] = useState('');
 
-  // --- 1. LOAD DATA ---
   useEffect(() => {
     if(user?.username) {
         fetch(`${API_URL}/student/periods?username=${user.username}`).then(r=>r.json()).then(d=>setPeriods(Array.isArray(d)?d:[]));
@@ -40,7 +32,18 @@ const StudentDashboard = ({ user, onLogout }) => {
     }
   }, [user]);
 
-  // --- 2. TIMER UJIAN ---
+  const finishExam = useCallback(() => {
+      if(!window.confirm("Kumpulkan Jawaban?")) return;
+      fetch(`${API_URL}/exams/${activeExam}/submit`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ username: user.username, answers: answers })
+      }).then(r=>r.json()).then(d => {
+          alert(`Selesai! Skor: ${Math.round(d.score)}`);
+          setActiveExam(null);
+          window.location.reload();
+      });
+  }, [activeExam, user.username, answers]);
+
   useEffect(() => {
     if (activeExam && timeLeft > 0) {
         const t = setInterval(() => setTimeLeft(p => p - 1), 1000);
@@ -48,9 +51,8 @@ const StudentDashboard = ({ user, onLogout }) => {
     } else if (activeExam && timeLeft === 0) {
         finishExam();
     }
-  }, [activeExam, timeLeft]);
+  }, [activeExam, timeLeft, finishExam]);
 
-  // --- 3. LOGIC ---
   const renderTex = (t) => {
       if(!t) return null;
       return t.split(/(\$.*?\$)/).map((p,i)=>(p.startsWith('$')&&p.endsWith('$')?<InlineMath key={i} math={p.slice(1,-1)}/>:<span key={i} dangerouslySetInnerHTML={{__html:p.replace(/\n/g,'<br/>')}}/>));
@@ -72,18 +74,6 @@ const StudentDashboard = ({ user, onLogout }) => {
 
   const handleAnswer = (val) => setAnswers({...answers, [questions[currentQIdx].id]: val});
 
-  const finishExam = () => {
-      if(!window.confirm("Kumpulkan Jawaban?")) return;
-      fetch(`${API_URL}/exams/${activeExam}/submit`, {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ username: user.username, answers: answers })
-      }).then(r=>r.json()).then(d => {
-          alert(`Selesai! Skor: ${Math.round(d.score)}`);
-          setActiveExam(null);
-          window.location.reload();
-      });
-  };
-
   const saveTarget = () => {
       fetch(`${API_URL}/users/select-major`, {
           method:'POST', headers:{'Content-Type':'application/json'},
@@ -97,7 +87,6 @@ const StudentDashboard = ({ user, onLogout }) => {
       </button>
   );
 
-  // --- VIEW: UJIAN (FULLSCREEN) ---
   if (activeExam && questions.length > 0) {
       const q = questions[currentQIdx];
       return (
@@ -111,29 +100,27 @@ const StudentDashboard = ({ user, onLogout }) => {
                   <div className="flex-1 overflow-y-auto p-6">
                       <div className="max-w-4xl mx-auto space-y-6">
                           {q.reading_material && <div className="bg-white p-6 rounded-xl border-l-4 border-orange-400 shadow-sm">{renderTex(q.reading_material)}</div>}
-                          {q.audio_url && <audio controls src={q.audio_url.startsWith('http')?q.audio_url:`${API_URL}${q.audio_url}`} className="w-full"/>}
                           <div className="bg-white p-8 rounded-xl shadow-sm">
-                              {q.image_url && <img src={q.image_url.startsWith('http')?q.image_url:`${API_URL}${q.image_url}`} className="max-h-64 mb-6 rounded"/>}
+                              {q.image_url && <img src={q.image_url.startsWith('http')?q.image_url:`${API_URL}${q.image_url}`} alt="Gambar Soal" className="max-h-64 mb-6 rounded"/>}
                               <div className="text-lg font-medium text-slate-800 mb-6">{renderTex(q.text)}</div>
                               <div className="space-y-3">
-                                  {q.type==='multiple_choice' && q.options.map((o,i)=>(<label key={i} className={`flex p-4 border rounded-xl cursor-pointer hover:bg-slate-50 ${answers[q.id]===o.id?'bg-blue-50 border-blue-500':''}`}><div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold mr-3 ${answers[q.id]===o.id?'bg-blue-600 text-white':'bg-slate-200'}`}>{String.fromCharCode(65+i)}</div><div className="flex-1">{renderTex(o.label)}</div><input type="radio" className="hidden" checked={answers[q.id]===o.id} onChange={()=>handleAnswer(o.id)}/></label>))}
-                                  {q.type==='complex' && q.options.map((o,i)=>(<label key={i} className="flex gap-3 p-4 border rounded-xl hover:bg-slate-50"><input type="checkbox" className="w-5 h-5" checked={(answers[q.id]||[]).includes(o.id)} onChange={e=>{const c=answers[q.id]||[]; handleAnswer(e.target.checked?[...c,o.id]:c.filter(x=>x!==o.id))}}/><span>{renderTex(o.label)}</span></label>))}
-                                  {q.type==='short_answer' && <input className="w-full p-4 border rounded-xl font-bold" placeholder="Jawaban..." value={answers[q.id]||''} onChange={e=>handleAnswer(e.target.value)}/>}
+                                  {q.type==='multiple_choice' && q.options.map((o,i)=>(<label key={i} className={`flex p-4 border rounded-xl cursor-pointer hover:bg-slate-50 ${answers[q.id]===o.id?'bg-blue-50 border-blue-500':''}`}><div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold mr-3 ${answers[q.id]===o.id?'bg-blue-600 text-white':'bg-slate-200'}`}>{String.fromCharCode(65+i)}</div><div className="flex-1">{renderTex(o.label)}</div><input type="radio" name="option" className="hidden" checked={answers[q.id]===o.id} onChange={()=>handleAnswer(o.id)}/></label>))}
                               </div>
                           </div>
                       </div>
                   </div>
                   <div className="w-64 bg-white border-l p-4 hidden md:block overflow-y-auto"><div className="grid grid-cols-4 gap-2">{questions.map((_,i)=>(<button key={i} onClick={()=>setCurrentQIdx(i)} className={`p-2 rounded font-bold text-sm ${currentQIdx===i?'bg-blue-900 text-white':answers[questions[i].id]?'bg-green-100 text-green-700':'bg-slate-100'}`}>{i+1}</button>))}</div></div>
               </div>
-              <div className="bg-white p-4 border-t flex justify-between"><button onClick={()=>setCurrentQIdx(Math.max(0,currentQIdx-1))} className="px-6 py-2 bg-slate-200 rounded-lg font-bold">Prev</button><button onClick={()=>setCurrentQIdx(Math.min(questions.length-1,currentQIdx+1))} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold">Next</button></div>
+              <div className="bg-white p-4 border-t flex justify-between">
+                  <button onClick={()=>setCurrentQIdx(Math.max(0,currentQIdx-1))} className="px-6 py-2 bg-slate-200 rounded-lg font-bold">Prev</button>
+                  <button onClick={()=>setCurrentQIdx(Math.min(questions.length-1,currentQIdx+1))} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold">Next</button>
+              </div>
           </div>
       );
   }
 
-  // --- VIEW: DASHBOARD (SIDEBAR STYLE) ---
   return (
     <div className="min-h-screen bg-slate-50 font-sans flex text-slate-800">
-        {/* SIDEBAR */}
         <aside className={`fixed inset-y-0 left-0 w-64 bg-slate-900 text-white transform transition-transform z-40 ${isMobileMenuOpen?'translate-x-0':'-translate-x-full md:translate-x-0'}`}>
             <div className="p-6 font-bold text-xl flex items-center gap-2"><Zap className="text-yellow-400" fill="currentColor"/> EduPrime</div>
             <nav className="p-4 space-y-2">
@@ -147,82 +134,55 @@ const StudentDashboard = ({ user, onLogout }) => {
             </div>
         </aside>
 
-        {/* MAIN CONTENT */}
         <div className="flex-1 md:ml-64 flex flex-col h-screen overflow-hidden">
-            {/* TOP BAR MOBILE */}
             <div className="md:hidden bg-white p-4 border-b flex justify-between items-center">
-                <div className="font-bold text-blue-600">EduPrime Student</div>
-                <button onClick={()=>setIsMobileMenuOpen(!isMobileMenuOpen)}><Menu/></button>
+                <div className="font-bold text-blue-600">EduPrime</div>
+                <button onClick={()=>setIsMobileMenuOpen(!isMobileMenuOpen)} aria-label="Toggle Menu"><Menu/></button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 md:p-10">
-                {/* VERSION STAMP - AGAR TAHU SUDAH UPDATE */}
-                <div className="mb-6 flex justify-between items-center">
-                    <span className="bg-slate-200 text-slate-600 text-[10px] font-bold px-2 py-1 rounded">STUDENT V29 - SIDEBAR</span>
-                </div>
-
                 {tab === 'dashboard' && (
-                    <div className="space-y-6 animate-in fade-in">
+                    <div className="space-y-6">
                         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-3xl p-8 text-white shadow-lg relative overflow-hidden">
                             <div className="relative z-10">
                                 <h1 className="text-3xl font-bold mb-2">Selamat Datang! 👋</h1>
-                                <p className="opacity-90 mb-6">Targetmu: <strong>{user.pilihan1 || "Belum dipilih"}</strong></p>
+                                <p className="opacity-90 mb-6">Target: <strong>{user.pilihan1 || "Belum dipilih"}</strong></p>
                                 <button onClick={()=>setShowTargetModal(true)} className="bg-white/20 backdrop-blur-md px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-white/30 border border-white/20"><Target size={16}/> Ubah Target</button>
                             </div>
                             <Award className="absolute right-[-20px] bottom-[-20px] opacity-20" size={140}/>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <button onClick={()=>setTab('exam')} className="bg-white p-6 rounded-2xl border shadow-sm hover:shadow-md transition text-left"><div className="bg-blue-100 w-12 h-12 rounded-xl flex items-center justify-center text-blue-600 mb-3"><LayoutGrid/></div><div className="font-bold text-lg">Mulai Ujian</div><div className="text-sm text-slate-500">Cek jadwal tryout</div></button>
-                            <button onClick={()=>setTab('lms')} className="bg-white p-6 rounded-2xl border shadow-sm hover:shadow-md transition text-left"><div className="bg-indigo-100 w-12 h-12 rounded-xl flex items-center justify-center text-indigo-600 mb-3"><BookOpen/></div><div className="font-bold text-lg">Materi</div><div className="text-sm text-slate-500">Video & Modul</div></button>
                         </div>
                     </div>
                 )}
 
                 {tab === 'exam' && (
-                    <div className="space-y-6 animate-in fade-in">
-                        <h2 className="text-2xl font-bold text-slate-800">Daftar Tryout</h2>
-                        {periods.length===0 && <div className="p-10 bg-slate-100 rounded-xl text-center text-slate-400">Tidak ada ujian aktif.</div>}
-                        <div className="grid gap-4 md:grid-cols-2">
-                            {periods.map(p=>(
-                                <div key={p.id} className="bg-white p-5 rounded-2xl border shadow-sm">
-                                    <div className="flex justify-between mb-3"><span className="bg-blue-50 text-blue-600 text-xs font-bold px-2 py-1 rounded uppercase">{p.type}</span></div>
-                                    <h3 className="font-bold text-lg mb-4">{p.name}</h3>
-                                    <div className="space-y-2">
-                                        {p.exams.map(e=>(
-                                            <div key={e.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
-                                                <div className="text-sm font-bold">{e.title}</div>
-                                                {e.is_done ? (
-                                                    <button onClick={()=>fetch(`${API_URL}/student/exams/${e.id}/review?username=${user.username}`).then(r=>r.json()).then(setReviewData)} className="bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold">Nilai</button>
-                                                ) : (
-                                                    <button onClick={()=>handleStartExam(e.id)} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold shadow-md hover:bg-blue-700">KERJAKAN</button>
-                                                )}
-                                            </div>
-                                        ))}
+                    <div className="grid gap-4 md:grid-cols-2">
+                        {periods.map(p=>(
+                            <div key={p.id} className="bg-white p-5 rounded-2xl border shadow-sm">
+                                <h3 className="font-bold text-lg mb-4">{p.name}</h3>
+                                {p.exams.map(e=>(
+                                    <div key={e.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl mb-2">
+                                        <div className="text-sm font-bold">{e.title}</div>
+                                        {e.is_done ? <span className="text-emerald-600 font-bold text-xs">Selesai</span> : <button onClick={()=>handleStartExam(e.id)} className="bg-blue-600 text-white px-4 py-1 rounded-lg text-xs font-bold">KERJAKAN</button>}
                                     </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        ))}
                     </div>
                 )}
 
                 {tab === 'lms' && (
-                    <div className="space-y-6 animate-in fade-in">
-                        <h2 className="text-2xl font-bold text-slate-800">Pustaka Materi</h2>
-                        {materials.length===0 && <div className="p-10 bg-slate-100 rounded-xl text-center text-slate-400">Materi kosong.</div>}
-                        <div className="grid gap-4 md:grid-cols-2">
-                            {materials.map(m=>(
-                                <div key={m.id} onClick={()=>window.open(m.content_url,'_blank')} className="bg-white p-5 rounded-2xl border shadow-sm cursor-pointer hover:border-blue-400 transition flex items-center gap-4">
-                                    <div className="bg-indigo-50 p-3 rounded-lg text-indigo-600"><FileText/></div>
-                                    <div><div className="text-xs font-bold text-slate-400 uppercase">{m.category}</div><div className="font-bold text-slate-800">{m.title}</div></div>
-                                </div>
-                            ))}
-                        </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        {materials.map(m=>(
+                            <div key={m.id} onClick={()=>window.open(m.content_url,'_blank')} className="bg-white p-5 rounded-2xl border shadow-sm cursor-pointer hover:border-blue-400 flex items-center gap-4">
+                                <div className="bg-indigo-50 p-3 rounded-lg text-indigo-600"><FileText/></div>
+                                <div><div className="text-xs font-bold text-slate-400 uppercase">{m.category}</div><div className="font-bold text-slate-800">{m.title}</div></div>
+                            </div>
+                        ))}
                     </div>
                 )}
             </div>
         </div>
 
-        {/* MODAL TARGET JURUSAN */}
         {showTargetModal && (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
                 <div className="bg-white p-6 rounded-2xl w-full max-w-sm">
@@ -238,19 +198,17 @@ const StudentDashboard = ({ user, onLogout }) => {
             </div>
         )}
 
-        {/* MODAL REVIEW */}
         {reviewData && (
             <div className="fixed inset-0 bg-white z-50 overflow-y-auto">
-                <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white"><h3 className="font-bold">Pembahasan</h3><button onClick={()=>setReviewData(null)} className="p-2 bg-slate-100 rounded-full"><X/></button></div>
+                <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white"><h3 className="font-bold">Pembahasan</h3><button onClick={()=>setReviewData(null)}><X/></button></div>
                 <div className="p-6 max-w-3xl mx-auto space-y-6">
-                    <div className="text-center p-6 bg-blue-50 rounded-xl"><div className="text-4xl font-extrabold text-blue-600">{Math.round(reviewData.score)}</div><div className="text-xs font-bold text-blue-400">SKOR AKHIR</div></div>
+                    <div className="text-center p-6 bg-blue-50 rounded-xl mb-4"><div className="text-4xl font-extrabold text-blue-600">{Math.round(reviewData.score)}</div></div>
                     {reviewData.questions.map((q,i)=>(
                         <div key={q.id} className="pb-6 border-b space-y-3">
                             <div className="font-bold">No. {i+1}</div>
-                            {q.image_url && <img src={q.image_url.startsWith('http')?q.image_url:`${API_URL}${q.image_url}`} className="max-h-40 rounded"/>}
+                            {q.image_url && <img src={q.image_url.startsWith('http')?q.image_url:`${API_URL}${q.image_url}`} alt="Preview" className="max-h-40 rounded"/>}
                             <div>{renderTex(q.text)}</div>
                             <div className="bg-slate-50 p-3 rounded-lg text-sm space-y-2">{q.options.map((o,idx)=>(<div key={idx} className={`flex gap-2 ${o.is_correct?'text-green-600 font-bold':''}`}><span>{String.fromCharCode(65+idx)}.</span>{renderTex(o.label)} {o.is_correct&&<CheckCircle size={14}/>}</div>))}</div>
-                            <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-800"><strong>Pembahasan:</strong> {renderTex(q.explanation)}</div>
                         </div>
                     ))}
                 </div>
