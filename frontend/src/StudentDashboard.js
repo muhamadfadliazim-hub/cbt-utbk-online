@@ -27,6 +27,7 @@ const StudentDashboard = ({ user, onLogout }) => {
   const [answers, setAnswers] = useState({});
   const [timeLeft, setTimeLeft] = useState(0);
   const [markedQuestions, setMarkedQuestions] = useState([]);
+  const [isLoadingExam, setIsLoadingExam] = useState(false);
 
   useEffect(() => {
     fetch(`${API_URL}/student/periods?username=${user.username}`).then(r => r.json()).then(setPeriods);
@@ -67,20 +68,32 @@ const StudentDashboard = ({ user, onLogout }) => {
 
   const startExam = (examId) => {
       if(!window.confirm("Mulai ujian sekarang?")) return;
-      fetch(`${API_URL}/exams/${examId}`).then(r => r.json()).then(data => {
+      setIsLoadingExam(true);
+      fetch(`${API_URL}/exams/${examId}`).then(r => {
+          if (!r.ok) throw new Error("Gagal mengambil soal.");
+          return r.json();
+      }).then(data => {
+            console.log("Exam Data:", data); // DEBUG
             if(!data.questions || data.questions.length === 0) {
-                return alert("Soal belum tersedia untuk paket ini.");
+                alert("Soal belum tersedia untuk paket ini.");
+                setIsLoadingExam(false);
+                return;
             }
             setQuestions(data.questions); 
             setTimeLeft(data.duration * 60); 
             setAnswers({}); 
             setCurrentQIdx(0); 
             setActiveExam(examId);
-      }).catch(() => alert("Gagal memuat soal. Coba lagi."));
+            setIsLoadingExam(false);
+      }).catch((e) => {
+          alert("Error: " + e.message);
+          setIsLoadingExam(false);
+      });
   };
 
   const handleAnswer = (val) => setAnswers({ ...answers, [questions[currentQIdx].id]: val });
   const handleSubmitExam = () => { 
+      if(!window.confirm("Yakin ingin mengumpulkan jawaban?")) return;
       fetch(`${API_URL}/exams/${activeExam}/submit`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username: user.username, answers: answers }) })
       .then(r=>r.json())
       .then(d => { alert(`Ujian Selesai! Skor Anda: ${Math.round(d.score)}`); setActiveExam(null); window.location.reload(); }); 
@@ -133,7 +146,6 @@ const StudentDashboard = ({ user, onLogout }) => {
                           </div>
                       </div>
                   </div>
-                  {/* DRAWER */}
                   <div className={`fixed inset-y-0 right-0 w-72 bg-white border-l shadow-2xl transform transition-transform z-40 ${isNavOpen?'translate-x-0':'translate-x-full lg:translate-x-0 lg:static'}`}>
                       <div className="p-4 border-b font-bold flex justify-between lg:hidden"><span>Navigasi</span><button onClick={()=>setIsNavOpen(false)}><X/></button></div>
                       <div className="p-4 grid grid-cols-5 gap-2 overflow-y-auto max-h-[80vh]">
@@ -158,9 +170,16 @@ const StudentDashboard = ({ user, onLogout }) => {
   // --- LOBBY UTAMA ---
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-24 md:pb-0">
-      {/* HEADER */}
+      {/* HEADER DESKTOP */}
       <div className="bg-white sticky top-0 z-20 border-b shadow-sm px-6 py-4 flex justify-between items-center">
-          <div className="font-extrabold text-xl text-blue-600 flex items-center gap-2"><Zap className="text-yellow-400" fill="currentColor"/> EduPrime</div>
+          <div className="flex items-center gap-8">
+              <div className="font-extrabold text-xl text-blue-600 flex items-center gap-2"><Zap className="text-yellow-400" fill="currentColor"/> EduPrime</div>
+              {/* DESKTOP NAV TABS */}
+              <div className="hidden md:flex gap-1">
+                  <button onClick={()=>setTab('home')} className={`px-4 py-2 rounded-lg text-sm font-bold transition ${tab==='home'?'bg-blue-50 text-blue-600':'text-slate-500 hover:bg-slate-50'}`}>Dashboard</button>
+                  <button onClick={()=>setTab('lms')} className={`px-4 py-2 rounded-lg text-sm font-bold transition ${tab==='lms'?'bg-blue-50 text-blue-600':'text-slate-500 hover:bg-slate-50'}`}>Belajar</button>
+              </div>
+          </div>
           <div className="flex items-center gap-3">
               <div className="text-right hidden md:block">
                   <div className="text-sm font-bold">{user.name}</div>
@@ -173,22 +192,21 @@ const StudentDashboard = ({ user, onLogout }) => {
       <div className="max-w-5xl mx-auto p-4 md:p-8 space-y-8">
           {tab === 'home' && (
               <>
-                {/* HERO CARD */}
                 <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
                     <div className="relative z-10">
-                        <h2 className="text-2xl font-bold mb-1">Halo, Pejuang! 🚀</h2>
-                        <p className="text-blue-100 text-sm mb-4">Target: <strong>{user.pilihan1 || "Belum dipilih"}</strong></p>
+                        <h2 className="text-2xl font-bold mb-1">Halo, {user.name.split(' ')[0]}! 🚀</h2>
+                        <p className="text-blue-100 text-sm mb-4">Siap menaklukkan ujian hari ini?</p>
                         <div className="flex gap-3">
-                            <button onClick={()=>setShowMajorModal(true)} className="bg-white/20 backdrop-blur-md px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-white/30"><Target size={14}/> Set Target</button>
+                            <button onClick={()=>setShowMajorModal(true)} className="bg-white/20 backdrop-blur-md px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-white/30"><Target size={14}/> {user.pilihan1 || "Set Target"}</button>
                             <div className="bg-white/20 backdrop-blur-md px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2"><TrendingUp size={14}/> Skor: {user.pg1 || 0}</div>
                         </div>
                     </div>
                     <div className="absolute right-[-20px] bottom-[-20px] opacity-20"><Award size={120}/></div>
                 </div>
 
-                {/* EXAM LIST */}
                 <div>
                     <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><LayoutGrid className="text-blue-600"/> Tryout Tersedia</h3>
+                    {isLoadingExam && <div className="text-center p-4 bg-blue-50 text-blue-600 rounded-xl mb-4 animate-pulse font-bold">Sedang memuat soal... Mohon tunggu...</div>}
                     <div className="grid gap-4 md:grid-cols-2">
                         {periods.map(p => (
                             <div key={p.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition group">
@@ -248,7 +266,7 @@ const StudentDashboard = ({ user, onLogout }) => {
           ))}
       </div>
 
-      {/* MODAL (Target & Review) */}
+      {/* MODAL (Target & Review) - Sama seperti sebelumnya */}
       {showMajorModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-3xl w-full max-w-sm p-6 animate-in zoom-in-95">
