@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Play, LogOut, Home, BookOpen, Clock, AlertTriangle, CheckCircle, GraduationCap } from 'lucide-react';
+import { Play, LogOut, Home, BookOpen, Clock, GraduationCap } from 'lucide-react';
 import { API_URL } from './config';
 import 'katex/dist/katex.min.css';
-import { InlineMath, BlockMath } from 'react-katex';
+import { InlineMath } from 'react-katex';
 
 // RENDERER CANGGIH (LaTeX + HTML + Image)
 const RenderSoal = ({ text, media }) => {
     if (!text) return null;
-    const parts = text.split(/(\$[^$]+\$)/g); // Deteksi LaTeX inline
+    const parts = text.split(/(\$[^$]+\$)/g); 
     return (
         <div className="space-y-4">
             {media && <img src={media} alt="Soal" className="max-w-full h-auto rounded-lg shadow-sm border mx-auto" />}
@@ -28,7 +28,7 @@ const RenderSoal = ({ text, media }) => {
 const StudentDashboard = ({ user, onLogout }) => {
     const [view, setView] = useState('home');
     const [data, setData] = useState(null);
-    const [mode, setMode] = useState(null); // 'exam', 'major_selection'
+    const [mode, setMode] = useState(null); 
     const [examData, setExamData] = useState(null);
     const [answers, setAnswers] = useState({});
     const [qIdx, setQIdx] = useState(0);
@@ -41,7 +41,6 @@ const StudentDashboard = ({ user, onLogout }) => {
     const refresh = useCallback(() => { 
         fetch(`${API_URL}/student/data?username=${user.username}`).then(r=>r.json()).then(d=>{
             setData(d);
-            // Pre-fill choices jika ada
             const initial = [null, null, null, null];
             d.choices?.forEach((c, i) => { if(c && i < 4) initial[i] = c.id; });
             setMyChoices(initial);
@@ -50,12 +49,19 @@ const StudentDashboard = ({ user, onLogout }) => {
     }, [user.username]);
 
     useEffect(() => { refresh(); }, [refresh]);
-    useEffect(() => { if(timeLeft > 0 && mode==='exam') { const t = setTimeout(()=>setTimeLeft(timeLeft-1), 1000); return ()=>clearTimeout(t); } else if(timeLeft===0 && mode==='exam') submitExam(); }, [timeLeft, mode]);
+    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const submitExam = useCallback(() => { 
+        fetch(`${API_URL}/exams/${examData.id}/submit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user.username, answers})}).then(r=>r.json()).then(res => { alert(`Skor Akhir: ${res.score}`); setMode(null); refresh(); }); 
+    }, [examData, user.username, answers, refresh]);
+
+    useEffect(() => { 
+        if(timeLeft > 0 && mode==='exam') { const t = setTimeout(()=>setTimeLeft(timeLeft-1), 1000); return ()=>clearTimeout(t); } 
+        else if(timeLeft===0 && mode==='exam') submitExam(); 
+    }, [timeLeft, mode, submitExam]);
 
     const startExam = (eid) => { if(!window.confirm("Mulai Ujian?")) return; fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{ setExamData(d); setMode('exam'); setQIdx(0); setTimeLeft(d.duration * 60); setAnswers({}); }); };
-    const submitExam = () => { fetch(`${API_URL}/exams/${examData.id}/submit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user.username, answers})}).then(r=>r.json()).then(res => { alert(`Skor Akhir: ${res.score}`); setMode(null); refresh(); }); };
 
-    // --- LOGIKA SNBT JURUSAN ---
     const handleMajorChange = (slotIdx, majorId) => {
         const newChoices = [...myChoices];
         newChoices[slotIdx] = majorId ? parseInt(majorId) : null;
@@ -63,7 +69,6 @@ const StudentDashboard = ({ user, onLogout }) => {
     };
 
     const saveMajors = () => {
-        // Validasi Frontend Sederhana sebelum kirim
         const filled = myChoices.filter(c => c !== null);
         if (filled.length >= 3) {
             const selectedObjs = allMajors.filter(m => filled.includes(m.id));
@@ -83,7 +88,6 @@ const StudentDashboard = ({ user, onLogout }) => {
         });
     };
 
-    // --- VIEW: UJIAN ---
     if(mode === 'exam' && examData) {
         const q = examData.questions[qIdx];
         return (
@@ -107,7 +111,6 @@ const StudentDashboard = ({ user, onLogout }) => {
                             ))}
                         </div>
                     </div>
-                    {/* Navigation Bar Bottom */}
                     <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 flex justify-between items-center px-8">
                         <button onClick={()=>setQIdx(Math.max(0, qIdx-1))} disabled={qIdx===0} className="px-6 py-2 border rounded-xl font-bold hover:bg-slate-50">Sebelumnya</button>
                         <div className="text-sm font-bold text-slate-400">No. {qIdx+1} / {examData.questions.length}</div>
@@ -120,7 +123,6 @@ const StudentDashboard = ({ user, onLogout }) => {
 
     if(!data) return <div className="h-screen flex items-center justify-center font-bold text-slate-400">Loading EduPrime...</div>;
 
-    // --- VIEW: UTAMA ---
     return (
         <div className="min-h-screen bg-[#F8FAFC] font-sans pb-32">
             <div className="bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b px-6 py-4 flex justify-between items-center">
