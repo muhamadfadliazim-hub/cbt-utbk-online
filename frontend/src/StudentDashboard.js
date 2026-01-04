@@ -30,10 +30,12 @@ const StudentDashboard = ({ user, onLogout }) => {
     const [data, setData] = useState(null);
     const [majors, setMajors] = useState([]);
     
+    // Filter State
     const [selectedMajor, setSelectedMajor] = useState({ m1: user.c1||'', m2: user.c2||'' });
     const [filterType, setFilterType] = useState('ALL');
     const [lmsTab, setLmsTab] = useState('UTBK');
     
+    // Exam State
     const [mode, setMode] = useState(null);
     const [examData, setExamData] = useState(null);
     const [answers, setAnswers] = useState({});
@@ -73,11 +75,12 @@ const StudentDashboard = ({ user, onLogout }) => {
 
     const saveMajors = () => { fetch(`${API_URL}/student/majors`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user.username, m1:selectedMajor.m1, m2:selectedMajor.m2})}).then(()=>alert("Target Disimpan!")); };
     
-    const startExam = (eid, pid, finish) => { 
+    const startExam = (eid, pid) => { 
+        const settings = periodSettings[pid] || {can_finish: true};
         if(!window.confirm("Mulai Ujian?")) return; 
         fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{ 
             setExamData({...d, periodId: pid}); 
-            setCanFinish(finish); 
+            setCanFinish(settings.can_finish); 
             setMode('exam'); setQIdx(0); setTimeLeft(d.duration * 60); setAnswers({}); 
         }); 
     };
@@ -105,9 +108,9 @@ const StudentDashboard = ({ user, onLogout }) => {
                 const cur = prev[qid] || [];
                 return cur.includes(val) ? {...prev, [qid]: cur.filter(x=>x!==val)} : {...prev, [qid]: [...cur, val]};
             }
-            if (type === 'BOOLEAN') { // Tabel Benar/Salah
+            if (type === 'BOOLEAN') { 
                 const cur = prev[qid] || {};
-                return {...prev, [qid]: {...cur, [optId]: val}}; // {optId1: "B", optId2: "S"}
+                return {...prev, [qid]: {...cur, [optId]: val}}; 
             }
             return {...prev, [qid]: val};
         });
@@ -121,8 +124,7 @@ const StudentDashboard = ({ user, onLogout }) => {
     if(mode && examData) {
         const q = examData.questions[qIdx];
         const isReview = mode === 'review';
-        const currentSettings = periodSettings[examData.periodId] || {can_finish: true};
-        const allowFinish = isReview ? false : (currentSettings.can_finish || timeLeft === 0);
+        const allowFinish = isReview ? false : (canFinish || timeLeft === 0);
 
         return (
             <div className="h-screen flex flex-col bg-slate-50 font-sans fixed inset-0 z-50">
@@ -193,11 +195,17 @@ const StudentDashboard = ({ user, onLogout }) => {
                         </div>
                     </div>
                 </div>
+                {/* FOOTER MOBILE NAVIGATION (Menggunakan ChevronLeft & Right) */}
+                <div className="h-16 bg-white border-t flex items-center justify-between px-6 md:hidden z-50">
+                    <button onClick={()=>setQIdx(Math.max(0, qIdx-1))} disabled={qIdx===0} className="p-2 border rounded-lg disabled:opacity-30"><ChevronLeft/></button>
+                    <span className="font-bold text-slate-600">No. {qIdx+1}</span>
+                    <button onClick={()=>setQIdx(Math.min(examData.questions.length-1, qIdx+1))} disabled={qIdx===examData.questions.length-1} className="p-2 border rounded-lg bg-slate-800 text-white disabled:opacity-30"><ChevronRight/></button>
+                </div>
             </div>
         );
     }
 
-    if(!data) return <div className="h-screen flex items-center justify-center font-bold text-slate-400">Loading V63.1...</div>;
+    if(!data) return <div className="h-screen flex items-center justify-center font-bold text-slate-400">Loading V63.2...</div>;
     const filteredPeriods = filterType === 'ALL' ? (data.periods||[]) : (data.periods||[]).filter(p => p.type === filterType);
     
     const groupedLMS = {};
@@ -226,20 +234,13 @@ const StudentDashboard = ({ user, onLogout }) => {
                         </div>
                         <div className="bg-white p-6 rounded-[2rem] shadow-sm"><h3 className="font-bold mb-4 flex items-center gap-2"><BarChart2 className="text-indigo-600"/> Statistik</h3><div className="space-y-3">{data.history && data.history.slice(0,3).map((h,i)=>(<div key={i} className="flex justify-between border-b pb-2"><span className="text-sm">{h.exam}</span><span className="font-bold text-indigo-600">{h.score}</span></div>))}</div></div>
                         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">{['ALL', 'UTBK', 'CPNS', 'TKA', 'MANDIRI'].map(t => (<button key={t} onClick={()=>setFilterType(t)} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap ${filterType===t?'bg-indigo-600 text-white':'bg-white border'}`}>{t}</button>))}</div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">{filteredPeriods.map(p => (<div key={p.id} className="bg-white p-6 rounded-[2rem] shadow-sm border hover:shadow-md transition-all"><div className="flex justify-between mb-4"><h3 className="font-black text-lg">{p.name}</h3><span className="bg-slate-900 text-white px-2 py-1 rounded text-[10px] font-bold">{p.type}</span></div><div className="space-y-3">{p.exams.map(e => (<div key={e.id} className="p-4 border rounded-xl flex justify-between items-center hover:bg-slate-50"><div><p className="font-bold text-sm">{e.title}</p><p className="text-[10px] text-slate-400">{e.duration} Menit</p></div>{e.status==='done' ? (p.show_result ? <button onClick={()=>openReview(e.id)} className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold flex items-center gap-1"><CheckCircle size={12}/>{e.score}</button> : <span className="text-xs font-bold text-slate-400">Menunggu Hasil</span>) : (<button onClick={()=>startExam(e.id, p.id, p.can_finish_early)} className="p-2 bg-indigo-600 text-white rounded-lg"><Play size={14}/></button>)}</div>))}</div></div>))}</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">{filteredPeriods.map(p => (<div key={p.id} className="bg-white p-6 rounded-[2rem] shadow-sm border hover:shadow-md transition-all"><div className="flex justify-between mb-4"><h3 className="font-black text-lg">{p.name}</h3><span className="bg-slate-900 text-white px-2 py-1 rounded text-[10px] font-bold">{p.type}</span></div><div className="space-y-3">{p.exams.map(e => (<div key={e.id} className="p-4 border rounded-xl flex justify-between items-center hover:bg-slate-50"><div><p className="font-bold text-sm">{e.title}</p><p className="text-[10px] text-slate-400">{e.duration} Menit</p></div>{e.status==='done' ? (p.show_result ? <button onClick={()=>openReview(e.id)} className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold flex items-center gap-1"><CheckCircle size={12}/>{e.score}</button> : <span className="text-xs font-bold text-slate-400">Menunggu Hasil</span>) : (<button onClick={()=>startExam(e.id, p.id)} className="p-2 bg-indigo-600 text-white rounded-lg"><Play size={14}/></button>)}</div>))}</div></div>))}</div>
                     </>
                 )}
                 {view === 'lms' && (
                     <div>
                         <div className="flex gap-2 mb-6 overflow-x-auto">{['UTBK', 'CPNS', 'TKA', 'MANDIRI'].map(t => (<button key={t} onClick={()=>setLmsTab(t)} className={`px-6 py-2 rounded-xl text-xs font-bold ${lmsTab===t?'bg-indigo-600 text-white':'bg-white text-slate-500'}`}>{t}</button>))}</div>
-                        <div className="space-y-8">
-                            {Object.keys(groupedLMS).map(sub => (
-                                <div key={sub}>
-                                    <h3 className="font-bold text-lg text-slate-700 mb-4 px-2 border-l-4 border-indigo-500">{sub}</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{groupedLMS[sub].map(folder => (<div key={folder.id} className="bg-white p-6 rounded-[2rem] shadow-sm border"><div className="flex items-center gap-3 mb-4"><div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><BookOpen size={20}/></div><h3 className="font-bold">{folder.name}</h3></div><div className="space-y-2">{folder.materials.map(m => (<a key={m.id} href={m.url} target="_blank" rel="noreferrer" className="block p-3 border rounded-xl hover:border-indigo-500 text-xs font-bold text-slate-600 flex items-center gap-2">{m.type==='video'?<Video size={14}/>:<FileText size={14}/>} {m.title}</a>))}</div></div>))}</div>
-                                </div>
-                            ))}
-                        </div>
+                        <div className="space-y-8">{Object.keys(groupedLMS).map(sub => (<div key={sub}><h3 className="font-bold text-lg text-slate-700 mb-4 px-2 border-l-4 border-indigo-500">{sub}</h3><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{groupedLMS[sub].map(folder => (<div key={folder.id} className="bg-white p-6 rounded-[2rem] shadow-sm border"><div className="flex items-center gap-3 mb-4"><div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><BookOpen size={20}/></div><h3 className="font-bold">{folder.name}</h3></div><div className="space-y-2">{folder.materials.map(m => (<a key={m.id} href={m.url} target="_blank" rel="noreferrer" className="block p-3 border rounded-xl hover:border-indigo-500 text-xs font-bold text-slate-600 flex items-center gap-2">{m.type==='video'?<Video size={14}/>:<FileText size={14}/>} {m.title}</a>))}</div></div>))}</div></div>))}</div>
                     </div>
                 )}
                 {view === 'ranking' && (<div className="bg-white p-8 rounded-[2rem] shadow-sm border"><h2 className="text-2xl font-black mb-6 flex items-center gap-3"><Award className="text-emerald-500"/> Riwayat & Peringkat</h2><table className="w-full text-left text-sm"><thead className="bg-slate-50 font-bold text-slate-500"><tr><th className="p-4">Ujian</th><th className="p-4">Tanggal</th><th className="p-4">Skor</th></tr></thead><tbody>{data.history?.map((h, i) => (<tr key={i} className="border-b"><td className="p-4 font-bold">{h.exam}</td><td className="p-4 text-xs text-slate-500">{new Date(h.date).toLocaleDateString()}</td><td className="p-4 font-black text-emerald-600">{h.score}</td></tr>))}</tbody></table></div>)}
