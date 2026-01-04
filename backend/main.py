@@ -7,10 +7,10 @@ import models, database, io
 import pandas as pd
 from datetime import datetime
 
-app = FastAPI(title="EduPrime V54 Master")
+app = FastAPI(title="EduPrime V55 Stable")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# --- FIX SINTAKS ERROR DISINI ---
+# --- PERBAIKAN SINTAKS FATAL: HARUS MULTI-LINE ---
 def get_db():
     db = database.SessionLocal()
     try:
@@ -34,13 +34,12 @@ def init(db: Session = Depends(get_db)):
     if not db.query(models.User).filter_by(username="admin").first():
         db.add(models.User(username="admin", password="123", full_name="Super Admin", role="admin"))
     
-    # Init LMS Folders
     if not db.query(models.LMSFolder).first():
         folders = [("PU","UTBK"), ("PK","UTBK"), ("LBIndo","UTBK"), ("LBIng","UTBK"), ("TIU","CPNS"), ("TWK","CPNS"), ("TKP","CPNS")]
         for n,c in folders: db.add(models.LMSFolder(name=n, category=c))
             
     db.commit()
-    return {"status": "V54 Ready"}
+    return {"status": "V55 System Ready"}
 
 # AUTH
 @app.post("/login")
@@ -50,7 +49,7 @@ def login(data: dict, db: Session = Depends(get_db)):
         return {"username": u.username, "name": u.full_name, "role": u.role, "group": u.group_code}
     raise HTTPException(400, "Login Gagal")
 
-# DATA SISWA
+# STUDENT DATA
 @app.get("/student/data")
 def student_data(username: str, db: Session = Depends(get_db)):
     u = db.query(models.User).filter_by(username=username).first()
@@ -66,7 +65,11 @@ def student_data(username: str, db: Session = Depends(get_db)):
             res = db.query(models.ExamResult).filter_by(user_id=u.id, exam_id=e.id).first()
             exams.append({"id":e.id, "title":e.title, "duration":e.duration, "status":"done" if res else "open", "score":res.final_score if res else 0})
         
-        exam_list.append({"id":p.id, "name":p.name, "type":p.exam_type, "show_result": p.show_result, "can_finish_early": p.can_finish_early, "exams":exams})
+        exam_list.append({
+            "id":p.id, "name":p.name, "type":p.exam_type, 
+            "show_result": p.show_result, "can_finish_early": p.can_finish_early,
+            "exams":exams
+        })
     
     folders = db.query(models.LMSFolder).options(joinedload(models.LMSFolder.materials)).all()
     lms_data = [{"id": f.id, "name": f.name, "category": f.category, "materials": [{"id":m.id, "title":m.title, "type":m.type, "url":m.content_url} for m in f.materials]} for f in folders]
@@ -112,7 +115,6 @@ def submit(eid: str, data: AnswerSchema, db: Session = Depends(get_db)):
     e = db.query(models.Exam).join(models.ExamPeriod).filter(models.Exam.id==eid).first()
     
     total_score = 0; correct_count = 0
-    
     if e.period.exam_type == 'CPNS':
         for q in e.questions:
             ans = data.answers.get(str(q.id))
@@ -123,7 +125,6 @@ def submit(eid: str, data: AnswerSchema, db: Session = Depends(get_db)):
                     if pts == 0 and sel.is_correct: pts = 5
                     total_score += pts
                     if sel.is_correct or pts >= 3: correct_count += 1
-    
     elif e.period.exam_type in ['UTBK', 'MANDIRI']:
         tdif = sum(q.difficulty for q in e.questions); edif = 0.0
         for q in e.questions:
@@ -135,7 +136,6 @@ def submit(eid: str, data: AnswerSchema, db: Session = Depends(get_db)):
                 if key and str(ans) == str(key.option_index): right = True
             if right: edif += q.difficulty; correct_count += 1
         total_score = 200 + ((edif / tdif) * 800) if tdif > 0 else 200
-        
     else:
         tq = len(e.questions)
         for q in e.questions:
@@ -148,7 +148,6 @@ def submit(eid: str, data: AnswerSchema, db: Session = Depends(get_db)):
     db.commit()
     return {"score": round(total_score, 2) if e.period.show_result else None}
 
-# CRUD ADMIN
 @app.get("/admin/analytics/{eid}")
 def get_analytics(eid: str, db: Session = Depends(get_db)):
     results = db.query(models.ExamResult).filter_by(exam_id=eid).all()
@@ -185,3 +184,50 @@ def add_user_manual(data: dict, db: Session = Depends(get_db)):
 def add_manual(eid: str, data: ManualQuestion, db: Session = Depends(get_db)):
     q = models.Question(exam_id=eid, text=data.text, difficulty=data.difficulty, explanation=data.explanation, type=data.type)
     db.add(q); db.commit(); db.refresh(q)
+    for opt in data.options:
+        w = opt.get('score_weight', 0)
+        if data.type != 'TKP' and opt.get('is_correct'): w = 5
+        db.add(models.Option(question_id=q.id, label=opt['label'], option_index=opt['idx'], is_correct=opt.get('is_correct', False), score_weight=w))
+    db.commit(); return {"msg": "Saved"}
+@app.post("/admin/upload-questions/{eid}")
+async def upload_q(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    df = pd.read_excel(io.BytesIO(await file.read()))
+    db.query(models.Question).filter_by(exam_id=eid).delete()
+    for _, r in df.iterrows():
+        tipe = str(r.get('Tipe', 'PG')).upper().strip()
+        q = models.Question(exam_id=eid, question_type=tipe, text=str(r['Soal']), passage_text=str(r.get('Bacaan')), explanation=str(r.get('Pembahasan')), difficulty=float(r.get('Kesulitan', 1.0)), correct_answer_isian=str(r.get('Kunci')) if tipe == 'ISIAN' else None)
+        db.add(q); db.commit(); db.refresh(q)
+        if tipe in ['PG', 'TKP']:
+            for char in ['A','B','C','D','E']:
+                if pd.notna(r.get(f'Opsi{char}')):
+                    db.add(models.Option(question_id=q.id, label=str(r[f'Opsi{char}']), option_index=char, is_correct=str(r.get('Kunci')).strip().upper()==char, score_weight=int(r.get(f'Bobot{char}', 0))))
+    db.commit(); return {"msg": "OK"}
+@app.post("/admin/periods")
+def create_period(name: str = Form(...), exam_type: str = Form(...), access_code: str = Form(None), show_result: bool = Form(True), can_finish_early: bool = Form(True), db: Session = Depends(get_db)):
+    p = models.ExamPeriod(name=name, exam_type=exam_type, access_code=access_code, show_result=show_result, can_finish_early=can_finish_early)
+    db.add(p); db.commit(); db.refresh(p)
+    struct = {"UTBK":[("PU",30,1),("PPU",25,2),("PBM",25,3),("PK",20,4),("LBI",45,5),("LBE",20,6),("PM",42,7)], "CPNS":[("TWK",30,1),("TIU",35,2),("TKP",45,3)], "TKA":[("MATE",90,1),("FIS",60,2),("KIM",60,3),("BIO",60,4)], "MANDIRI":[("TPA",60,1),("B.ING",40,2)]}
+    for c, dur, order in struct.get(exam_type, [("UMUM",60,1)]): db.add(models.Exam(id=f"P{p.id}_{c}", period_id=p.id, title=c, duration=dur, order_index=order))
+    db.commit(); return {"msg": "OK"}
+@app.get("/admin/periods")
+def get_periods(db: Session = Depends(get_db)): return db.query(models.ExamPeriod).options(joinedload(models.ExamPeriod.exams)).all()
+@app.delete("/admin/periods/{pid}")
+def del_period(pid: int, db: Session = Depends(get_db)): db.query(models.ExamPeriod).filter_by(id=pid).delete(); db.commit(); return {"msg": "Del"}
+@app.get("/majors")
+def get_majors(db: Session = Depends(get_db)): return db.query(models.Major).all()
+@app.post("/admin/majors/bulk")
+async def bulk_majors(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    db.query(models.Major).delete(); db.commit(); df = pd.read_excel(io.BytesIO(await file.read()))
+    for _, r in df.iterrows(): db.add(models.Major(university=r['Universitas'], program=r['Prodi'], passing_grade=float(r.get('Passing_Grade',0))))
+    db.commit(); return {"msg": "OK"}
+@app.post("/student/majors")
+def save_majors(data: MajorSelect, db: Session = Depends(get_db)): u = db.query(models.User).filter_by(username=data.username).first(); u.choice1_id = data.m1; u.choice2_id = data.m2; db.commit(); return {"msg": "Saved"}
+@app.get("/materials")
+def get_mats_ep(db: Session = Depends(get_db)): return db.query(models.Material).all()
+@app.post("/materials")
+def add_mat(title:str=Form(...), type:str=Form(...), url:str=Form(...), category:str=Form(...), folder_name:str=Form(...), db:Session=Depends(get_db)):
+    folder = db.query(models.LMSFolder).filter_by(name=folder_name, category=category).first()
+    if not folder: folder = models.LMSFolder(name=folder_name, category=category); db.add(folder); db.commit(); db.refresh(folder)
+    db.add(models.Material(title=title, type=type, content_url=url, folder_id=folder.id)); db.commit(); return {"msg":"OK"}
+@app.delete("/materials/{mid}")
+def del_mat(mid: int, db: Session = Depends(get_db)): db.query(models.Material).filter_by(id=mid).delete(); db.commit(); return {"msg":"Del"}
