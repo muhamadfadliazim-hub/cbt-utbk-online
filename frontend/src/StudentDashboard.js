@@ -1,17 +1,32 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Play, BarChart2, LogOut, ChevronLeft, ChevronRight, Home, BookOpen, Award, CheckCircle, XCircle, Menu, Video, FileText } from 'lucide-react';
+import { Play, BarChart2, LogOut, ChevronLeft, ChevronRight, Home, BookOpen, Award, CheckCircle, XCircle, Menu, Video, FileText, Clock, AlertTriangle } from 'lucide-react';
 import { API_URL } from './config';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 
+// PARSER TEXT DARI EXCEL (Support [B], **, HTML)
 const RenderSoal = ({ text }) => {
     if (!text) return null;
     const parts = text.split(/(\$[^$]+\$)/g);
-    return (<span className="whitespace-pre-wrap leading-relaxed font-serif text-slate-800 text-lg">{parts.map((p, i) => p.startsWith('$') ? <InlineMath key={i} math={p.slice(1,-1)}/> : <span key={i} dangerouslySetInnerHTML={{ __html: p.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\*(.*?)\*/g, '<i>$1</i>') }} />)}</span>);
+    return (
+        <span className="whitespace-pre-wrap leading-relaxed font-serif text-slate-800 text-lg">
+            {parts.map((p, i) => {
+                if (p.startsWith('$')) return <InlineMath key={i} math={p.slice(1,-1)}/>;
+                // Replace [B]..[/B] or **..** with <b>
+                const html = p
+                    .replace(/\[B\](.*?)\[\/B\]/g, '<b>$1</b>')
+                    .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+                    .replace(/\[I\](.*?)\[\/I\]/g, '<i>$1</i>')
+                    .replace(/\*(.*?)\*/g, '<i>$1</i>')
+                    .replace(/\n/g, '<br/>');
+                return <span key={i} dangerouslySetInnerHTML={{ __html: html }} />;
+            })}
+        </span>
+    );
 };
 
 const StudentDashboard = ({ user, onLogout }) => {
-    const [view, setView] = useState('home');
+    const [view, setView] = useState('home'); // home (TO), lms
     const [data, setData] = useState(null);
     const [majors, setMajors] = useState([]);
     
@@ -28,6 +43,7 @@ const StudentDashboard = ({ user, onLogout }) => {
     const [timeLeft, setTimeLeft] = useState(0);
     const [showNav, setShowNav] = useState(false);
     const [canFinish, setCanFinish] = useState(true);
+    const [periodSettings, setPeriodSettings] = useState({});
     
     const [uniList, setUniList] = useState([]);
     const [prodiList1, setProdiList1] = useState([]);
@@ -36,7 +52,12 @@ const StudentDashboard = ({ user, onLogout }) => {
     const [selectedUni2, setSelectedUni2] = useState('');
 
     const refresh = useCallback(() => {
-        fetch(`${API_URL}/student/data?username=${user.username}`).then(r=>r.json()).then(setData);
+        fetch(`${API_URL}/student/data?username=${user.username}`).then(r=>r.json()).then(d => {
+            setData(d);
+            const settings = {};
+            if(d.periods) d.periods.forEach(p => { settings[p.id] = {show_result: p.show_result, can_finish: p.can_finish_early}; });
+            setPeriodSettings(settings);
+        });
         fetch(`${API_URL}/majors`).then(r=>r.json()).then(d => { 
             if(Array.isArray(d)) {
                 setMajors(d);
@@ -52,10 +73,10 @@ const StudentDashboard = ({ user, onLogout }) => {
 
     const saveMajors = () => { fetch(`${API_URL}/student/majors`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user.username, m1:selectedMajor.m1, m2:selectedMajor.m2})}).then(()=>alert("Target Disimpan!")); };
     
-    const startExam = (eid, finish) => { 
+    const startExam = (eid, pid, finish) => { 
         if(!window.confirm("Mulai Ujian?")) return; 
         fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{ 
-            setExamData(d); 
+            setExamData({...d, periodId: pid}); 
             setCanFinish(finish);
             setMode('exam'); setQIdx(0); setTimeLeft(d.duration * 60); setAnswers({}); 
         }); 
@@ -92,30 +113,20 @@ const StudentDashboard = ({ user, onLogout }) => {
         return (
             <div className="h-screen flex flex-col bg-slate-50 font-sans fixed inset-0 z-50">
                 <div className="h-16 bg-white shadow-sm flex items-center justify-between px-4 z-50">
-                    <div className="flex items-center gap-3">
-                        <button onClick={()=>setShowNav(!showNav)} className="md:hidden p-2"><Menu/></button>
-                        <div><h1 className="font-bold text-slate-800 truncate max-w-[150px]">{examData.title}</h1><p className="text-xs text-slate-500">Soal {qIdx+1}</p></div>
-                    </div>
+                    <div className="flex items-center gap-3"><button onClick={()=>setShowNav(!showNav)} className="md:hidden p-2"><Menu/></button><div><h1 className="font-bold text-slate-800 truncate max-w-[150px]">{examData.title}</h1><p className="text-xs text-slate-500">Soal {qIdx+1}</p></div></div>
                     {!isReview && <div className={`px-3 py-1 rounded-lg font-mono font-bold ${timeLeft<300?'bg-rose-100 text-rose-600':'bg-slate-100'}`}>{Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}</div>}
                     {isReview && <button onClick={()=>setMode(null)} className="p-2 hover:bg-slate-100 rounded-full"><XCircle/></button>}
                 </div>
                 <div className="flex-1 flex overflow-hidden relative">
                     <div className={`absolute md:relative inset-y-0 left-0 w-64 bg-white border-r transform transition-transform z-40 ${showNav?'translate-x-0':'-translate-x-full'} md:translate-x-0 flex flex-col`}>
-                        <div className="p-4 grid grid-cols-5 gap-2 overflow-y-auto content-start flex-1">
-                            {examData.questions.map((_, i) => (
-                                <button key={i} onClick={()=>{setQIdx(i); setShowNav(false);}} className={`h-10 rounded font-bold text-sm ${i===qIdx?'bg-indigo-600 text-white': answers[examData.questions[i].id]?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{i+1}</button>
-                            ))}
-                        </div>
-                        {!isReview && <div className="p-4 border-t">
-                            <button onClick={submitExam} disabled={!allowFinish} className={`w-full py-3 rounded-xl font-bold ${allowFinish?'bg-indigo-600 text-white hover:bg-indigo-700':'bg-slate-200 text-slate-400'}`}>
-                                {allowFinish ? 'KUMPULKAN' : 'BELUM BISA SELESAI'}
-                            </button>
-                        </div>}
+                        <div className="p-4 grid grid-cols-5 gap-2 overflow-y-auto content-start flex-1">{examData.questions.map((_, i) => (<button key={i} onClick={()=>{setQIdx(i); setShowNav(false);}} className={`h-10 rounded font-bold text-sm ${i===qIdx?'bg-indigo-600 text-white': answers[examData.questions[i].id]?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{i+1}</button>))}</div>
+                        {!isReview && <div className="p-4 border-t"><button onClick={submitExam} disabled={!allowFinish} className={`w-full py-3 rounded-xl font-bold ${allowFinish?'bg-indigo-600 text-white hover:bg-indigo-700':'bg-slate-200 text-slate-400'}`}>{allowFinish ? 'KUMPULKAN' : 'BELUM BISA SELESAI'}</button></div>}
                     </div>
                     <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-[#F8FAFC]">
                         {q.passage && <div className="w-full md:w-1/2 h-[30%] md:h-full overflow-y-auto p-6 border-b md:border-r bg-white"><div className="prose max-w-none"><RenderSoal text={q.passage}/></div></div>}
                         <div className="flex-1 h-full overflow-y-auto p-6 md:p-10">
-                            {q.media && <img src={q.media} className="max-h-48 rounded mb-4" alt="Soal"/>}
+                            {/* GAMBAR DI TENGAH ANTARA WACANA DAN SOAL */}
+                            {q.media && <div className="flex justify-center mb-6"><img src={q.media} className="max-h-64 rounded-lg shadow-sm border" alt="Soal"/></div>}
                             <div className="mb-6"><RenderSoal text={q.text}/></div>
                             <div className="space-y-3 max-w-2xl">
                                 {q.options.map(o => { 
@@ -135,16 +146,12 @@ const StudentDashboard = ({ user, onLogout }) => {
                         </div>
                     </div>
                 </div>
-                <div className="h-16 bg-white border-t flex items-center justify-between px-6 md:hidden z-50">
-                    <button onClick={()=>setQIdx(Math.max(0, qIdx-1))}><ChevronLeft/></button>
-                    <span className="font-bold text-slate-600">{qIdx+1} / {examData.questions.length}</span>
-                    <button onClick={()=>setQIdx(Math.min(examData.questions.length-1, qIdx+1))}><ChevronRight/></button>
-                </div>
+                <div className="h-16 bg-white border-t flex items-center justify-between px-6 md:hidden z-50"><button onClick={()=>setQIdx(Math.max(0, qIdx-1))}><ChevronLeft/></button><span className="font-bold text-slate-600">{qIdx+1} / {examData.questions.length}</span><button onClick={()=>setQIdx(Math.min(examData.questions.length-1, qIdx+1))}><ChevronRight/></button></div>
             </div>
         );
     }
 
-    if(!data) return <div className="h-screen flex items-center justify-center font-bold text-slate-400">Loading V57.2...</div>;
+    if(!data) return <div className="h-screen flex items-center justify-center font-bold text-slate-400">Loading V58...</div>;
     const filteredPeriods = filterType === 'ALL' ? (data.periods||[]) : (data.periods||[]).filter(p => p.type === filterType);
     
     const groupedLMS = {};
@@ -158,10 +165,7 @@ const StudentDashboard = ({ user, onLogout }) => {
 
     return (
         <div className="min-h-screen bg-[#F1F5F9] font-sans pb-28">
-            <div className="bg-white p-4 sticky top-0 z-30 shadow-sm flex justify-between items-center px-6">
-                <h1 className="text-xl font-black text-slate-800">Edu<span className="text-indigo-600">Prime</span></h1>
-                <div className="flex gap-3"><span className="hidden md:block font-bold text-sm mt-1">{data.user.full_name}</span><button onClick={onLogout} className="text-rose-500"><LogOut/></button></div>
-            </div>
+            <div className="bg-white p-4 sticky top-0 z-30 shadow-sm flex justify-between items-center px-6"><h1 className="text-xl font-black text-slate-800">Edu<span className="text-indigo-600">Prime</span></h1><div className="flex gap-3"><span className="hidden md:block font-bold text-sm mt-1">{data.user.full_name}</span><button onClick={onLogout} className="text-rose-500"><LogOut/></button></div></div>
             <div className="max-w-7xl mx-auto p-6 space-y-8">
                 {view === 'home' && (
                     <>
@@ -173,7 +177,7 @@ const StudentDashboard = ({ user, onLogout }) => {
                         </div>
                         <div className="bg-white p-6 rounded-[2rem] shadow-sm"><h3 className="font-bold mb-4 flex items-center gap-2"><BarChart2 className="text-indigo-600"/> Statistik</h3><div className="space-y-3">{data.history && data.history.slice(0,3).map((h,i)=>(<div key={i} className="flex justify-between border-b pb-2"><span className="text-sm">{h.exam}</span><span className="font-bold text-indigo-600">{h.score}</span></div>))}</div></div>
                         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">{['ALL', 'UTBK', 'CPNS', 'TKA', 'MANDIRI'].map(t => (<button key={t} onClick={()=>setFilterType(t)} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap ${filterType===t?'bg-indigo-600 text-white':'bg-white border'}`}>{t}</button>))}</div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">{filteredPeriods.map(p => (<div key={p.id} className="bg-white p-6 rounded-[2rem] shadow-sm border hover:shadow-md transition-all"><div className="flex justify-between mb-4"><h3 className="font-black text-lg">{p.name}</h3><span className="bg-slate-900 text-white px-2 py-1 rounded text-[10px] font-bold">{p.type}</span></div><div className="space-y-3">{p.exams.map(e => (<div key={e.id} className="p-4 border rounded-xl flex justify-between items-center hover:bg-slate-50"><div><p className="font-bold text-sm">{e.title}</p><p className="text-[10px] text-slate-400">{e.duration} Menit</p></div>{e.status==='done' ? (p.show_result ? <button onClick={()=>openReview(e.id)} className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold flex items-center gap-1"><CheckCircle size={12}/>{e.score}</button> : <span className="text-xs font-bold text-slate-400">Menunggu Hasil</span>) : (<button onClick={()=>startExam(e.id, p.can_finish_early)} className="p-2 bg-indigo-600 text-white rounded-lg"><Play size={14}/></button>)}</div>))}</div></div>))}</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">{filteredPeriods.map(p => (<div key={p.id} className="bg-white p-6 rounded-[2rem] shadow-sm border hover:shadow-md transition-all"><div className="flex justify-between mb-4"><h3 className="font-black text-lg">{p.name}</h3><span className="bg-slate-900 text-white px-2 py-1 rounded text-[10px] font-bold">{p.type}</span></div><div className="space-y-3">{p.exams.map(e => (<div key={e.id} className="p-4 border rounded-xl flex justify-between items-center hover:bg-slate-50"><div><p className="font-bold text-sm">{e.title}</p><p className="text-[10px] text-slate-400">{e.duration} Menit</p></div>{e.status==='done' ? (p.show_result ? <button onClick={()=>openReview(e.id)} className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold flex items-center gap-1"><CheckCircle size={12}/>{e.score}</button> : <span className="text-xs font-bold text-slate-400">Menunggu Hasil</span>) : (<button onClick={()=>startExam(e.id, p.id, p.can_finish_early)} className="p-2 bg-indigo-600 text-white rounded-lg"><Play size={14}/></button>)}</div>))}</div></div>))}</div>
                     </>
                 )}
                 {view === 'lms' && (

@@ -1,21 +1,24 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
-import models, database, io
+import models, database, io, os, shutil
 import pandas as pd
 from datetime import datetime
 
-app = FastAPI(title="EduPrime V57 Masterpiece")
+app = FastAPI(title="EduPrime V59 Masterpiece")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# Mount folder static untuk gambar lokal
+os.makedirs("static/images", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 def get_db():
     db = database.SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    try: yield db
+    finally: db.close()
 
 # SCHEMAS
 class DeleteList(BaseModel): ids: List[int]
@@ -26,44 +29,52 @@ class ManualQuestion(BaseModel):
     passage: Optional[str]=None; media: Optional[str]=None; 
     type: str="PG"; options: List[Dict[str, Any]]
 
-# INIT
+# INIT ADMIN
 @app.get("/init-admin")
 def init(db: Session = Depends(get_db)):
     models.Base.metadata.create_all(bind=database.engine)
     if not db.query(models.User).filter_by(username="admin").first():
         db.add(models.User(username="admin", password="123", full_name="Super Admin", role="admin"))
-    db.commit()
-    return {"status": "V57 Ready"}
+    db.commit(); return {"status": "V59 Ready"}
 
-# AUTH
+# LOGIN
 @app.post("/login")
 def login(data: dict, db: Session = Depends(get_db)):
     u = db.query(models.User).filter_by(username=data['username']).first()
     if u and u.password == data['password']: 
-        return {"username": u.username, "name": u.full_name, "role": u.role, "group": u.group_code}
+        return {"username": u.username, "name": u.full_name, "role": u.role, "allowed": u.allowed_exam_ids}
     raise HTTPException(400, "Login Gagal")
 
-# STUDENT DATA (FILTERED BY GROUP)
+# UPLOAD GAMBAR LOKAL
+@app.post("/upload-image")
+async def upload_image(file: UploadFile = File(...)):
+    fname = f"static/images/{datetime.now().timestamp()}_{file.filename}"
+    with open(fname, "wb") as f: shutil.copyfileobj(file.file, f)
+    # Return full URL relative to server
+    return {"url": f"/{fname}"}
+
+# STUDENT DATA (FILTER CANGGIH)
 @app.get("/student/data")
 def student_data(username: str, db: Session = Depends(get_db)):
     u = db.query(models.User).filter_by(username=username).first()
     periods = db.query(models.ExamPeriod).options(joinedload(models.ExamPeriod.exams)).all()
     
+    # Logic: allowed_exam_ids di user berisi list ID Period atau "ALL"
+    user_allowed = [x.strip() for x in (u.allowed_exam_ids or "ALL").split(",")]
+    
     exam_list = []
     for p in periods:
-        # LOGIKA FILTER GRUP: Cek apakah user.group ada di allowed_groups (dipisah koma)
-        allowed = [x.strip() for x in (p.allowed_groups or "ALL").split(",")]
-        if "ALL" not in allowed and u.group_code not in allowed and u.role != 'admin':
+        # Cek apakah user punya hak akses ke Paket ini
+        if u.role != 'admin' and "ALL" not in user_allowed and str(p.id) not in user_allowed:
             continue
-        
+            
         exams = []
         for e in sorted(p.exams, key=lambda x: x.order_index):
             res = db.query(models.ExamResult).filter_by(user_id=u.id, exam_id=e.id).first()
             exams.append({"id":e.id, "title":e.title, "duration":e.duration, "status":"done" if res else "open", "score":res.final_score if res else 0})
-        
         exam_list.append({"id":p.id, "name":p.name, "type":p.exam_type, "show_result": p.show_result, "can_finish_early": p.can_finish_early, "exams":exams})
     
-    # LMS DATA (HIERARKI)
+    # LMS Grouping
     folders = db.query(models.LMSFolder).options(joinedload(models.LMSFolder.materials)).all()
     lms_data = []
     for f in folders:
@@ -80,13 +91,14 @@ def student_data(username: str, db: Session = Depends(get_db)):
 
     return {"user": u, "periods": exam_list, "lms": lms_data, "history": history}
 
-# UJIAN & EDIT SOAL
+# UJIAN & REVIEW
 @app.get("/exams/{eid}")
 def get_exam(eid: str, db: Session = Depends(get_db)):
     e = db.query(models.Exam).filter_by(id=eid).first()
     return {
         "id":e.id, "title":e.title, "duration":e.duration, "can_finish": e.period.can_finish_early,
-        "questions": [{"id":q.id, "text":q.text, "passage":q.passage_text, "media":q.media_url, "type":q.question_type, "options": [{"id":o.option_index, "label":o.label, "val":o.boolean_val} for o in q.options]} for q in e.questions]
+        "questions": [{"id":q.id, "text":q.text, "passage":q.passage_text, "media":q.media_url, "type":q.question_type, 
+                       "options": [{"id":o.option_index, "label":o.label, "val":o.boolean_val} for o in q.options]} for q in e.questions]
     }
 
 @app.get("/exams/{eid}/review")
@@ -111,48 +123,54 @@ def get_review(eid: str, username: str, db: Session = Depends(get_db)):
 @app.put("/admin/questions/{qid}")
 def update_question(qid: int, data: ManualQuestion, db: Session = Depends(get_db)):
     q = db.query(models.Question).filter_by(id=qid).first()
-    if not q: raise HTTPException(404, "Question not found")
-    
+    if not q: raise HTTPException(404, "Not found")
     q.text = data.text; q.difficulty = data.difficulty; q.explanation = data.explanation; q.media_url = data.media; q.question_type = data.type
-    
-    # Hapus opsi lama, buat baru (Cara termudah)
     db.query(models.Option).filter_by(question_id=qid).delete()
     for opt in data.options:
         w = opt.get('score_weight', 0)
         if data.type != 'TKP' and opt.get('is_correct'): w = 5
         db.add(models.Option(question_id=q.id, label=opt['label'], option_index=opt['idx'], is_correct=opt.get('is_correct', False), score_weight=w))
-    
-    db.commit()
-    return {"msg": "Updated"}
+    db.commit(); return {"msg": "Updated"}
 
+# SCORING ENGINE
 @app.post("/exams/{eid}/submit")
 def submit(eid: str, data: AnswerSchema, db: Session = Depends(get_db)):
     u = db.query(models.User).filter_by(username=data.username).first()
     e = db.query(models.Exam).join(models.ExamPeriod).filter(models.Exam.id==eid).first()
+    exam_type = e.period.exam_type
     
     total_score = 0; correct_count = 0
-    if e.period.exam_type == 'CPNS':
+    if exam_type == 'CPNS':
         for q in e.questions:
             ans = data.answers.get(str(q.id))
-            if ans:
-                sel = next((o for o in q.options if o.option_index == ans), None)
-                if sel:
-                    pts = sel.score_weight
-                    if pts == 0 and sel.is_correct: pts = 5
-                    total_score += pts
-                    if sel.is_correct or pts >= 3: correct_count += 1
-    elif e.period.exam_type in ['UTBK', 'MANDIRI']:
+            if not ans: continue
+            selected = next((o for o in q.options if o.option_index == ans), None)
+            if selected:
+                points = selected.score_weight
+                # Jika bukan TKP, bobot otomatis 5 jika benar, 0 jika salah
+                if exam_type != 'CPNS' or q.question_type != 'TKP': # Fallback check
+                     if selected.score_weight == 0 and selected.is_correct: points = 5
+                
+                total_score += points
+                if selected.is_correct or points >= 3: correct_count += 1
+    
+    elif exam_type in ['UTBK', 'MANDIRI']:
         tdif = sum(q.difficulty for q in e.questions); edif = 0.0
         for q in e.questions:
-            ans = data.answers.get(str(q.id)); right = False
+            ans = data.answers.get(str(q.id)); is_right = False
             if q.question_type == 'ISIAN':
-                if ans and str(ans).strip().lower() == str(q.correct_answer_isian).strip().lower(): right = True
+                if ans and str(ans).strip().lower() == str(q.correct_answer_isian).strip().lower(): is_right = True
+            elif q.question_type == 'PG_KOMPLEKS':
+                keys = sorted([o.option_index for o in q.options if o.is_correct])
+                user_ans = sorted(ans) if isinstance(ans, list) else []
+                if keys == user_ans and len(keys)>0: is_right = True
             else:
                 key = next((o for o in q.options if o.is_correct), None)
-                if key and str(ans) == str(key.option_index): right = True
-            if right: edif += q.difficulty; correct_count += 1
+                if key and str(ans) == str(key.option_index): is_right = True
+            if is_right: edif += q.difficulty; correct_count += 1
         total_score = 200 + ((edif / tdif) * 800) if tdif > 0 else 200
-    else:
+    
+    else: # TKA
         tq = len(e.questions)
         for q in e.questions:
             ans = data.answers.get(str(q.id))
@@ -164,7 +182,7 @@ def submit(eid: str, data: AnswerSchema, db: Session = Depends(get_db)):
     db.commit()
     return {"score": round(total_score, 2) if e.period.show_result else None}
 
-# CRUD ADMIN STANDAR
+# ADMIN
 @app.get("/admin/analytics/{eid}")
 def get_analytics(eid: str, db: Session = Depends(get_db)):
     results = db.query(models.ExamResult).filter_by(exam_id=eid).all()
@@ -188,18 +206,18 @@ async def bulk_user(file: UploadFile = File(...), db: Session = Depends(get_db))
     c = 0
     for _, r in df.iterrows():
         if not db.query(models.User).filter_by(username=str(r['username'])).first():
-            db.add(models.User(username=str(r['username']), password=str(r['password']), full_name=str(r['full_name']), role=str(r.get('role','peserta')), group_code=str(r.get('group','GENERAL'))))
+            # Baca allowed_exam_ids dari excel jika ada
+            allowed = str(r['access']) if 'access' in r else "ALL"
+            db.add(models.User(username=str(r['username']), password=str(r['password']), full_name=str(r['full_name']), role=str(r.get('role','peserta')), allowed_exam_ids=allowed))
             c+=1
     db.commit(); return {"msg": f"Added {c}"}
-@app.post("/admin/users/delete-list")
-def delete_list(data: DeleteList, db: Session = Depends(get_db)): db.query(models.User).filter(models.User.id.in_(data.ids), models.User.role!='admin').delete(synchronize_session=False); db.commit(); return {"msg": "Deleted"}
 @app.post("/admin/users")
 def add_user_manual(data: dict, db: Session = Depends(get_db)):
     if db.query(models.User).filter_by(username=data['username']).first(): raise HTTPException(400, "Exists")
-    db.add(models.User(username=data['username'], password=data['password'], full_name=data['full_name'], role=data['role'], group_code=data.get('group','GENERAL'))); db.commit(); return {"msg":"OK"}
+    db.add(models.User(username=data['username'], password=data['password'], full_name=data['full_name'], role=data['role'], allowed_exam_ids=data.get('allowed','ALL'))); db.commit(); return {"msg":"OK"}
 @app.post("/admin/exams/{eid}/manual")
 def add_manual(eid: str, data: ManualQuestion, db: Session = Depends(get_db)):
-    q = models.Question(exam_id=eid, text=data.text, difficulty=data.difficulty, explanation=data.explanation, type=data.type)
+    q = models.Question(exam_id=eid, text=data.text, difficulty=data.difficulty, explanation=data.explanation, type=data.type, media_url=data.media)
     db.add(q); db.commit(); db.refresh(q)
     for opt in data.options:
         w = opt.get('score_weight', 0)
@@ -212,16 +230,19 @@ async def upload_q(eid: str, file: UploadFile = File(...), db: Session = Depends
     db.query(models.Question).filter_by(exam_id=eid).delete()
     for _, r in df.iterrows():
         tipe = str(r.get('Tipe', 'PG')).upper().strip()
-        q = models.Question(exam_id=eid, question_type=tipe, text=str(r['Soal']), passage_text=str(r.get('Bacaan')), explanation=str(r.get('Pembahasan')), difficulty=float(r.get('Kesulitan', 1.0)), correct_answer_isian=str(r.get('Kunci')) if tipe == 'ISIAN' else None)
+        # Clean [B]...[/B] here if needed, but Frontend will handle display
+        q = models.Question(exam_id=eid, question_type=tipe, text=str(r['Soal']), passage_text=str(r.get('Bacaan')), explanation=str(r.get('Pembahasan')), difficulty=float(r.get('Kesulitan', 1.0)), correct_answer_isian=str(r.get('Kunci')) if tipe == 'ISIAN' else None, media_url=str(r.get('Gambar')))
         db.add(q); db.commit(); db.refresh(q)
-        if tipe in ['PG', 'TKP']:
+        if tipe in ['PG', 'TKP', 'PG_KOMPLEKS']:
             for char in ['A','B','C','D','E']:
                 if pd.notna(r.get(f'Opsi{char}')):
-                    db.add(models.Option(question_id=q.id, label=str(r[f'Opsi{char}']), option_index=char, is_correct=str(r.get('Kunci')).strip().upper()==char, score_weight=int(r.get(f'Bobot{char}', 0))))
+                    w = int(r.get(f'Bobot{char}', 0))
+                    is_c = str(r.get('Kunci')).strip().upper() == char
+                    db.add(models.Option(question_id=q.id, label=str(r[f'Opsi{char}']), option_index=char, is_correct=is_c, score_weight=w))
     db.commit(); return {"msg": "OK"}
 @app.post("/admin/periods")
-def create_period(name: str = Form(...), exam_type: str = Form(...), allowed_groups: str = Form("ALL"), show_result: bool = Form(True), can_finish_early: bool = Form(True), db: Session = Depends(get_db)):
-    p = models.ExamPeriod(name=name, exam_type=exam_type, allowed_groups=allowed_groups, show_result=show_result, can_finish_early=can_finish_early)
+def create_period(name: str = Form(...), exam_type: str = Form(...), show_result: bool = Form(True), can_finish_early: bool = Form(True), db: Session = Depends(get_db)):
+    p = models.ExamPeriod(name=name, exam_type=exam_type, show_result=show_result, can_finish_early=can_finish_early)
     db.add(p); db.commit(); db.refresh(p)
     struct = {"UTBK":[("PU",30,1),("PPU",25,2),("PBM",25,3),("PK",20,4),("LBI",45,5),("LBE",20,6),("PM",42,7)], "CPNS":[("TWK",30,1),("TIU",35,2),("TKP",45,3)], "TKA":[("MATE",90,1),("FIS",60,2),("KIM",60,3),("BIO",60,4)], "MANDIRI":[("TPA",60,1),("B.ING",40,2)]}
     for c, dur, order in struct.get(exam_type, [("UMUM",60,1)]): db.add(models.Exam(id=f"P{p.id}_{c}", period_id=p.id, title=c, duration=dur, order_index=order))
