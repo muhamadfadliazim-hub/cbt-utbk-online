@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import AdminDashboard from './AdminDashboard';
 import StudentDashboard from './StudentDashboard';
 import { API_URL } from './config';
-import { User, Lock, Loader2, GraduationCap, ChevronRight } from 'lucide-react';
+// PERBAIKAN: Semua import di atas
+import { User, Lock, Loader2, GraduationCap, ChevronRight, XCircle } from 'lucide-react'; 
 
 const App = () => {
     const [user, setUser] = useState(null);
@@ -114,8 +115,5 @@ const App = () => {
         </div>
     );
 };
-
-// Pastikan import XCircle jika belum ada di atas (tapi biasanya sudah dihandle icon set)
-import { XCircle } from 'lucide-react'; 
 
 export default App;
