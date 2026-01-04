@@ -4,7 +4,7 @@ import { API_URL } from './config';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 
-const RenderSoal = ({ text }) => { if (!text) return null; const parts = text.split(/(\$[^$]+\$)/g); return (<span className="whitespace-pre-wrap leading-relaxed font-serif text-slate-800 text-lg">{parts.map((p, i) => p.startsWith('$') ? <InlineMath key={i} math={p.slice(1,-1)}/> : <span key={i} dangerouslySetInnerHTML={{ __html: p.replace(/\[B\](.*?)\[\/B\]/g, '<b>$1</b>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\[I\](.*?)\[\/I\]/g, '<i>$1</i>').replace(/\n/g, '<br/>') }} />)}</span>); };
+const RenderSoal = ({ text }) => { if (!text) return null; const parts = text.split(/(\$[^$]+\$)/g); return (<span className="whitespace-pre-wrap leading-relaxed font-serif text-slate-800 text-lg">{parts.map((p, i) => p.startsWith('$') ? <InlineMath key={i} math={p.slice(1,-1)}/> : <span key={i} dangerouslySetInnerHTML={{ __html: p.replace(/\[B\](.*?)\[\/B\]/g, '<b>$1</b>').replace(/\n/g, '<br/>') }} />)}</span>); };
 
 const StudentDashboard = ({ user, onLogout }) => {
     const [view, setView] = useState('home');
@@ -48,21 +48,9 @@ const StudentDashboard = ({ user, onLogout }) => {
 
     const saveMajors = () => { fetch(`${API_URL}/student/majors`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user.username, m1:selectedMajor.m1, m2:selectedMajor.m2})}).then(()=>alert("Target Disimpan!")); };
     const startExam = (eid, pid) => { const settings = periodSettings[pid] || {can_finish: true}; if(!window.confirm("Mulai Ujian?")) return; fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{ setExamData({...d, periodId: pid}); setCanFinish(settings.can_finish); setMode('exam'); setQIdx(0); setTimeLeft(d.duration * 60); setAnswers({}); }); };
-    const submitExam = useCallback(() => { fetch(`${API_URL}/exams/${examData.id}/submit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user.username, answers})}).then(r=>r.json()).then(res => { alert(res.score !== null ? `Skor: ${res.score}` : "Tersimpan."); setMode(null); refresh(); }); }, [examData, user.username, answers, refresh]);
+    const submitExam = useCallback(() => { fetch(`${API_URL}/exams/${examData.id}/submit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user.username, answers})}).then(r=>r.json()).then(res => { alert(res.score !== null ? `Skor Akhir: ${res.score}` : "Jawaban Tersimpan."); setMode(null); refresh(); }); }, [examData, user.username, answers, refresh]);
     const openReview = (eid) => { fetch(`${API_URL}/exams/${eid}/review?username=${user.username}`).then(r=>{if(r.ok) return r.json(); throw new Error("Dikunci admin.");}).then(d=>{ setExamData(d); setMode('review'); setQIdx(0); }).catch(e=>alert(e.message)); };
-    
-    // INPUT HANDLER (COMPLEX)
-    const handleAnswer = (qid, val, type, optId=null) => {
-        if(mode === 'review') return;
-        setAnswers(prev => {
-            if (type === 'PG_KOMPLEKS') {
-                const cur = prev[qid] || [];
-                return cur.includes(val) ? {...prev, [qid]: cur.filter(x=>x!==val)} : {...prev, [qid]: [...cur, val]};
-            }
-            if (type === 'BOOLEAN') { const cur = prev[qid] || {}; return {...prev, [qid]: {...cur, [optId]: val}}; }
-            return {...prev, [qid]: val};
-        });
-    };
+    const handleAnswer = (qid, val) => { if(mode!=='review') setAnswers(p=>({...p, [qid]:val})); };
 
     useEffect(() => { if(mode === 'exam' && timeLeft > 0) { const t = setInterval(()=>setTimeLeft(p=>p-1), 1000); return ()=>clearInterval(t); } else if(mode === 'exam' && timeLeft === 0) { alert("WAKTU HABIS!"); submitExam(); } }, [timeLeft, mode, submitExam]);
 
@@ -85,27 +73,9 @@ const StudentDashboard = ({ user, onLogout }) => {
                     <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-[#F8FAFC]">
                         {q.passage && <div className="w-full md:w-1/2 h-[30%] md:h-full overflow-y-auto p-6 border-b md:border-r bg-white"><div className="prose max-w-none"><RenderSoal text={q.passage}/></div></div>}
                         <div className="flex-1 h-full overflow-y-auto p-6 md:p-10">
-                            {/* GAMBAR DI TENGAH */}
-                            {q.media && <div className="flex justify-center mb-6"><img src={q.media} className="max-h-64 rounded-lg shadow-sm border object-contain" alt="Soal"/></div>}
+                            {q.media && <div className="flex justify-center mb-4"><img src={q.media} className="max-h-64 rounded mb-4 shadow" alt="Soal"/></div>}
                             <div className="mb-6"><RenderSoal text={q.text}/></div>
-                            <div className="space-y-3 max-w-2xl">
-                                {q.type === 'ISIAN' ? (
-                                    <input className="w-full p-4 border-2 rounded-xl font-bold text-lg" placeholder="Jawaban..." value={isReview ? q.user_answer : (answers[q.id]||'')} onChange={e=>handleAnswer(q.id, e.target.value, 'ISIAN')} disabled={isReview}/>
-                                ) : q.type === 'BOOLEAN' ? (
-                                    <div className="border rounded-xl bg-white overflow-hidden"><table className="w-full text-sm"><thead className="bg-slate-50"><tr><th className="p-3 text-left">Pernyataan</th><th className="p-3 w-16 text-center">B</th><th className="p-3 w-16 text-center">S</th></tr></thead><tbody>{q.options.map(o => (<tr key={o.id} className="border-t"><td className="p-3"><RenderSoal text={o.label}/></td><td className="p-3 text-center"><input type="radio" name={`b-${q.id}-${o.id}`} checked={isReview ? (q.user_answer?.[o.id]==='B') : (answers[q.id]?.[o.id]==='B')} onChange={()=>handleAnswer(q.id, 'B', 'BOOLEAN', o.id)} disabled={isReview}/></td><td className="p-3 text-center"><input type="radio" name={`b-${q.id}-${o.id}`} checked={isReview ? (q.user_answer?.[o.id]==='S') : (answers[q.id]?.[o.id]==='S')} onChange={()=>handleAnswer(q.id, 'S', 'BOOLEAN', o.id)} disabled={isReview}/></td></tr>))}</tbody></table></div>
-                                ) : (
-                                    q.options.map(o => {
-                                        const isMulti = q.type === 'PG_KOMPLEKS';
-                                        const isSel = isMulti ? (answers[q.id]||[]).includes(o.option_index) : (answers[q.id] === o.option_index);
-                                        let style = "bg-white border-slate-200 text-slate-700";
-                                        if(isReview) { if(o.is_correct) style="bg-emerald-50 border-emerald-500 text-emerald-800"; else if(isMulti?(q.user_answer||[]).includes(o.option_index):q.user_answer===o.option_index) style="bg-rose-50 border-rose-500 text-rose-800"; }
-                                        else if(isSel) style="bg-indigo-50 border-indigo-500 text-indigo-800 ring-1 ring-indigo-500";
-                                        return (<button key={o.id} onClick={()=>handleAnswer(q.id, o.option_index, q.type)} disabled={isReview} className={`w-full p-4 text-left border rounded-xl flex gap-4 transition-all hover:shadow-sm ${style}`}><span className="font-bold">{o.option_index}</span><span><RenderSoal text={o.label}/></span></button>)
-                                    })
-                                )}
-                            </div>
-                            {isReview && <div className="mt-8 p-6 bg-amber-50 rounded-xl border border-amber-100"><h4 className="font-bold text-amber-800 mb-2">PEMBAHASAN:</h4><div className="text-slate-700"><RenderSoal text={q.explanation || "-"}/></div></div>}
-                        </div>
+                            <div className="space-y-3 max-w-2xl">{q.options.map(o => (<button key={o.id} onClick={()=>handleAnswer(q.id, o.option_index)} disabled={isReview} className={`w-full p-4 text-left border rounded-xl flex gap-4 transition-all hover:shadow-sm ${answers[q.id]===o.option_index?'bg-indigo-50 border-indigo-500 ring-1 ring-indigo-500':'bg-white'}`}><span className="font-bold">{o.option_index}</span><span><RenderSoal text={o.label}/></span></button>))}</div>{isReview && <div className="mt-8 p-6 bg-amber-50 rounded-xl border border-amber-100"><h4 className="font-bold text-amber-800 mb-2">PEMBAHASAN:</h4><div className="text-slate-700"><RenderSoal text={q.explanation || "-"}/></div></div>}</div>
                     </div>
                 </div>
                 <div className="h-16 bg-white border-t flex items-center justify-between px-6 md:hidden z-50"><button onClick={()=>setQIdx(Math.max(0, qIdx-1))} disabled={qIdx===0} className="p-2 border rounded-lg disabled:opacity-30"><ChevronLeft/></button><span className="font-bold text-slate-600">No. {qIdx+1}</span><button onClick={()=>setQIdx(Math.min(examData.questions.length-1, qIdx+1))} disabled={qIdx===examData.questions.length-1} className="p-2 border rounded-lg bg-slate-800 text-white disabled:opacity-30"><ChevronRight/></button></div>
