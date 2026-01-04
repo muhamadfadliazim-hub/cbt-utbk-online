@@ -4,11 +4,7 @@ import { API_URL } from './config';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 
-const RenderPreview = ({ text }) => {
-    if (!text) return null;
-    const parts = text.split(/(\$[^$]+\$)/g);
-    return (<span>{parts.map((part, index) => { if (part.startsWith('$') && part.endsWith('$')) return <InlineMath key={index} math={part.slice(1, -1)} />; return <span key={index}>{part}</span>; })}</span>);
-};
+const RenderPreview = ({ text }) => { if (!text) return null; const parts = text.split(/(\$[^$]+\$)/g); return (<span>{parts.map((part, index) => { if (part.startsWith('$') && part.endsWith('$')) return <InlineMath key={index} math={part.slice(1, -1)} />; return <span key={index}>{part}</span>; })}</span>); };
 
 const AdminDashboard = ({ onLogout }) => {
     const [activeTab, setActiveTab] = useState('users');
@@ -21,7 +17,7 @@ const AdminDashboard = ({ onLogout }) => {
     const [showLmsModal, setShowLmsModal] = useState(false);
     const [previewExamId, setPreviewExamId] = useState(null);
     const [previewQuestions, setPreviewQuestions] = useState([]);
-    const [newUser, setNewUser] = useState({ username: '', full_name: '', password: '', role: 'student' });
+    const [newUser, setNewUser] = useState({ username: '', full_name: '', password: '', role: 'peserta' });
     const [newPeriod, setNewPeriod] = useState({ name: '', exam_type: 'UTBK' });
     const [newLms, setNewLms] = useState({ title: '', type: 'video', category: 'UTBK', url: '' });
 
@@ -35,9 +31,9 @@ const AdminDashboard = ({ onLogout }) => {
 
     const toggleSelect = (id) => setSelectedUsers(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
     const toggleSelectAll = () => setSelectedUsers(selectedUsers.length === users.length ? [] : users.map(u => u.id));
-    const deleteSelected = () => { if(!window.confirm(`Hapus ${selectedUsers.length} user?`)) return; fetch(`${API_URL}/admin/users/delete-list`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ ids: selectedUsers })}).then(() => { alert("Terhapus!"); refresh(); }); };
+    const deleteSelected = () => { if(!window.confirm(`Hapus ${selectedUsers.length} peserta?`)) return; fetch(`${API_URL}/admin/users/delete-list`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ ids: selectedUsers })}).then(() => { alert("Terhapus!"); refresh(); }); };
     
-    const handleUploadSoal = (eid, file) => { const f = new FormData(); f.append('file', file); fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:f}).then(()=>alert("Upload Sukses!")); };
+    const handleUploadSoal = (eid, file) => { const f = new FormData(); f.append('file', file); fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:f}).then(()=>alert("Sukses!")); };
     const handleUploadPassingGrade = (file) => { const f = new FormData(); f.append('file', file); fetch(`${API_URL}/admin/majors/bulk`, {method:'POST', body:f}).then(()=>alert("Passing Grade Updated!")); };
     const openPreview = (eid) => { fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d => { setPreviewQuestions(d.questions); setPreviewExamId(eid); }); };
     
@@ -64,7 +60,7 @@ const AdminDashboard = ({ onLogout }) => {
                         <div className="flex flex-wrap gap-2">
                             {selectedUsers.length > 0 && <button onClick={deleteSelected} className="bg-rose-600 text-white px-3 py-2 rounded-xl font-bold flex items-center gap-2 text-xs"><Trash2 size={16}/> Hapus {selectedUsers.length}</button>}
                             <label className="bg-blue-600 text-white px-3 py-2 rounded-xl font-bold cursor-pointer flex items-center gap-2 text-xs"><Upload size={16}/> Pass Grade <input type="file" className="hidden" onChange={e=>handleUploadPassingGrade(e.target.files[0])}/></label>
-                            <label className="bg-emerald-600 text-white px-3 py-2 rounded-xl font-bold cursor-pointer flex items-center gap-2 text-xs"><FileSpreadsheet size={16}/> Siswa <input type="file" className="hidden" onChange={e=>{const f=new FormData();f.append('file',e.target.files[0]);fetch(`${API_URL}/admin/users/bulk`,{method:'POST',body:f}).then(refresh)}}/></label>
+                            <label className="bg-emerald-600 text-white px-3 py-2 rounded-xl font-bold cursor-pointer flex items-center gap-2 text-xs"><FileSpreadsheet size={16}/> Peserta <input type="file" className="hidden" onChange={e=>{const f=new FormData();f.append('file',e.target.files[0]);fetch(`${API_URL}/admin/users/bulk`,{method:'POST',body:f}).then(refresh)}}/></label>
                             <button onClick={()=>setShowUserModal(true)} className="bg-indigo-600 text-white px-3 py-2 rounded-xl font-bold flex items-center gap-2 text-xs"><Plus size={16}/> Manual</button>
                         </div>
                     )}
@@ -107,7 +103,7 @@ const AdminDashboard = ({ onLogout }) => {
                 </div>
             )}
 
-            {showUserModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><form onSubmit={handleAddUser} className="bg-white p-6 rounded-2xl w-full max-w-sm"><h3 className="font-bold mb-4">Tambah User</h3><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Nama" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name: e.target.value})}/><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username: e.target.value})}/><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Password" value={newUser.password} onChange={e=>setNewUser({...newUser, password: e.target.value})}/><button className="w-full p-3 bg-indigo-600 text-white rounded-xl font-bold">Simpan</button><button type="button" onClick={()=>setShowUserModal(false)} className="w-full mt-2 p-3 bg-slate-100 rounded-xl font-bold">Batal</button></form></div>}
+            {showUserModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><form onSubmit={handleAddUser} className="bg-white p-6 rounded-2xl w-full max-w-sm"><h3 className="font-bold mb-4">Tambah Peserta</h3><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Nama" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name: e.target.value})}/><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username: e.target.value})}/><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Password" value={newUser.password} onChange={e=>setNewUser({...newUser, password: e.target.value})}/><select className="w-full mb-3 p-3 border rounded-xl" value={newUser.role} onChange={e=>setNewUser({...newUser, role: e.target.value})}><option value="peserta">Peserta</option><option value="admin">Admin</option></select><button className="w-full p-3 bg-indigo-600 text-white rounded-xl font-bold">Simpan</button><button type="button" onClick={()=>setShowUserModal(false)} className="w-full mt-2 p-3 bg-slate-100 rounded-xl font-bold">Batal</button></form></div>}
             {showPeriodModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><form onSubmit={handleAddPeriod} className="bg-white p-6 rounded-2xl w-full max-w-sm"><h3 className="font-bold mb-4">Paket Baru</h3><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Nama" value={newPeriod.name} onChange={e=>setNewPeriod({...newPeriod, name: e.target.value})}/><select className="w-full mb-3 p-3 border rounded-xl" value={newPeriod.exam_type} onChange={e=>setNewPeriod({...newPeriod, exam_type: e.target.value})}><option value="UTBK">UTBK</option><option value="CPNS">CPNS</option><option value="TKA">TKA</option><option value="MANDIRI">MANDIRI</option></select><button className="w-full p-3 bg-indigo-600 text-white rounded-xl font-bold">Buat</button><button type="button" onClick={()=>setShowPeriodModal(false)} className="w-full mt-2 p-3 bg-slate-100 rounded-xl font-bold">Batal</button></form></div>}
             {showLmsModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><form onSubmit={handleAddLms} className="bg-white p-6 rounded-2xl w-full max-w-sm"><h3 className="font-bold mb-4">Materi Baru</h3><input className="w-full mb-3 p-3 border rounded-xl" placeholder="Judul" value={newLms.title} onChange={e=>setNewLms({...newLms, title: e.target.value})}/><input className="w-full mb-3 p-3 border rounded-xl" placeholder="URL" value={newLms.url} onChange={e=>setNewLms({...newLms, url: e.target.value})}/><button className="w-full p-3 bg-indigo-600 text-white rounded-xl font-bold">Simpan</button><button type="button" onClick={()=>setShowLmsModal(false)} className="w-full mt-2 p-3 bg-slate-100 rounded-xl font-bold">Batal</button></form></div>}
         </div>
