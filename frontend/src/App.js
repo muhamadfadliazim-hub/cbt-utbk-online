@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import AdminDashboard from './AdminDashboard';
 import StudentDashboard from './StudentDashboard';
 import { API_URL } from './config';
-import { LogIn, User, Lock, Loader2, GraduationCap } from 'lucide-react';
+import { User, Lock, Loader2, GraduationCap } from 'lucide-react'; // Hapus LogIn jika tidak dipakai
 
 const App = () => {
     const [user, setUser] = useState(null);
@@ -30,7 +30,6 @@ const App = () => {
 
     if (user) {
         if (user.role === 'admin') return <AdminDashboard onLogout={handleLogout} />;
-        // Handle role 'peserta' atau 'student' (backward compatibility)
         return <StudentDashboard user={user} onLogout={handleLogout} />;
     }
 
@@ -54,7 +53,9 @@ const App = () => {
                             <label className="text-[10px] font-black text-indigo-400 uppercase ml-4">Password</label>
                             <div className="relative"><Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={20}/><input type="password" className="w-full bg-[#020617] text-white pl-16 pr-6 py-5 rounded-2xl border border-white/10 focus:border-indigo-500 outline-none font-bold" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} /></div>
                         </div>
-                        <button type="submit" disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-5 rounded-2xl font-black text-sm tracking-widest shadow-xl mt-4">{loading ? <Loader2 className="animate-spin"/> : "MASUK SYSTEM"}</button>
+                        <button type="submit" disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-5 rounded-2xl font-black text-sm tracking-widest shadow-xl mt-4 flex justify-center items-center gap-2">
+                            {loading ? <Loader2 className="animate-spin" size={20}/> : "MASUK SYSTEM"}
+                        </button>
                     </form>
                 </div>
             </div>

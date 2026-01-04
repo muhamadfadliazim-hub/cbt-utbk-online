@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Play, BarChart2, LogOut, ChevronLeft, ChevronRight, Home, BookOpen, Award, FileText, CheckCircle, XCircle } from 'lucide-react';
+import { Play, BarChart2, LogOut, ChevronLeft, ChevronRight, Home, BookOpen, Award, FileText, XCircle } from 'lucide-react'; // Hapus CheckCircle
 import { API_URL } from './config';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
@@ -40,6 +40,23 @@ const StudentDashboard = ({ user, onLogout }) => {
 
     useEffect(() => { if(mode === 'exam' && timeLeft > 0) { const t = setInterval(()=>setTimeLeft(p=>p-1), 1000); return ()=>clearInterval(t); } else if(mode === 'exam' && timeLeft === 0) { alert("WAKTU HABIS!"); submitExam(); } }, [timeLeft, mode, submitExam]);
 
+    // Handle Answers (PG Kompleks / Boolean)
+    const handleAnswer = (qid, val, type, optId=null) => {
+        if(mode === 'review') return;
+        setAnswers(prev => {
+            if (type === 'PG_KOMPLEKS') {
+                const current = prev[qid] || [];
+                if (current.includes(val)) return {...prev, [qid]: current.filter(x => x !== val)};
+                return {...prev, [qid]: [...current, val]};
+            }
+            if (type === 'BOOLEAN') {
+                const current = prev[qid] || {};
+                return {...prev, [qid]: {...current, [optId]: val}};
+            }
+            return {...prev, [qid]: val};
+        });
+    };
+
     if(mode && examData) {
         const q = examData.questions[qIdx];
         const isReview = mode === 'review';
@@ -55,7 +72,50 @@ const StudentDashboard = ({ user, onLogout }) => {
                     <div className={`h-full overflow-y-auto p-6 bg-white ${q.passage ? 'w-full lg:w-1/2' : 'w-full max-w-5xl mx-auto'}`}>
                         {q.media && <img src={q.media} alt="Soal" className="max-h-48 object-contain mb-4 border rounded"/>}
                         <div className="mb-6"><RenderSoal text={q.text}/></div>
-                        <div className="space-y-3">{q.options?.map(o => { let style = "border-slate-200 bg-white"; if(isReview) { if(o.is_correct) style = "border-emerald-500 bg-emerald-50"; else if(answers[q.id] === o.id && !o.is_correct) style = "border-rose-500 bg-rose-50"; else style = "opacity-50 border-slate-100"; } else { if(answers[q.id] === o.id) style = "border-blue-600 bg-blue-50 ring-1 ring-blue-400"; } return (<button key={o.id} onClick={()=>!isReview && setAnswers({...answers, [q.id]:o.id})} disabled={isReview} className={`w-full p-4 text-left border-2 rounded-xl flex gap-4 transition-all ${style}`}><div className="font-bold">{o.id}</div><div><RenderSoal text={o.label}/></div></button>); })}</div>
+                        
+                        {/* INPUT ANSWER */}
+                        {q.type === 'ISIAN' ? (
+                            <div className="space-y-2">
+                                <input className="w-full p-4 border-2 rounded-xl text-xl font-bold" placeholder="Jawaban Singkat..." value={isReview ? q.user_answer : (answers[q.id]||'')} onChange={e=>handleAnswer(q.id, e.target.value, 'ISIAN')} disabled={isReview}/>
+                                {isReview && <div className="text-emerald-600 font-bold">Kunci: {q.correct_isian}</div>}
+                            </div>
+                        ) : q.type === 'BOOLEAN' ? (
+                            <div className="border rounded-xl overflow-hidden">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-slate-100"><tr><th className="p-3 text-left">Pernyataan</th><th className="p-3 w-16 text-center">Benar</th><th className="p-3 w-16 text-center">Salah</th></tr></thead>
+                                    <tbody>
+                                        {q.options.map(o => (
+                                            <tr key={o.id} className="border-t">
+                                                <td className="p-3"><RenderSoal text={o.label}/></td>
+                                                <td className="p-3 text-center"><input type="radio" name={`bool-${q.id}-${o.id}`} checked={isReview ? (q.user_answer?.[o.id] === 'B') : (answers[q.id]?.[o.id] === 'B')} onChange={()=>handleAnswer(q.id, 'B', 'BOOLEAN', o.id)} disabled={isReview}/></td>
+                                                <td className="p-3 text-center"><input type="radio" name={`bool-${q.id}-${o.id}`} checked={isReview ? (q.user_answer?.[o.id] === 'S') : (answers[q.id]?.[o.id] === 'S')} onChange={()=>handleAnswer(q.id, 'S', 'BOOLEAN', o.id)} disabled={isReview}/></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {q.options?.map(o => {
+                                    let style = "border-slate-200 bg-white";
+                                    const isSelected = q.type==='PG_KOMPLEKS' ? (answers[q.id]||[]).includes(o.id) : (answers[q.id] === o.id);
+                                    if(isReview) {
+                                        if(o.is_correct) style = "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500";
+                                        else if(q.type==='PG' && q.user_answer === o.id && !o.is_correct) style = "border-rose-500 bg-rose-50";
+                                        else style = "opacity-50 border-slate-100";
+                                    } else {
+                                        if(isSelected) style = "border-blue-600 bg-blue-50 ring-1 ring-blue-400";
+                                    }
+                                    return (
+                                        <button key={o.id} onClick={()=>handleAnswer(q.id, o.id, q.type)} disabled={isReview} className={`w-full p-4 text-left border-2 rounded-xl flex gap-4 transition-all ${style}`}>
+                                            <div className={`w-6 h-6 rounded flex items-center justify-center font-bold text-xs ${isSelected?'bg-blue-600 text-white':'bg-slate-200 text-slate-600'}`}>{q.type==='PG_KOMPLEKS' ? (isSelected?'✓':'') : o.id}</div>
+                                            <div><RenderSoal text={o.label}/></div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
                         {isReview && <div className="mt-8 p-6 bg-yellow-50 border border-yellow-200 rounded-xl"><h4 className="font-bold text-yellow-800 mb-2 flex items-center gap-2"><BookOpen size={18}/> PEMBAHASAN:</h4><div className="text-slate-700 leading-relaxed"><RenderSoal text={q.explanation || "Tidak ada pembahasan."}/></div></div>}
                     </div>
                 </div>
@@ -73,14 +133,7 @@ const StudentDashboard = ({ user, onLogout }) => {
             <div className="max-w-6xl mx-auto px-4 space-y-6">
                 {view === 'home' && (
                     <>
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border flex flex-col md:flex-row justify-between gap-4">
-                            <div><h2 className="font-bold text-lg">Target Kampus</h2><p className="text-xs text-slate-500">Pilih jurusan impianmu.</p></div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full md:w-2/3">
-                                <div className="space-y-1"><select className="w-full p-2 border rounded font-bold text-xs" value={selectedUni1} onChange={e=>setSelectedUni1(e.target.value)}><option value="">Univ 1</option>{uniList.map(u=><option key={u} value={u}>{u}</option>)}</select><select className="w-full p-2 border rounded text-xs" value={selectedMajor.m1} onChange={e=>setSelectedMajor({...selectedMajor, m1:e.target.value})}><option value="">Prodi 1</option>{prodiList1.map(m=><option key={m.id} value={m.id}>{m.program} (PG: {m.passing_grade})</option>)}</select></div>
-                                <div className="space-y-1"><select className="w-full p-2 border rounded font-bold text-xs" value={selectedUni2} onChange={e=>setSelectedUni2(e.target.value)}><option value="">Univ 2</option>{uniList.map(u=><option key={u} value={u}>{u}</option>)}</select><select className="w-full p-2 border rounded text-xs" value={selectedMajor.m2} onChange={e=>setSelectedMajor({...selectedMajor, m2:e.target.value})}><option value="">Prodi 2</option>{prodiList2.map(m=><option key={m.id} value={m.id}>{m.program} (PG: {m.passing_grade})</option>)}</select></div>
-                                <button onClick={saveMajors} className="bg-indigo-600 text-white p-2 rounded font-bold text-xs md:col-span-2">SIMPAN TARGET</button>
-                            </div>
-                        </div>
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border flex flex-col md:flex-row justify-between gap-4"><div><h2 className="font-bold text-lg">Target Kampus</h2><p className="text-xs text-slate-500">Pilih jurusan impianmu.</p></div><div className="flex gap-2"><select className="p-2 border rounded-lg text-sm font-bold w-full md:w-64" value={selectedUni1} onChange={e=>setSelectedUni1(e.target.value)}><option value="">Univ 1</option>{uniList.map(u=><option key={u} value={u}>{u}</option>)}</select><select className="p-2 border rounded-lg text-sm font-bold w-full md:w-64" value={selectedMajor.m1} onChange={e=>setSelectedMajor({...selectedMajor, m1:e.target.value})}><option value="">Pilihan 1</option>{prodiList1.map(m=><option key={m.id} value={m.id}>{m.university} - {m.program}</option>)}</select><button onClick={saveMajors} className="bg-indigo-600 text-white px-4 rounded-lg font-bold text-xs">SIMPAN</button></div></div>
                         <div className="bg-indigo-900 text-white p-6 rounded-2xl shadow-lg relative overflow-hidden flex flex-col md:flex-row items-center justify-between"><div className="mb-4 md:mb-0"><h3 className="font-bold mb-1 flex items-center gap-2"><BarChart2/> Peta Kekuatan</h3><p className="text-xs text-indigo-300">Analisis performa real-time.</p></div><RadarChartMock/></div>
                         <div className="flex gap-2 overflow-x-auto pb-2">{['ALL', 'UTBK', 'CPNS', 'TKA', 'MANDIRI'].map(t => (<button key={t} onClick={()=>setFilterType(t)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${filterType===t ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-600 border border-slate-200'}`}>{t === 'ALL' ? 'SEMUA UJIAN' : t}</button>))}</div>
                         <div className="space-y-6">{filteredPeriods.map(p => (<div key={p.id} className="bg-white p-6 rounded-2xl shadow-sm border"><h3 className="font-black text-lg mb-4">{p.name} <span className="bg-indigo-50 text-indigo-600 px-2 py-1 rounded text-xs ml-2">{p.type}</span></h3><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{p.exams.map(e => (<div key={e.id} className={`p-4 rounded-xl border-2 transition-all ${e.status==='done'?'bg-emerald-50 border-emerald-100':'bg-white hover:border-indigo-500'}`}><p className="font-bold text-sm truncate mb-2">{e.title}</p><div className="flex justify-between items-center"><span className="text-xs font-bold text-slate-400">{e.duration}m</span>{e.status==='done' ? (<button onClick={()=>openReview(e.id)} className="bg-emerald-600 text-white px-3 py-1 rounded-lg text-xs font-bold shadow-emerald-200 shadow-lg hover:scale-105 transition-all">LIHAT PEMBAHASAN</button>) : (<button onClick={()=>startExam(e.id)} className="bg-indigo-600 text-white p-2 rounded-lg"><Play size={14}/></button>)}</div></div>))}</div></div>))}</div>
