@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Play, BarChart2, LogOut, ChevronLeft, ChevronRight, Home, BookOpen, Award, FileText, CheckCircle, XCircle } from 'lucide-react';
+import { Play, BarChart2, LogOut, ChevronLeft, ChevronRight, Home, BookOpen, Award, FileText, CheckCircle, XCircle, Info } from 'lucide-react';
 import { API_URL } from './config';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
@@ -18,7 +18,7 @@ const StudentDashboard = ({ user, onLogout }) => {
     const [majors, setMajors] = useState([]);
     const [selectedMajor, setSelectedMajor] = useState({ m1: user.c1||'', m2: user.c2||'' });
     const [filterType, setFilterType] = useState('ALL');
-    const [mode, setMode] = useState(null);
+    const [mode, setMode] = useState(null); // 'exam', 'review'
     const [examData, setExamData] = useState(null);
     const [answers, setAnswers] = useState({});
     const [qIdx, setQIdx] = useState(0);
@@ -33,11 +33,31 @@ const StudentDashboard = ({ user, onLogout }) => {
 
     const saveMajors = () => { fetch(`${API_URL}/student/majors`, {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({username: user.username, m1: selectedMajor.m1, m2: selectedMajor.m2})}).then(()=>alert("Target Disimpan!")); };
 
-    const startExam = (eid) => { if(!window.confirm("Mulai ujian?")) return; fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{ setExamData(d); setMode('exam'); setQIdx(0); setTimeLeft(d.duration * 60); }); };
-    const submitExam = useCallback(() => { fetch(`${API_URL}/exams/${examData.id}/submit`, {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({username: user.username, answers})}).then(r=>r.json()).then(res => { alert(`Skor: ${res.score}`); setMode(null); refresh(); }); }, [examData, user.username, answers, refresh]);
+    const startExam = (eid) => { if(!window.confirm("Mulai ujian?")) return; fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{ setExamData(d); setMode('exam'); setQIdx(0); setTimeLeft(d.duration * 60); setAnswers({}); }); };
     const openReview = (eid) => { fetch(`${API_URL}/exams/${eid}/review?username=${user.username}`).then(r=>r.json()).then(d=>{ setExamData(d); setMode('review'); setQIdx(0); }); };
+    
+    const submitExam = useCallback(() => {
+        fetch(`${API_URL}/exams/${examData.id}/submit`, {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({username: user.username, answers})}).then(r=>r.json()).then(res => { alert(`Selesai! Skor: ${res.score}`); setMode(null); refresh(); });
+    }, [examData, user.username, answers, refresh]);
 
     useEffect(() => { if(mode === 'exam' && timeLeft > 0) { const t = setInterval(()=>setTimeLeft(p=>p-1), 1000); return ()=>clearInterval(t); } else if(mode === 'exam' && timeLeft === 0) { alert("WAKTU HABIS!"); submitExam(); } }, [timeLeft, mode, submitExam]);
+
+    // HANDLE ANSWER INPUT
+    const handleAnswer = (qid, val, type, optId=null) => {
+        if(mode === 'review') return;
+        setAnswers(prev => {
+            if (type === 'PG_KOMPLEKS') {
+                const current = prev[qid] || [];
+                if (current.includes(val)) return {...prev, [qid]: current.filter(x => x !== val)};
+                return {...prev, [qid]: [...current, val]};
+            }
+            if (type === 'BOOLEAN') {
+                const current = prev[qid] || {};
+                return {...prev, [qid]: {...current, [optId]: val}}; // val is 'B' or 'S'
+            }
+            return {...prev, [qid]: val};
+        });
+    };
 
     if(mode && examData) {
         const q = examData.questions[qIdx];
@@ -54,7 +74,50 @@ const StudentDashboard = ({ user, onLogout }) => {
                     <div className={`h-full overflow-y-auto p-6 bg-white ${q.passage ? 'w-full lg:w-1/2' : 'w-full max-w-5xl mx-auto'}`}>
                         {q.media && <img src={q.media} alt="Soal" className="max-h-48 object-contain mb-4 border rounded"/>}
                         <div className="mb-6"><RenderSoal text={q.text}/></div>
-                        <div className="space-y-3">{q.options?.map(o => { let style = "border-slate-200 bg-white"; if(isReview) { if(o.is_correct) style = "border-emerald-500 bg-emerald-50"; else if(answers[q.id] === o.id && !o.is_correct) style = "border-rose-500 bg-rose-50"; else style = "opacity-50 border-slate-100"; } else { if(answers[q.id] === o.id) style = "border-blue-600 bg-blue-50 ring-1 ring-blue-400"; } return (<button key={o.id} onClick={()=>!isReview && setAnswers({...answers, [q.id]:o.id})} disabled={isReview} className={`w-full p-4 text-left border-2 rounded-xl flex gap-4 transition-all ${style}`}><div className="font-bold">{o.id}</div><div><RenderSoal text={o.label}/></div></button>); })}</div>
+                        
+                        {/* RENDER VARIATION */}
+                        {q.type === 'ISIAN' ? (
+                            <div className="space-y-2">
+                                <input className="w-full p-4 border-2 rounded-xl text-xl font-bold" placeholder="Jawaban Singkat..." value={isReview ? q.user_answer : (answers[q.id]||'')} onChange={e=>handleAnswer(q.id, e.target.value, 'ISIAN')} disabled={isReview}/>
+                                {isReview && <div className="text-emerald-600 font-bold">Kunci: {q.correct_isian}</div>}
+                            </div>
+                        ) : q.type === 'BOOLEAN' ? (
+                            <div className="border rounded-xl overflow-hidden">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-slate-100"><tr><th className="p-3 text-left">Pernyataan</th><th className="p-3 w-16 text-center">Benar</th><th className="p-3 w-16 text-center">Salah</th></tr></thead>
+                                    <tbody>
+                                        {q.options.map(o => (
+                                            <tr key={o.id} className="border-t">
+                                                <td className="p-3"><RenderSoal text={o.label}/></td>
+                                                <td className="p-3 text-center"><input type="radio" name={`bool-${q.id}-${o.id}`} checked={isReview ? (q.user_answer?.[o.id] === 'B') : (answers[q.id]?.[o.id] === 'B')} onChange={()=>handleAnswer(q.id, 'B', 'BOOLEAN', o.id)} disabled={isReview}/></td>
+                                                <td className="p-3 text-center"><input type="radio" name={`bool-${q.id}-${o.id}`} checked={isReview ? (q.user_answer?.[o.id] === 'S') : (answers[q.id]?.[o.id] === 'S')} onChange={()=>handleAnswer(q.id, 'S', 'BOOLEAN', o.id)} disabled={isReview}/></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {q.options?.map(o => {
+                                    let style = "border-slate-200 bg-white";
+                                    const isSelected = q.type==='PG_KOMPLEKS' ? (answers[q.id]||[]).includes(o.id) : (answers[q.id] === o.id);
+                                    if(isReview) {
+                                        if(o.is_correct) style = "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500";
+                                        else if(q.type==='PG' && q.user_answer === o.id && !o.is_correct) style = "border-rose-500 bg-rose-50";
+                                        else style = "opacity-50 border-slate-100";
+                                    } else {
+                                        if(isSelected) style = "border-blue-600 bg-blue-50 ring-1 ring-blue-400";
+                                    }
+                                    return (
+                                        <button key={o.id} onClick={()=>handleAnswer(q.id, o.id, q.type)} disabled={isReview} className={`w-full p-4 text-left border-2 rounded-xl flex gap-4 transition-all ${style}`}>
+                                            <div className={`w-6 h-6 rounded flex items-center justify-center font-bold text-xs ${isSelected?'bg-blue-600 text-white':'bg-slate-200 text-slate-600'}`}>{q.type==='PG_KOMPLEKS' ? (isSelected?'✓':'') : o.id}</div>
+                                            <div><RenderSoal text={o.label}/></div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
                         {isReview && <div className="mt-8 p-6 bg-yellow-50 border border-yellow-200 rounded-xl"><h4 className="font-bold text-yellow-800 mb-2 flex items-center gap-2"><BookOpen size={18}/> PEMBAHASAN:</h4><div className="text-slate-700 leading-relaxed"><RenderSoal text={q.explanation || "Tidak ada pembahasan."}/></div></div>}
                     </div>
                 </div>
@@ -78,9 +141,10 @@ const StudentDashboard = ({ user, onLogout }) => {
                         <div className="space-y-6">{filteredPeriods.map(p => (<div key={p.id} className="bg-white p-6 rounded-2xl shadow-sm border"><h3 className="font-black text-lg mb-4">{p.name} <span className="bg-indigo-50 text-indigo-600 px-2 py-1 rounded text-xs ml-2">{p.type}</span></h3><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{p.exams.map(e => (<div key={e.id} className={`p-4 rounded-xl border-2 transition-all ${e.status==='done'?'bg-emerald-50 border-emerald-100':'bg-white hover:border-indigo-500'}`}><p className="font-bold text-sm truncate mb-2">{e.title}</p><div className="flex justify-between items-center"><span className="text-xs font-bold text-slate-400">{e.duration}m</span>{e.status==='done' ? (<button onClick={()=>openReview(e.id)} className="bg-emerald-600 text-white px-3 py-1 rounded-lg text-xs font-bold shadow-emerald-200 shadow-lg hover:scale-105 transition-all">LIHAT PEMBAHASAN</button>) : (<button onClick={()=>startExam(e.id)} className="bg-indigo-600 text-white p-2 rounded-lg"><Play size={14}/></button>)}</div></div>))}</div></div>))}</div>
                     </>
                 )}
+                {view === 'results' && (<div className="bg-white p-8 rounded-3xl shadow-sm border"><h2 className="text-2xl font-black mb-6 flex items-center gap-3"><Award className="text-emerald-500"/> Riwayat Hasil</h2><table className="w-full text-left"><thead className="bg-slate-50 border-b text-xs font-bold text-slate-500 uppercase"><tr><th className="p-4">Ujian</th><th className="p-4">Tanggal</th><th className="p-4">Benar</th><th className="p-4">Skor</th></tr></thead><tbody>{data.history?.map((h, i) => (<tr key={i} className="border-b hover:bg-slate-50"><td className="p-4 font-bold">{h.exam}</td><td className="p-4 text-xs text-slate-500">{new Date(h.date).toLocaleDateString()}</td><td className="p-4 font-mono">{h.correct}</td><td className="p-4 font-black text-emerald-600">{h.score}</td></tr>))}</tbody></table></div>)}
                 {view === 'lms' && (<div className="space-y-6"><h2 className="text-xl font-black flex items-center gap-3"><BookOpen className="text-blue-500"/> Materi Belajar</h2><div className="grid grid-cols-1 md:grid-cols-3 gap-6">{data.materials?.map(m => (<div key={m.id} className="bg-white p-6 rounded-2xl shadow-sm border hover:shadow-md transition-all"><div className="flex justify-between items-start mb-4"><div className={`p-3 rounded-xl ${m.type==='video'?'bg-rose-50 text-rose-500':'bg-blue-50 text-blue-500'}`}><FileText size={24}/></div><span className="text-[10px] font-bold uppercase bg-slate-100 px-2 py-1 rounded">{m.category}</span></div><h3 className="font-bold text-sm mb-2">{m.title}</h3><button onClick={()=>window.open(m.content_url)} className="w-full mt-4 py-2 border-2 border-indigo-600 text-indigo-600 rounded-lg font-bold text-xs hover:bg-indigo-50">BUKA</button></div>))}</div></div>)}
             </div>
-            <div className="fixed bottom-0 left-0 w-full bg-white border-t flex justify-around py-3 z-40 shadow-[0_-10px_20px_rgba(0,0,0,0.05)] text-xs"><button onClick={()=>setView('home')} className={`flex flex-col items-center gap-1 font-bold ${view==='home'?'text-indigo-600':'text-slate-400'}`}><Home size={20}/> Beranda</button><button onClick={()=>setView('lms')} className={`flex flex-col items-center gap-1 font-bold ${view==='lms'?'text-indigo-600':'text-slate-400'}`}><BookOpen size={20}/> LMS</button></div>
+            <div className="fixed bottom-0 left-0 w-full bg-white border-t flex justify-around py-3 z-40 shadow-[0_-10px_20px_rgba(0,0,0,0.05)] text-xs"><button onClick={()=>setView('home')} className={`flex flex-col items-center gap-1 font-bold ${view==='home'?'text-indigo-600':'text-slate-400'}`}><Home size={20}/> Beranda</button><button onClick={()=>setView('results')} className={`flex flex-col items-center gap-1 font-bold ${view==='results'?'text-indigo-600':'text-slate-400'}`}><Award size={20}/> Hasil</button><button onClick={()=>setView('lms')} className={`flex flex-col items-center gap-1 font-bold ${view==='lms'?'text-indigo-600':'text-slate-400'}`}><BookOpen size={20}/> LMS</button></div>
         </div>
     );
 };

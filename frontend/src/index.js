@@ -1,8 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import './index.css';
+import './index.css'; // Wajib untuk Tailwind
 import App from './App';
-import 'katex/dist/katex.min.css'; // <--- TAMBAHKAN INI WAJIB UNTUK RUMUS MTK
+import 'katex/dist/katex.min.css'; // Wajib untuk Rumus MTK
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
