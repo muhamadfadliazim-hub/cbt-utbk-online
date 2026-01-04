@@ -16,11 +16,12 @@ const StudentDashboard = ({ user, onLogout }) => {
     const [view, setView] = useState('home');
     const [data, setData] = useState(null);
     const [majors, setMajors] = useState([]);
+    
+    // Filter State
     const [selectedMajor, setSelectedMajor] = useState({ m1: user.c1||'', m2: user.c2||'' });
     const [filterType, setFilterType] = useState('ALL');
     const [lmsTab, setLmsTab] = useState('UTBK');
     
-    // Filter State
     const [uniList, setUniList] = useState([]);
     const [prodiList1, setProdiList1] = useState([]);
     const [prodiList2, setProdiList2] = useState([]);
@@ -34,14 +35,13 @@ const StudentDashboard = ({ user, onLogout }) => {
     const [qIdx, setQIdx] = useState(0);
     const [timeLeft, setTimeLeft] = useState(0);
     const [showNav, setShowNav] = useState(false);
-    const [periodSettings, setPeriodSettings] = useState({}); // Store Period settings (can_finish, show_result)
+    const [periodSettings, setPeriodSettings] = useState({});
 
     const refresh = useCallback(() => {
         fetch(`${API_URL}/student/data?username=${user.username}`).then(r=>r.json()).then(d => {
             setData(d);
-            // Cache settings
             const settings = {};
-            d.periods.forEach(p => { settings[p.id] = {show_result: p.show_result, can_finish: p.can_finish_early}; });
+            if(d.periods) d.periods.forEach(p => { settings[p.id] = {show_result: p.show_result, can_finish: p.can_finish_early}; });
             setPeriodSettings(settings);
         });
         fetch(`${API_URL}/majors`).then(r=>r.json()).then(d => { setMajors(d); const unis = [...new Set(d.map(item => item.university))].sort(); setUniList(unis); });
@@ -53,11 +53,10 @@ const StudentDashboard = ({ user, onLogout }) => {
 
     const saveMajors = () => { fetch(`${API_URL}/student/majors`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user.username, m1:selectedMajor.m1, m2:selectedMajor.m2})}).then(()=>alert("Target Disimpan!")); };
     
-    // Start Exam: Save period settings context
     const startExam = (eid, pid) => { 
         if(!window.confirm("Mulai Ujian?")) return; 
         fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{ 
-            setExamData({...d, periodId: pid}); // Inject PID
+            setExamData({...d, periodId: pid}); 
             setMode('exam'); setQIdx(0); setTimeLeft(d.duration * 60); setAnswers({}); 
         }); 
     };
@@ -65,7 +64,7 @@ const StudentDashboard = ({ user, onLogout }) => {
     const submitExam = useCallback(() => { 
         fetch(`${API_URL}/exams/${examData.id}/submit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user.username, answers})})
         .then(r=>r.json()).then(res => {
-            alert(res.score !== null ? `Skor Akhir: ${res.score}` : "Jawaban Tersimpan. Nilai disembunyikan oleh admin.");
+            alert(res.score !== null ? `Skor Akhir: ${res.score}` : "Jawaban Tersimpan.");
             setMode(null); refresh();
         }); 
     }, [examData, user.username, answers, refresh]);
@@ -79,7 +78,6 @@ const StudentDashboard = ({ user, onLogout }) => {
     if(mode && examData) {
         const q = examData.questions[qIdx];
         const isReview = mode === 'review';
-        // Logic Finish Early
         const currentSettings = periodSettings[examData.periodId] || {can_finish: true};
         const canFinish = isReview ? false : (currentSettings.can_finish || timeLeft === 0);
 
@@ -100,11 +98,7 @@ const StudentDashboard = ({ user, onLogout }) => {
                                 <button key={i} onClick={()=>{setQIdx(i); setShowNav(false);}} className={`h-10 rounded font-bold text-sm ${i===qIdx?'bg-indigo-600 text-white': answers[examData.questions[i].id]?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{i+1}</button>
                             ))}
                         </div>
-                        {!isReview && <div className="p-4 border-t">
-                            <button onClick={submitExam} disabled={!canFinish} className={`w-full py-3 rounded-xl font-bold ${canFinish ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
-                                {canFinish ? 'KUMPULKAN' : 'BELUM BISA SELESAI'}
-                            </button>
-                        </div>}
+                        {!isReview && <div className="p-4 border-t"><button onClick={submitExam} disabled={!canFinish} className={`w-full py-3 rounded-xl font-bold ${canFinish?'bg-indigo-600 text-white hover:bg-indigo-700':'bg-slate-200 text-slate-400'}`}>{canFinish?'KUMPULKAN':'BELUM BISA SELESAI'}</button></div>}
                     </div>
                     <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-[#F8FAFC]">
                         {q.passage && <div className="w-full md:w-1/2 h-[30%] md:h-full overflow-y-auto p-6 border-b md:border-r bg-white"><div className="prose max-w-none"><RenderSoal text={q.passage}/></div></div>}
@@ -136,9 +130,9 @@ const StudentDashboard = ({ user, onLogout }) => {
         );
     }
 
-    if(!data) return <div className="h-screen flex items-center justify-center font-bold text-slate-400">Loading V51...</div>;
+    if(!data) return <div className="h-screen flex items-center justify-center font-bold text-slate-400">Loading V52...</div>;
     const filteredPeriods = filterType === 'ALL' ? data.periods : data.periods.filter(p => p.type === filterType);
-    const filteredLMS = data.lms.filter(f => f.category === lmsTab);
+    const filteredLMS = data.lms ? data.lms.filter(f => f.category === lmsTab) : [];
 
     return (
         <div className="min-h-screen bg-[#F1F5F9] font-sans pb-28">
