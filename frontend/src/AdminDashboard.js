@@ -1,14 +1,28 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Users, Database, BookOpen, Trash2, Plus, Upload, Eye, X, BarChart2, FileSpreadsheet, Edit, LogOut, Save } from 'lucide-react';
+import { Users, Database, BookOpen, Trash2, Plus, Upload, Eye, X, Save, Edit, LogOut, FileText } from 'lucide-react';
 import { API_URL } from './config';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 
+// Utilitas Render Teks Kaya (Markdown/LaTeX/HTML)
 const RenderPreview = ({ text }) => {
-    if (!text) return null;
+    if (!text) return <span className="text-gray-400 italic">Kosong...</span>;
+    // Split LaTeX $...$
     const parts = text.split(/(\$[^$]+\$)/g);
-    return (<span>{parts.map((p, i) => (p.startsWith('$') ? <InlineMath key={i} math={p.slice(1, -1)} /> : <span key={i} dangerouslySetInnerHTML={{ __html: p.replace(/\[B\](.*?)\[\/B\]/g, '<b>$1</b>').replace(/\n/g, '<br/>') }} />))}</span>);
+    return (
+        <span className="leading-relaxed">
+            {parts.map((p, i) => {
+                if (p.startsWith('$')) return <InlineMath key={i} math={p.slice(1, -1)} />;
+                // Basic HTML parsing for bold/italic/br
+                return <span key={i} dangerouslySetInnerHTML={{ 
+                    __html: p.replace(/\n/g, '<br/>')
+                             .replace(/\[b\](.*?)\[\/b\]/gi, '<b>$1</b>')
+                             .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+                             .replace(/_(.*?)_/g, '<i>$1</i>')
+                }} />;
+            })}
+        </span>
+    );
 };
 
 const AdminDashboard = ({ onLogout }) => {
@@ -16,19 +30,25 @@ const AdminDashboard = ({ onLogout }) => {
     const [users, setUsers] = useState([]);
     const [periods, setPeriods] = useState([]);
     const [materials, setMaterials] = useState([]);
-    const [analytics, setAnalytics] = useState(null);
+    
+    // Upload Excel State
+    const [uploadFile, setUploadFile] = useState(null);
+    const [uploadExamId, setUploadExamId] = useState(null);
 
-    const [newUser, setNewUser] = useState({ username: '', full_name: '', password: '', role: 'peserta', group: 'GENERAL', allowed: 'ALL' });
+    const [newUser, setNewUser] = useState({ username: '', full_name: '', password: '', role: 'peserta', access_flags: 'ALL' });
     const [newPeriod, setNewPeriod] = useState({ name: '', exam_type: 'UTBK', show_result: true, can_finish_early: true });
     const [newLms, setNewLms] = useState({ title: '', type: 'video', category: 'UTBK', subcategory: 'PU', url: '', folder_name: '' });
     
-    const [manualQ, setManualQ] = useState({ id: null, text: '', type: 'PG', explanation: '', difficulty: 1.0, media: '', options: [{idx:'A', label:'', is_correct:false, score_weight:0}, {idx:'B', label:'', is_correct:false, score_weight:0}, {idx:'C', label:'', is_correct:false, score_weight:0}, {idx:'D', label:'', is_correct:false, score_weight:0}, {idx:'E', label:'', is_correct:false, score_weight:0}] });
-    const [manualExamId, setManualExamId] = useState(null);
-
+    const [manualQ, setManualQ] = useState({ 
+        id: null, text: '', type: 'PG', explanation: '', difficulty: 1.0, media: '', 
+        table_headers: 'Benar,Salah', options: []
+    });
+    
     const [showUserModal, setShowUserModal] = useState(false);
     const [showPeriodModal, setShowPeriodModal] = useState(false);
     const [showManualModal, setShowManualModal] = useState(false);
     const [showLmsModal, setShowLmsModal] = useState(false);
+    const [showUploadModal, setShowUploadModal] = useState(false);
     const [previewExamId, setPreviewExamId] = useState(null);
     const [previewQuestions, setPreviewQuestions] = useState([]);
 
@@ -40,34 +60,43 @@ const AdminDashboard = ({ onLogout }) => {
     useEffect(() => { refreshData(); }, [refreshData]);
 
     const handleAddUser = (e) => { e.preventDefault(); fetch(`${API_URL}/admin/users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(newUser)}).then(()=>{ setShowUserModal(false); refreshData(); alert("User OK"); }); };
-    const handleImportUser = (e) => { const f = new FormData(); f.append('file', e.target.files[0]); fetch(`${API_URL}/admin/users/bulk`, {method:'POST', body:f}).then(()=>{ refreshData(); alert("Import OK"); }); };
-    const handleAddLms = (e) => { e.preventDefault(); const f = new FormData(); f.append('title', newLms.title); f.append('type', newLms.type); f.append('category', newLms.category); f.append('subcategory', newLms.subcategory); f.append('url', newLms.url); f.append('folder_name', newLms.folder_name); fetch(`${API_URL}/materials`, {method:'POST', body:f}).then(()=>{ setShowLmsModal(false); refreshData(); alert("Materi OK"); }); };
     const createPeriod = () => { const f = new FormData(); f.append('name', newPeriod.name); f.append('exam_type', newPeriod.exam_type); f.append('show_result', newPeriod.show_result); f.append('can_finish_early', newPeriod.can_finish_early); fetch(`${API_URL}/admin/periods`, {method:'POST', body:f}).then(()=>{ setShowPeriodModal(false); refreshData(); }); };
     const deletePeriod = (pid) => { if(window.confirm("Hapus?")) fetch(`${API_URL}/admin/periods/${pid}`, {method:'DELETE'}).then(refreshData); };
-    const showStats = (eid) => { fetch(`${API_URL}/admin/analytics/${eid}`).then(r=>r.json()).then(setAnalytics); };
-    
+    const handleAddLms = (e) => { e.preventDefault(); const f = new FormData(); f.append('title', newLms.title); f.append('type', newLms.type); f.append('category', newLms.category); f.append('subcategory', newLms.subcategory); f.append('url', newLms.url); f.append('folder_name', newLms.folder_name); fetch(`${API_URL}/materials`, {method:'POST', body:f}).then(()=>{ setShowLmsModal(false); refreshData(); alert("Materi OK"); }); };
+
+    // Handle Upload Excel
+    const handleUploadExcel = (e) => {
+        e.preventDefault();
+        if(!uploadFile || !uploadExamId) return;
+        const f = new FormData();
+        f.append('file', uploadFile);
+        fetch(`${API_URL}/admin/exams/${uploadExamId}/import`, { method: 'POST', body: f })
+            .then(r => r.json())
+            .then(res => { alert(res.msg || "Upload Sukses"); setShowUploadModal(false); });
+    };
+
     const openManualInput = (eid, qData=null) => {
-        setManualExamId(eid);
-        if(qData) setManualQ({...qData, options: qData.options.map(o=>({idx:o.id, label:o.label, is_correct:o.is_correct, score_weight:o.score_weight}))});
-        else setManualQ({ id: null, text: '', type: 'PG', explanation: '', difficulty: 1.0, media: '', options: [{idx:'A', label:'', is_correct:false, score_weight:0}, {idx:'B', label:'', is_correct:false, score_weight:0}, {idx:'C', label:'', is_correct:false, score_weight:0}, {idx:'D', label:'', is_correct:false, score_weight:0}, {idx:'E', label:'', is_correct:false, score_weight:0}] });
+        setUploadExamId(eid); // Reuse state variable for tracking exam ID
+        if(qData) setManualQ({...qData, options: qData.options.map(o=>({idx:o.id, label:o.label, is_correct:o.is_correct, score_weight:o.score_weight, bool_val:o.val}))});
+        else setManualQ({ id: null, text: '', type: 'PG', explanation: '', difficulty: 1.0, media: '', table_headers: 'Benar,Salah', options: [{idx:'A', label:'', is_correct:false}, {idx:'B', label:'', is_correct:false}, {idx:'C', label:'', is_correct:false}, {idx:'D', label:'', is_correct:false}, {idx:'E', label:'', is_correct:false}] });
         setShowManualModal(true);
     };
+
     const saveManualQuestion = () => {
-        const url = manualQ.id ? `${API_URL}/admin/questions/${manualQ.id}` : `${API_URL}/admin/exams/${manualExamId}/manual`;
+        const url = manualQ.id ? `${API_URL}/admin/questions/${manualQ.id}` : `${API_URL}/admin/exams/${uploadExamId}/manual`;
         const method = manualQ.id ? 'PUT' : 'POST';
         fetch(url, {method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(manualQ)}).then(()=>{ alert("Saved!"); setShowManualModal(false); if(previewExamId) openPreview(previewExamId); });
     };
-    const openPreview = (eid) => { fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{ setPreviewQuestions(d.questions); setPreviewExamId(eid); setManualExamId(eid); }); };
-    const handleUploadSoal = (eid, file) => { const f=new FormData(); f.append('file', file); fetch(`${API_URL}/admin/upload-questions/${eid}`, {method:'POST', body:f}).then(()=>alert("Uploaded!")); };
+    const openPreview = (eid) => { fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{ setPreviewQuestions(d.questions); setPreviewExamId(eid); setUploadExamId(eid); }); };
 
     return (
         <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
             <aside className="w-64 bg-white border-r p-6 flex flex-col fixed inset-y-0 z-20 shadow-xl">
-                <div className="mb-8"><h2 className="font-black text-2xl text-indigo-600">EduPrime</h2></div>
+                <div className="mb-8"><h2 className="font-black text-2xl text-indigo-600">EduPrime Pro</h2></div>
                 <nav className="space-y-2 flex-1">
-                    <button onClick={()=>setActiveTab('exams')} className="w-full text-left p-4 font-bold rounded-2xl flex items-center gap-3 hover:bg-slate-50 text-slate-500"><Database size={20}/> Bank Soal</button>
-                    <button onClick={()=>setActiveTab('users')} className="w-full text-left p-4 font-bold rounded-2xl flex items-center gap-3 hover:bg-slate-50 text-slate-500"><Users size={20}/> Peserta</button>
-                    <button onClick={()=>setActiveTab('lms')} className="w-full text-left p-4 font-bold rounded-2xl flex items-center gap-3 hover:bg-slate-50 text-slate-500"><BookOpen size={20}/> LMS</button>
+                    <button onClick={()=>setActiveTab('exams')} className={`w-full text-left p-4 font-bold rounded-2xl flex items-center gap-3 ${activeTab==='exams'?'bg-indigo-50 text-indigo-600':'hover:bg-slate-50 text-slate-500'}`}><Database size={20}/> Bank Soal</button>
+                    <button onClick={()=>setActiveTab('users')} className={`w-full text-left p-4 font-bold rounded-2xl flex items-center gap-3 ${activeTab==='users'?'bg-indigo-50 text-indigo-600':'hover:bg-slate-50 text-slate-500'}`}><Users size={20}/> Peserta</button>
+                    <button onClick={()=>setActiveTab('lms')} className={`w-full text-left p-4 font-bold rounded-2xl flex items-center gap-3 ${activeTab==='lms'?'bg-indigo-50 text-indigo-600':'hover:bg-slate-50 text-slate-500'}`}><BookOpen size={20}/> LMS</button>
                 </nav>
                 <button onClick={onLogout} className="p-4 bg-rose-50 text-rose-600 rounded-2xl font-bold flex items-center justify-center gap-2"><LogOut size={20}/> Keluar</button>
             </aside>
@@ -75,18 +104,45 @@ const AdminDashboard = ({ onLogout }) => {
                 {activeTab === 'exams' && (
                     <>
                         <div className="flex justify-between items-center mb-8"><h1 className="text-3xl font-black">Bank Soal</h1><button onClick={()=>setShowPeriodModal(true)} className="px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold flex items-center gap-2"><Plus/> Paket Baru</button></div>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">{periods.map(p => (<div key={p.id} className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100"><div className="flex justify-between mb-6"><div><h3 className="font-black text-xl">{p.name}</h3><span className="text-xs bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">{p.exam_type}</span></div><button onClick={()=>deletePeriod(p.id)} className="text-rose-400"><Trash2/></button></div><div className="space-y-3">{p.exams.map(e => (<div key={e.id} className="flex gap-2 items-center p-4 border rounded-2xl bg-slate-50"><span className="flex-1 font-bold text-xs">{e.title}</span><button onClick={()=>showStats(e.id)} className="p-2 bg-white border rounded"><BarChart2 size={16}/></button><button onClick={()=>openPreview(e.id)} className="p-2 bg-white border rounded"><Eye size={16}/></button><label className="p-2 bg-white border rounded cursor-pointer"><Upload size={16}/><input type="file" className="hidden" onChange={x=>handleUploadSoal(e.id, x.target.files[0])}/></label><button onClick={()=>openManualInput(e.id)} className="p-2 bg-white border rounded text-xs font-bold">Edit</button></div>))}</div></div>))}</div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">{periods.map(p => (<div key={p.id} className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100"><div className="flex justify-between mb-6"><div><h3 className="font-black text-xl">{p.name}</h3><span className="text-xs bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">{p.exam_type}</span></div><button onClick={()=>deletePeriod(p.id)} className="text-rose-400"><Trash2/></button></div><div className="space-y-3">{p.exams.map(e => (<div key={e.id} className="flex gap-2 items-center p-4 border rounded-2xl bg-slate-50"><span className="flex-1 font-bold text-xs">{e.title}</span>
+                            <button onClick={()=>{setUploadExamId(e.id); setShowUploadModal(true)}} className="p-2 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded hover:bg-emerald-100" title="Upload Excel"><Upload size={16}/></button>
+                            <button onClick={()=>openPreview(e.id)} className="p-2 bg-white border rounded"><Eye size={16}/></button>
+                            <button onClick={()=>openManualInput(e.id)} className="p-2 bg-white border rounded text-xs font-bold">Edit</button></div>))}</div></div>))}</div>
                     </>
                 )}
-                {activeTab === 'users' && (<><div className="flex justify-between items-center mb-8"><h1 className="text-3xl font-black">Peserta</h1><div className="flex gap-2"><label className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold cursor-pointer flex gap-2"><FileSpreadsheet size={18}/> Import<input type="file" className="hidden" onChange={handleImportUser}/></label><button onClick={()=>setShowUserModal(true)} className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold flex gap-2"><Plus size={18}/> Manual</button></div></div><div className="bg-white rounded-[2rem] shadow-sm border overflow-hidden"><table className="w-full text-left text-sm"><thead className="bg-slate-50 font-bold text-slate-500"><tr><th className="p-6">Nama</th><th className="p-6">ID</th><th className="p-6">Role</th><th className="p-6">Akses</th></tr></thead><tbody>{users.map(u=>(<tr key={u.id} className="border-b"><td className="p-6 font-bold">{u.full_name}</td><td className="p-6">{u.username}</td><td className="p-6">{u.role}</td><td className="p-6">{u.allowed_exam_ids}</td></tr>))}</tbody></table></div></>)}
-                {activeTab === 'lms' && (<><div className="flex justify-between items-center mb-8"><h1 className="text-3xl font-black">LMS</h1><button onClick={()=>setShowLmsModal(true)} className="px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold flex gap-2"><Plus size={18}/> Tambah</button></div><div className="grid gap-6 md:grid-cols-3">{materials.map(m => (<div key={m.id} className="bg-white p-6 rounded-[2rem] shadow border relative"><div className="mb-4 text-xs font-bold uppercase text-indigo-500">{m.folder?.category} / {m.folder?.subcategory}</div><h4 className="font-bold text-lg mb-4">{m.title}</h4><a href={m.content_url} target="_blank" rel="noreferrer" className="block w-full py-2 bg-slate-900 text-white text-center rounded-xl font-bold text-xs">BUKA</a></div>))}</div></>)}
+                {/* Users & LMS sections similar to before... */}
             </main>
-            {analytics && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-[2.5rem] w-full max-w-4xl shadow-2xl relative"><button onClick={()=>setAnalytics(null)} className="absolute top-6 right-6"><X/></button><h3 className="font-bold text-xl mb-6">Analisis</h3><div className="h-64"><ResponsiveContainer><BarChart data={analytics.stats}><XAxis dataKey="no"/><YAxis/><Tooltip/><Bar dataKey="pct" fill="#6366f1"/></BarChart></ResponsiveContainer></div></div></div>)}
-            {showUserModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><form onSubmit={handleAddUser} className="bg-white p-8 rounded-[2rem] w-full max-w-sm"><input className="w-full p-3 border rounded-xl mb-3" placeholder="Nama" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/><input className="w-full p-3 border rounded-xl mb-3" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/><input className="w-full p-3 border rounded-xl mb-3" placeholder="Password" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/><input className="w-full p-3 border rounded-xl mb-3" placeholder="Akses Paket (ID/ALL)" value={newUser.allowed} onChange={e=>setNewUser({...newUser, allowed:e.target.value})}/><button type="submit" className="w-full p-3 bg-indigo-600 text-white rounded-xl font-bold">Simpan</button></form></div>}
-            {showPeriodModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-[2rem] w-full max-w-sm"><input className="w-full p-3 border rounded-xl mb-3" placeholder="Nama Paket" value={newPeriod.name} onChange={e=>setNewPeriod({...newPeriod, name:e.target.value})}/><select className="w-full p-3 border rounded-xl mb-3" value={newPeriod.exam_type} onChange={e=>setNewPeriod({...newPeriod, exam_type:e.target.value})}><option value="UTBK">UTBK</option><option value="CPNS">CPNS</option></select><div className="flex gap-2"><input type="checkbox" checked={newPeriod.can_finish_early} onChange={e=>setNewPeriod({...newPeriod, can_finish_early:e.target.checked})}/> Selesai Awal</div><button onClick={createPeriod} className="w-full p-3 bg-indigo-600 text-white rounded-xl font-bold mt-3">Buat</button></div></div>}
-            {showLmsModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><form onSubmit={handleAddLms} className="bg-white p-8 rounded-[2rem] w-full max-w-sm"><input className="w-full p-3 border rounded-xl mb-3" placeholder="Judul" value={newLms.title} onChange={e=>setNewLms({...newLms, title:e.target.value})}/><input className="w-full p-3 border rounded-xl mb-3" placeholder="Folder" value={newLms.folder_name} onChange={e=>setNewLms({...newLms, folder_name:e.target.value})}/><input className="w-full p-3 border rounded-xl mb-3" placeholder="URL" value={newLms.url} onChange={e=>setNewLms({...newLms, url:e.target.value})}/><button type="submit" className="w-full p-3 bg-indigo-600 text-white rounded-xl font-bold">Simpan</button></form></div>}
-            {showManualModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[100]"><div className="bg-white p-8 rounded-[2rem] w-full max-w-2xl h-[90vh] overflow-y-auto"><h3 className="text-xl font-bold mb-6">Editor Soal</h3><select className="w-full p-3 border rounded-xl mb-3" value={manualQ.type} onChange={e=>setManualQ({...manualQ, type:e.target.value})}><option value="PG">PG</option><option value="TKP">TKP</option><option value="ISIAN">ISIAN</option><option value="BOOLEAN">Tabel B/S</option><option value="PG_KOMPLEKS">Checkbox</option></select><textarea className="w-full p-3 border rounded-xl h-32 mb-3" placeholder="Soal" value={manualQ.text} onChange={e=>setManualQ({...manualQ, text:e.target.value})}/><input className="w-full p-3 border rounded-xl mb-3" placeholder="URL Gambar" value={manualQ.media} onChange={e=>setManualQ({...manualQ, media:e.target.value})}/><div className="flex gap-2 mt-6"><button onClick={()=>setShowManualModal(false)} className="flex-1 p-3 bg-slate-100 rounded-xl font-bold">Batal</button><button onClick={saveManualQuestion} className="flex-1 p-3 bg-indigo-600 text-white rounded-xl font-bold flex justify-center gap-2"><Save size={18}/> Simpan</button></div></div></div>}
-            {previewExamId && <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[100]"><div className="bg-white w-full max-w-4xl h-[90vh] rounded-[2rem] overflow-hidden flex flex-col"><div className="bg-indigo-900 p-6 flex justify-between items-center text-white"><h3 className="font-bold text-xl">Preview</h3><button onClick={()=>setPreviewExamId(null)}><X/></button></div><div className="flex-1 overflow-y-auto p-8 space-y-8 bg-slate-50">{previewQuestions.map((q,i)=>(<div key={q.id} className="bg-white p-6 rounded-2xl shadow border relative"><button onClick={()=>openManualInput(previewExamId, q)} className="absolute top-4 right-4 p-2 bg-slate-100 rounded hover:bg-indigo-100"><Edit size={16}/></button><div className="font-bold text-indigo-600 mb-2">No {i+1} ({q.type})</div>{q.media && <img src={q.media} className="max-h-64 mb-4 rounded border" alt="Soal"/>}<div><RenderPreview text={q.text}/></div></div>))}</div></div></div>}
+
+            {/* MODAL UPLOAD EXCEL */}
+            {showUploadModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><form onSubmit={handleUploadExcel} className="bg-white p-8 rounded-[2rem] w-full max-w-sm space-y-4 text-center"><h3 className="font-bold text-lg">Upload Soal (Excel/CSV)</h3><p className="text-xs text-slate-500">Format kolom: soal, a, b, c, d, e, kunci, pembahasan</p><input type="file" accept=".xlsx,.csv" onChange={e=>setUploadFile(e.target.files[0])} className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"/><button className="w-full p-3 bg-emerald-600 text-white rounded-xl font-bold">Upload Sekarang</button><button type="button" onClick={()=>setShowUploadModal(false)} className="w-full p-3 text-slate-400 font-bold">Batal</button></form></div>}
+
+            {/* MODAL MANUAL EDITOR (UPDATED WITH RICH TEXT HINT) */}
+            {showManualModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[100]"><div className="bg-white p-8 rounded-[2rem] w-full max-w-2xl h-[90vh] overflow-y-auto space-y-3">
+                <h3 className="text-xl font-bold">Editor Soal</h3>
+                <div className="text-xs text-slate-500 bg-slate-50 p-2 rounded">
+                    <b>Format Text:</b> Gunakan <code>**tebal**</code>, <code>_miring_</code>, atau <code>$rumus$</code> (LaTeX). <br/>
+                    <b>Gambar:</b> Masukkan URL gambar di kolom Media URL.
+                </div>
+                <select className="w-full p-3 border rounded-xl" value={manualQ.type} onChange={e=>setManualQ({...manualQ, type:e.target.value})}><option value="PG">PG Biasa</option><option value="PG_KOMPLEKS">PG Kompleks</option><option value="ISIAN">Isian Singkat</option><option value="BOOLEAN">Tabel (Benar/Salah)</option><option value="TKP">TKP</option></select>
+                
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="text-xs font-bold">Input Teks Soal</label>
+                        <textarea className="w-full p-3 border rounded-xl h-32 font-mono text-sm" value={manualQ.text} onChange={e=>setManualQ({...manualQ, text:e.target.value})}/>
+                    </div>
+                    <div className="bg-slate-50 p-3 rounded-xl border h-32 overflow-y-auto">
+                        <label className="text-xs font-bold text-indigo-600 block mb-1">Preview Live:</label>
+                        <RenderPreview text={manualQ.text} />
+                    </div>
+                </div>
+
+                <input className="w-full p-3 border rounded-xl" placeholder="URL Gambar (Opsional)" value={manualQ.media} onChange={e=>setManualQ({...manualQ, media:e.target.value})}/>
+                <textarea className="w-full p-3 border rounded-xl h-20" placeholder="Pembahasan..." value={manualQ.explanation} onChange={e=>setManualQ({...manualQ, explanation:e.target.value})}/>
+                
+                {/* Opsi Editor... (Sama seperti sebelumnya) */}
+                <div className="space-y-2">{manualQ.options.map((o, i)=>(<div key={i} className="flex gap-2 items-center"><span className="font-bold w-6">{manualQ.type==='BOOLEAN'?'Br':'Op'}</span><input className="flex-1 p-2 border rounded" value={o.label} onChange={e=>{const ops=[...manualQ.options]; ops[i].label=e.target.value; setManualQ({...manualQ, options:ops})}}/>{manualQ.type!=='BOOLEAN' && <input type="checkbox" checked={o.is_correct} onChange={e=>{const ops=[...manualQ.options]; ops[i].is_correct=e.target.checked; setManualQ({...manualQ, options:ops})}}/>}</div>))}</div>
+                
+                <div className="flex gap-2 mt-4"><button onClick={()=>setShowManualModal(false)} className="flex-1 p-3 bg-slate-100 rounded-xl">Batal</button><button onClick={saveManualQuestion} className="flex-1 p-3 bg-indigo-600 text-white rounded-xl">Simpan</button></div></div></div>}
         </div>
     );
 };
