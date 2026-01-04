@@ -10,8 +10,8 @@ class User(Base):
     password = Column(String)
     full_name = Column(String)
     role = Column(String, default="peserta") 
-    group_code = Column(String, default="GENERAL") 
-    allowed_exam_ids = Column(String, default="ALL") # Format: "1,2,5" atau "ALL"
+    # Akses Spesifik: "ALL" atau "1,2,5" (ID Paket Ujian)
+    allowed_exam_ids = Column(String, default="ALL") 
     
     choice1_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
     choice2_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
@@ -27,7 +27,6 @@ class ExamPeriod(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
     exam_type = Column(String) # UTBK, CPNS, TKA, MANDIRI
-    allowed_groups = Column(String, default="ALL") # Format: "XII-A, XII-B"
     show_result = Column(Boolean, default=True)
     can_finish_early = Column(Boolean, default=True)
     exams = relationship("Exam", back_populates="period", cascade="all, delete-orphan")
@@ -47,7 +46,7 @@ class Question(Base):
     question_type = Column(String, default="PG") # PG, PG_KOMPLEKS, ISIAN, BOOLEAN, TKP
     text = Column(Text)
     passage_text = Column(Text, nullable=True)
-    media_url = Column(String, nullable=True)
+    media_url = Column(String, nullable=True) # URL Gambar
     explanation = Column(Text, nullable=True)
     difficulty = Column(Float, default=1.0)
     correct_answer_isian = Column(String, nullable=True)
@@ -61,8 +60,8 @@ class Option(Base):
     label = Column(Text)
     option_index = Column(String)
     is_correct = Column(Boolean, default=False)
-    score_weight = Column(Integer, default=0)
-    boolean_val = Column(Boolean, nullable=True)
+    score_weight = Column(Integer, default=0) # Bobot TKP (1-5)
+    boolean_val = Column(Boolean, nullable=True) # True=Benar, False=Salah (Untuk Soal Tabel)
     question = relationship("Question", back_populates="options")
 
 class ExamResult(Base):
@@ -77,9 +76,9 @@ class ExamResult(Base):
 class LMSFolder(Base):
     __tablename__ = "lms_folders"
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String)
-    category = Column(String)
-    subcategory = Column(String)
+    name = Column(String) # Nama Folder
+    category = Column(String) # UTBK, CPNS
+    subcategory = Column(String) # PU, PK, TIU
     materials = relationship("Material", back_populates="folder", cascade="all, delete-orphan")
 
 class Material(Base):

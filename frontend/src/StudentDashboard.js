@@ -4,38 +4,17 @@ import { API_URL } from './config';
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 
-const RenderSoal = ({ text }) => {
-    if (!text) return null;
-    const parts = text.split(/(\$[^$]+\$)/g);
-    return (
-        <span className="whitespace-pre-wrap leading-relaxed font-serif text-slate-800 text-lg">
-            {parts.map((p, i) => {
-                if (p.startsWith('$') && p.endsWith('$')) {
-                    return <InlineMath key={i} math={p.slice(1,-1)}/>;
-                }
-                const html = p
-                    .replace(/\[B\](.*?)\[\/B\]/g, '<b>$1</b>')
-                    .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-                    .replace(/\[I\](.*?)\[\/I\]/g, '<i>$1</i>')
-                    .replace(/\*(.*?)\*/g, '<i>$1</i>')
-                    .replace(/\n/g, '<br/>');
-                return <span key={i} dangerouslySetInnerHTML={{ __html: html }} />;
-            })}
-        </span>
-    );
-};
+const RenderSoal = ({ text }) => { if (!text) return null; const parts = text.split(/(\$[^$]+\$)/g); return (<span className="whitespace-pre-wrap leading-relaxed font-serif text-slate-800 text-lg">{parts.map((p, i) => p.startsWith('$') ? <InlineMath key={i} math={p.slice(1,-1)}/> : <span key={i} dangerouslySetInnerHTML={{ __html: p.replace(/\[B\](.*?)\[\/B\]/g, '<b>$1</b>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\[I\](.*?)\[\/I\]/g, '<i>$1</i>').replace(/\n/g, '<br/>') }} />)}</span>); };
 
 const StudentDashboard = ({ user, onLogout }) => {
     const [view, setView] = useState('home');
     const [data, setData] = useState(null);
     const [majors, setMajors] = useState([]);
     
-    // Filter State
     const [selectedMajor, setSelectedMajor] = useState({ m1: user.c1||'', m2: user.c2||'' });
     const [filterType, setFilterType] = useState('ALL');
     const [lmsTab, setLmsTab] = useState('UTBK');
     
-    // Exam State
     const [mode, setMode] = useState(null);
     const [examData, setExamData] = useState(null);
     const [answers, setAnswers] = useState({});
@@ -60,13 +39,7 @@ const StudentDashboard = ({ user, onLogout }) => {
             }
             setPeriodSettings(settings);
         });
-        fetch(`${API_URL}/majors`).then(r=>r.json()).then(d => { 
-            if(Array.isArray(d)) { 
-                setMajors(d); 
-                const unis = [...new Set(d.map(item => item.university))].sort(); 
-                setUniList(unis); 
-            } 
-        });
+        fetch(`${API_URL}/majors`).then(r=>r.json()).then(d => { if(Array.isArray(d)) { setMajors(d); const unis = [...new Set(d.map(item => item.university))].sort(); setUniList(unis); } });
     }, [user.username]);
 
     useEffect(() => { refresh(); }, [refresh]);
@@ -74,33 +47,11 @@ const StudentDashboard = ({ user, onLogout }) => {
     useEffect(() => { if(selectedUni2) setProdiList2(majors.filter(m => m.university === selectedUni2)); }, [selectedUni2, majors]);
 
     const saveMajors = () => { fetch(`${API_URL}/student/majors`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user.username, m1:selectedMajor.m1, m2:selectedMajor.m2})}).then(()=>alert("Target Disimpan!")); };
+    const startExam = (eid, pid) => { const settings = periodSettings[pid] || {can_finish: true}; if(!window.confirm("Mulai Ujian?")) return; fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{ setExamData({...d, periodId: pid}); setCanFinish(settings.can_finish); setMode('exam'); setQIdx(0); setTimeLeft(d.duration * 60); setAnswers({}); }); };
+    const submitExam = useCallback(() => { fetch(`${API_URL}/exams/${examData.id}/submit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user.username, answers})}).then(r=>r.json()).then(res => { alert(res.score !== null ? `Skor: ${res.score}` : "Tersimpan."); setMode(null); refresh(); }); }, [examData, user.username, answers, refresh]);
+    const openReview = (eid) => { fetch(`${API_URL}/exams/${eid}/review?username=${user.username}`).then(r=>{if(r.ok) return r.json(); throw new Error("Dikunci admin.");}).then(d=>{ setExamData(d); setMode('review'); setQIdx(0); }).catch(e=>alert(e.message)); };
     
-    const startExam = (eid, pid) => { 
-        const settings = periodSettings[pid] || {can_finish: true};
-        if(!window.confirm("Mulai Ujian?")) return; 
-        fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{ 
-            setExamData({...d, periodId: pid}); 
-            setCanFinish(settings.can_finish); 
-            setMode('exam'); setQIdx(0); setTimeLeft(d.duration * 60); setAnswers({}); 
-        }); 
-    };
-    
-    const submitExam = useCallback(() => { 
-        fetch(`${API_URL}/exams/${examData.id}/submit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user.username, answers})})
-        .then(r=>r.json()).then(res => { 
-            alert(res.score !== null ? `Skor Akhir: ${res.score}` : "Jawaban Tersimpan."); 
-            setMode(null); 
-            refresh(); 
-        }); 
-    }, [examData, user.username, answers, refresh]);
-    
-    const openReview = (eid) => { 
-        fetch(`${API_URL}/exams/${eid}/review?username=${user.username}`)
-        .then(r=>{if(r.ok) return r.json(); throw new Error("Pembahasan dikunci admin.");})
-        .then(d=>{ setExamData(d); setMode('review'); setQIdx(0); })
-        .catch(e=>alert(e.message)); 
-    };
-    
+    // INPUT HANDLER (COMPLEX)
     const handleAnswer = (qid, val, type, optId=null) => {
         if(mode === 'review') return;
         setAnswers(prev => {
@@ -108,86 +59,48 @@ const StudentDashboard = ({ user, onLogout }) => {
                 const cur = prev[qid] || [];
                 return cur.includes(val) ? {...prev, [qid]: cur.filter(x=>x!==val)} : {...prev, [qid]: [...cur, val]};
             }
-            if (type === 'BOOLEAN') { 
-                const cur = prev[qid] || {};
-                return {...prev, [qid]: {...cur, [optId]: val}}; 
-            }
+            if (type === 'BOOLEAN') { const cur = prev[qid] || {}; return {...prev, [qid]: {...cur, [optId]: val}}; }
             return {...prev, [qid]: val};
         });
     };
 
-    useEffect(() => { 
-        if(mode === 'exam' && timeLeft > 0) { const t = setInterval(()=>setTimeLeft(p=>p-1), 1000); return ()=>clearInterval(t); } 
-        else if(mode === 'exam' && timeLeft === 0) { alert("WAKTU HABIS!"); submitExam(); } 
-    }, [timeLeft, mode, submitExam]);
+    useEffect(() => { if(mode === 'exam' && timeLeft > 0) { const t = setInterval(()=>setTimeLeft(p=>p-1), 1000); return ()=>clearInterval(t); } else if(mode === 'exam' && timeLeft === 0) { alert("WAKTU HABIS!"); submitExam(); } }, [timeLeft, mode, submitExam]);
 
     if(mode && examData) {
         const q = examData.questions[qIdx];
         const isReview = mode === 'review';
         const allowFinish = isReview ? false : (canFinish || timeLeft === 0);
-
         return (
             <div className="h-screen flex flex-col bg-slate-50 font-sans fixed inset-0 z-50">
                 <div className="h-16 bg-white shadow-sm flex items-center justify-between px-4 z-50">
-                    <div className="flex items-center gap-3">
-                        <button onClick={()=>setShowNav(!showNav)} className="md:hidden p-2"><Menu/></button>
-                        <div><h1 className="font-bold text-slate-800 truncate max-w-[150px]">{examData.title}</h1></div>
-                    </div>
+                    <div className="flex items-center gap-3"><button onClick={()=>setShowNav(!showNav)} className="md:hidden p-2"><Menu/></button><div><h1 className="font-bold text-slate-800 truncate max-w-[150px]">{examData.title}</h1></div></div>
                     {!isReview && <div className={`px-3 py-1 rounded-lg font-mono font-bold flex gap-2 ${timeLeft<300?'bg-rose-100 text-rose-600':'bg-slate-100'}`}><Clock size={16}/> {Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}</div>}
                     {isReview && <button onClick={()=>setMode(null)} className="p-2 hover:bg-slate-100 rounded-full"><XCircle/></button>}
                 </div>
                 <div className="flex-1 flex overflow-hidden relative">
                     <div className={`absolute md:relative inset-y-0 left-0 w-64 bg-white border-r transform transition-transform z-40 ${showNav?'translate-x-0':'-translate-x-full'} md:translate-x-0 flex flex-col`}>
-                        <div className="p-4 grid grid-cols-5 gap-2 overflow-y-auto content-start flex-1">
-                            {examData.questions.map((_, i) => (
-                                <button key={i} onClick={()=>{setQIdx(i); setShowNav(false);}} className={`h-10 rounded font-bold text-sm ${i===qIdx?'bg-indigo-600 text-white': answers[examData.questions[i].id]?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-600'}`}>
-                                    {i+1}
-                                </button>
-                            ))}
-                        </div>
-                        {!isReview && <div className="p-4 border-t">
-                            <button onClick={submitExam} disabled={!allowFinish} className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 ${allowFinish?'bg-indigo-600 text-white hover:bg-indigo-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
-                                {allowFinish ? <><CheckCircle size={16}/> KUMPULKAN</> : <><AlertTriangle size={16}/> BELUM BISA</>}
-                            </button>
-                        </div>}
+                        <div className="p-4 grid grid-cols-5 gap-2 overflow-y-auto content-start flex-1">{examData.questions.map((_, i) => (<button key={i} onClick={()=>{setQIdx(i); setShowNav(false);}} className={`h-10 rounded font-bold text-sm ${i===qIdx?'bg-indigo-600 text-white': answers[examData.questions[i].id]?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{i+1}</button>))}</div>
+                        {!isReview && <div className="p-4 border-t"><button onClick={submitExam} disabled={!allowFinish} className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 ${allowFinish?'bg-indigo-600 text-white hover:bg-indigo-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>{allowFinish ? <CheckCircle size={16}/> : <AlertTriangle size={16}/>} {allowFinish ? 'KUMPULKAN' : 'BELUM'}</button></div>}
                     </div>
                     <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-[#F8FAFC]">
                         {q.passage && <div className="w-full md:w-1/2 h-[30%] md:h-full overflow-y-auto p-6 border-b md:border-r bg-white"><div className="prose max-w-none"><RenderSoal text={q.passage}/></div></div>}
                         <div className="flex-1 h-full overflow-y-auto p-6 md:p-10">
-                            {q.media && <img src={q.media} className="max-h-48 rounded mb-4" alt="Soal"/>}
+                            {/* GAMBAR DI TENGAH */}
+                            {q.media && <div className="flex justify-center mb-6"><img src={q.media} className="max-h-64 rounded-lg shadow-sm border object-contain" alt="Soal"/></div>}
                             <div className="mb-6"><RenderSoal text={q.text}/></div>
                             <div className="space-y-3 max-w-2xl">
                                 {q.type === 'ISIAN' ? (
                                     <input className="w-full p-4 border-2 rounded-xl font-bold text-lg" placeholder="Jawaban..." value={isReview ? q.user_answer : (answers[q.id]||'')} onChange={e=>handleAnswer(q.id, e.target.value, 'ISIAN')} disabled={isReview}/>
                                 ) : q.type === 'BOOLEAN' ? (
-                                    <div className="border rounded-xl bg-white overflow-hidden">
-                                        <table className="w-full text-sm">
-                                            <thead className="bg-slate-50"><tr><th className="p-3 text-left">Pernyataan</th><th className="p-3 w-16 text-center">B</th><th className="p-3 w-16 text-center">S</th></tr></thead>
-                                            <tbody>
-                                                {q.options.map(o => (
-                                                    <tr key={o.id} className="border-t">
-                                                        <td className="p-3"><RenderSoal text={o.label}/></td>
-                                                        <td className="p-3 text-center"><input type="radio" name={`b-${q.id}-${o.id}`} checked={isReview ? (q.user_answer?.[o.id]==='B') : (answers[q.id]?.[o.id]==='B')} onChange={()=>handleAnswer(q.id, 'B', 'BOOLEAN', o.id)} disabled={isReview}/></td>
-                                                        <td className="p-3 text-center"><input type="radio" name={`b-${q.id}-${o.id}`} checked={isReview ? (q.user_answer?.[o.id]==='S') : (answers[q.id]?.[o.id]==='S')} onChange={()=>handleAnswer(q.id, 'S', 'BOOLEAN', o.id)} disabled={isReview}/></td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                    <div className="border rounded-xl bg-white overflow-hidden"><table className="w-full text-sm"><thead className="bg-slate-50"><tr><th className="p-3 text-left">Pernyataan</th><th className="p-3 w-16 text-center">B</th><th className="p-3 w-16 text-center">S</th></tr></thead><tbody>{q.options.map(o => (<tr key={o.id} className="border-t"><td className="p-3"><RenderSoal text={o.label}/></td><td className="p-3 text-center"><input type="radio" name={`b-${q.id}-${o.id}`} checked={isReview ? (q.user_answer?.[o.id]==='B') : (answers[q.id]?.[o.id]==='B')} onChange={()=>handleAnswer(q.id, 'B', 'BOOLEAN', o.id)} disabled={isReview}/></td><td className="p-3 text-center"><input type="radio" name={`b-${q.id}-${o.id}`} checked={isReview ? (q.user_answer?.[o.id]==='S') : (answers[q.id]?.[o.id]==='S')} onChange={()=>handleAnswer(q.id, 'S', 'BOOLEAN', o.id)} disabled={isReview}/></td></tr>))}</tbody></table></div>
                                 ) : (
-                                    q.options.map(o => { 
+                                    q.options.map(o => {
                                         const isMulti = q.type === 'PG_KOMPLEKS';
                                         const isSel = isMulti ? (answers[q.id]||[]).includes(o.option_index) : (answers[q.id] === o.option_index);
-                                        let style = "bg-white border-slate-200 text-slate-700"; 
-                                        if(isReview) { 
-                                            if(o.is_correct) style = "bg-emerald-50 border-emerald-500 text-emerald-800"; 
-                                            else if(isMulti ? (q.user_answer||[]).includes(o.option_index) : q.user_answer===o.option_index) style = "bg-rose-50 border-rose-500 text-rose-800"; 
-                                        } else if(isSel) style = "bg-indigo-50 border-indigo-500 text-indigo-800 ring-1 ring-indigo-500"; 
-                                        return (
-                                            <button key={o.id} onClick={()=>handleAnswer(q.id, o.option_index, q.type)} disabled={isReview} className={`w-full p-4 text-left border rounded-xl flex gap-4 transition-all hover:shadow-sm ${style}`}>
-                                                <span className="font-bold">{o.option_index}</span><span><RenderSoal text={o.label}/></span>
-                                            </button>
-                                        );
+                                        let style = "bg-white border-slate-200 text-slate-700";
+                                        if(isReview) { if(o.is_correct) style="bg-emerald-50 border-emerald-500 text-emerald-800"; else if(isMulti?(q.user_answer||[]).includes(o.option_index):q.user_answer===o.option_index) style="bg-rose-50 border-rose-500 text-rose-800"; }
+                                        else if(isSel) style="bg-indigo-50 border-indigo-500 text-indigo-800 ring-1 ring-indigo-500";
+                                        return (<button key={o.id} onClick={()=>handleAnswer(q.id, o.option_index, q.type)} disabled={isReview} className={`w-full p-4 text-left border rounded-xl flex gap-4 transition-all hover:shadow-sm ${style}`}><span className="font-bold">{o.option_index}</span><span><RenderSoal text={o.label}/></span></button>)
                                     })
                                 )}
                             </div>
@@ -195,34 +108,19 @@ const StudentDashboard = ({ user, onLogout }) => {
                         </div>
                     </div>
                 </div>
-                {/* FOOTER MOBILE NAVIGATION (Menggunakan ChevronLeft & Right) */}
-                <div className="h-16 bg-white border-t flex items-center justify-between px-6 md:hidden z-50">
-                    <button onClick={()=>setQIdx(Math.max(0, qIdx-1))} disabled={qIdx===0} className="p-2 border rounded-lg disabled:opacity-30"><ChevronLeft/></button>
-                    <span className="font-bold text-slate-600">No. {qIdx+1}</span>
-                    <button onClick={()=>setQIdx(Math.min(examData.questions.length-1, qIdx+1))} disabled={qIdx===examData.questions.length-1} className="p-2 border rounded-lg bg-slate-800 text-white disabled:opacity-30"><ChevronRight/></button>
-                </div>
+                <div className="h-16 bg-white border-t flex items-center justify-between px-6 md:hidden z-50"><button onClick={()=>setQIdx(Math.max(0, qIdx-1))} disabled={qIdx===0} className="p-2 border rounded-lg disabled:opacity-30"><ChevronLeft/></button><span className="font-bold text-slate-600">No. {qIdx+1}</span><button onClick={()=>setQIdx(Math.min(examData.questions.length-1, qIdx+1))} disabled={qIdx===examData.questions.length-1} className="p-2 border rounded-lg bg-slate-800 text-white disabled:opacity-30"><ChevronRight/></button></div>
             </div>
         );
     }
 
-    if(!data) return <div className="h-screen flex items-center justify-center font-bold text-slate-400">Loading V63.2...</div>;
+    if(!data) return <div className="h-screen flex items-center justify-center font-bold text-slate-400">Loading V64...</div>;
     const filteredPeriods = filterType === 'ALL' ? (data.periods||[]) : (data.periods||[]).filter(p => p.type === filterType);
-    
     const groupedLMS = {};
-    if(data.lms) {
-        data.lms.filter(f => f.category === lmsTab).forEach(f => {
-            const sub = f.subcategory || 'Lainnya';
-            if(!groupedLMS[sub]) groupedLMS[sub] = [];
-            groupedLMS[sub].push(f);
-        });
-    }
+    if(data.lms) { data.lms.filter(f => f.category === lmsTab).forEach(f => { const sub = f.subcategory || 'Lainnya'; if(!groupedLMS[sub]) groupedLMS[sub] = []; groupedLMS[sub].push(f); }); }
 
     return (
         <div className="min-h-screen bg-[#F1F5F9] font-sans pb-28">
-            <div className="bg-white p-4 sticky top-0 z-30 shadow-sm flex justify-between items-center px-6">
-                <h1 className="text-xl font-black text-slate-800">Edu<span className="text-indigo-600">Prime</span></h1>
-                <div className="flex gap-3"><span className="hidden md:block font-bold text-sm mt-1">{data.user.full_name}</span><button onClick={onLogout} className="text-rose-500"><LogOut/></button></div>
-            </div>
+            <div className="bg-white p-4 sticky top-0 z-30 shadow-sm flex justify-between items-center px-6"><h1 className="text-xl font-black text-slate-800">Edu<span className="text-indigo-600">Prime</span></h1><div className="flex gap-3"><span className="hidden md:block font-bold text-sm mt-1">{data.user.full_name}</span><button onClick={onLogout} className="text-rose-500"><LogOut/></button></div></div>
             <div className="max-w-7xl mx-auto p-6 space-y-8">
                 {view === 'home' && (
                     <>
