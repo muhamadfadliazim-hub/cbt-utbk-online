@@ -11,9 +11,7 @@ class User(Base):
     full_name = Column(String)
     role = Column(String, default="peserta") 
     group_code = Column(String, default="GENERAL") 
-    # NEW: Daftar ID Paket Ujian yang boleh diakses (pisahkan koma)
-    # Contoh: "UTBK-01, CPNS-2026". Jika "ALL", maka semua bisa.
-    allowed_exam_ids = Column(String, default="ALL") 
+    allowed_exam_ids = Column(String, default="ALL") # Format: "1,2,5" atau "ALL"
     
     choice1_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
     choice2_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
@@ -29,6 +27,7 @@ class ExamPeriod(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
     exam_type = Column(String) # UTBK, CPNS, TKA, MANDIRI
+    allowed_groups = Column(String, default="ALL") # Format: "XII-A, XII-B"
     show_result = Column(Boolean, default=True)
     can_finish_early = Column(Boolean, default=True)
     exams = relationship("Exam", back_populates="period", cascade="all, delete-orphan")
@@ -45,10 +44,10 @@ class Question(Base):
     __tablename__ = "questions"
     id = Column(Integer, primary_key=True, index=True)
     exam_id = Column(String, ForeignKey("exams.id"))
-    question_type = Column(String, default="PG")
-    text = Column(Text) 
-    passage_text = Column(Text, nullable=True) # Wacana
-    media_url = Column(String, nullable=True) # Gambar URL / Upload
+    question_type = Column(String, default="PG") # PG, PG_KOMPLEKS, ISIAN, BOOLEAN, TKP
+    text = Column(Text)
+    passage_text = Column(Text, nullable=True)
+    media_url = Column(String, nullable=True)
     explanation = Column(Text, nullable=True)
     difficulty = Column(Float, default=1.0)
     correct_answer_isian = Column(String, nullable=True)
@@ -62,7 +61,7 @@ class Option(Base):
     label = Column(Text)
     option_index = Column(String)
     is_correct = Column(Boolean, default=False)
-    score_weight = Column(Integer, default=0) # TKP 1-5
+    score_weight = Column(Integer, default=0)
     boolean_val = Column(Boolean, nullable=True)
     question = relationship("Question", back_populates="options")
 
@@ -78,9 +77,9 @@ class ExamResult(Base):
 class LMSFolder(Base):
     __tablename__ = "lms_folders"
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String) # Nama Folder (Bab 1)
-    category = Column(String) # UTBK
-    subcategory = Column(String) # PK, PM, PU
+    name = Column(String)
+    category = Column(String)
+    subcategory = Column(String)
     materials = relationship("Material", back_populates="folder", cascade="all, delete-orphan")
 
 class Material(Base):
