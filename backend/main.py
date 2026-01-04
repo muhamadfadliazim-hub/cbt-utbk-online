@@ -7,10 +7,9 @@ import models, database, io
 import pandas as pd
 from datetime import datetime
 
-app = FastAPI(title="EduPrime V55 Stable")
+app = FastAPI(title="EduPrime V57 Masterpiece")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# --- PERBAIKAN SINTAKS FATAL: HARUS MULTI-LINE ---
 def get_db():
     db = database.SessionLocal()
     try:
@@ -33,13 +32,8 @@ def init(db: Session = Depends(get_db)):
     models.Base.metadata.create_all(bind=database.engine)
     if not db.query(models.User).filter_by(username="admin").first():
         db.add(models.User(username="admin", password="123", full_name="Super Admin", role="admin"))
-    
-    if not db.query(models.LMSFolder).first():
-        folders = [("PU","UTBK"), ("PK","UTBK"), ("LBIndo","UTBK"), ("LBIng","UTBK"), ("TIU","CPNS"), ("TWK","CPNS"), ("TKP","CPNS")]
-        for n,c in folders: db.add(models.LMSFolder(name=n, category=c))
-            
     db.commit()
-    return {"status": "V55 System Ready"}
+    return {"status": "V57 Ready"}
 
 # AUTH
 @app.post("/login")
@@ -49,7 +43,7 @@ def login(data: dict, db: Session = Depends(get_db)):
         return {"username": u.username, "name": u.full_name, "role": u.role, "group": u.group_code}
     raise HTTPException(400, "Login Gagal")
 
-# STUDENT DATA
+# STUDENT DATA (FILTERED BY GROUP)
 @app.get("/student/data")
 def student_data(username: str, db: Session = Depends(get_db)):
     u = db.query(models.User).filter_by(username=username).first()
@@ -57,7 +51,9 @@ def student_data(username: str, db: Session = Depends(get_db)):
     
     exam_list = []
     for p in periods:
-        if p.access_code and p.access_code != "UMUM" and p.access_code != u.group_code and u.role != 'admin':
+        # LOGIKA FILTER GRUP: Cek apakah user.group ada di allowed_groups (dipisah koma)
+        allowed = [x.strip() for x in (p.allowed_groups or "ALL").split(",")]
+        if "ALL" not in allowed and u.group_code not in allowed and u.role != 'admin':
             continue
         
         exams = []
@@ -65,14 +61,16 @@ def student_data(username: str, db: Session = Depends(get_db)):
             res = db.query(models.ExamResult).filter_by(user_id=u.id, exam_id=e.id).first()
             exams.append({"id":e.id, "title":e.title, "duration":e.duration, "status":"done" if res else "open", "score":res.final_score if res else 0})
         
-        exam_list.append({
-            "id":p.id, "name":p.name, "type":p.exam_type, 
-            "show_result": p.show_result, "can_finish_early": p.can_finish_early,
-            "exams":exams
-        })
+        exam_list.append({"id":p.id, "name":p.name, "type":p.exam_type, "show_result": p.show_result, "can_finish_early": p.can_finish_early, "exams":exams})
     
+    # LMS DATA (HIERARKI)
     folders = db.query(models.LMSFolder).options(joinedload(models.LMSFolder.materials)).all()
-    lms_data = [{"id": f.id, "name": f.name, "category": f.category, "materials": [{"id":m.id, "title":m.title, "type":m.type, "url":m.content_url} for m in f.materials]} for f in folders]
+    lms_data = []
+    for f in folders:
+        lms_data.append({
+            "id": f.id, "name": f.name, "category": f.category, "subcategory": f.subcategory,
+            "materials": [{"id":m.id, "title":m.title, "type":m.type, "url":m.content_url} for m in f.materials]
+        })
 
     history = []
     results = db.query(models.ExamResult).filter_by(user_id=u.id).order_by(models.ExamResult.completed_at.desc()).all()
@@ -82,7 +80,7 @@ def student_data(username: str, db: Session = Depends(get_db)):
 
     return {"user": u, "periods": exam_list, "lms": lms_data, "history": history}
 
-# UJIAN
+# UJIAN & EDIT SOAL
 @app.get("/exams/{eid}")
 def get_exam(eid: str, db: Session = Depends(get_db)):
     e = db.query(models.Exam).filter_by(id=eid).first()
@@ -97,7 +95,7 @@ def get_review(eid: str, username: str, db: Session = Depends(get_db)):
     res = db.query(models.ExamResult).filter_by(user_id=u.id, exam_id=eid).first()
     e = db.query(models.Exam).filter_by(id=eid).first()
     
-    if not e.period.show_result: raise HTTPException(400, "Pembahasan Ditutup Admin")
+    if not e.period.show_result and u.role != 'admin': raise HTTPException(400, "Pembahasan Ditutup Admin")
 
     user_ans = res.answers_json or {}
     return {
@@ -108,6 +106,24 @@ def get_review(eid: str, username: str, db: Session = Depends(get_db)):
             "options": [{"id":o.option_index, "label":o.label, "is_correct":o.is_correct, "score_weight":o.score_weight, "bool_val":o.boolean_val} for o in q.options]
         } for q in e.questions]
     }
+
+# UPDATE SOAL (EDIT)
+@app.put("/admin/questions/{qid}")
+def update_question(qid: int, data: ManualQuestion, db: Session = Depends(get_db)):
+    q = db.query(models.Question).filter_by(id=qid).first()
+    if not q: raise HTTPException(404, "Question not found")
+    
+    q.text = data.text; q.difficulty = data.difficulty; q.explanation = data.explanation; q.media_url = data.media; q.question_type = data.type
+    
+    # Hapus opsi lama, buat baru (Cara termudah)
+    db.query(models.Option).filter_by(question_id=qid).delete()
+    for opt in data.options:
+        w = opt.get('score_weight', 0)
+        if data.type != 'TKP' and opt.get('is_correct'): w = 5
+        db.add(models.Option(question_id=q.id, label=opt['label'], option_index=opt['idx'], is_correct=opt.get('is_correct', False), score_weight=w))
+    
+    db.commit()
+    return {"msg": "Updated"}
 
 @app.post("/exams/{eid}/submit")
 def submit(eid: str, data: AnswerSchema, db: Session = Depends(get_db)):
@@ -148,6 +164,7 @@ def submit(eid: str, data: AnswerSchema, db: Session = Depends(get_db)):
     db.commit()
     return {"score": round(total_score, 2) if e.period.show_result else None}
 
+# CRUD ADMIN STANDAR
 @app.get("/admin/analytics/{eid}")
 def get_analytics(eid: str, db: Session = Depends(get_db)):
     results = db.query(models.ExamResult).filter_by(exam_id=eid).all()
@@ -203,8 +220,8 @@ async def upload_q(eid: str, file: UploadFile = File(...), db: Session = Depends
                     db.add(models.Option(question_id=q.id, label=str(r[f'Opsi{char}']), option_index=char, is_correct=str(r.get('Kunci')).strip().upper()==char, score_weight=int(r.get(f'Bobot{char}', 0))))
     db.commit(); return {"msg": "OK"}
 @app.post("/admin/periods")
-def create_period(name: str = Form(...), exam_type: str = Form(...), access_code: str = Form(None), show_result: bool = Form(True), can_finish_early: bool = Form(True), db: Session = Depends(get_db)):
-    p = models.ExamPeriod(name=name, exam_type=exam_type, access_code=access_code, show_result=show_result, can_finish_early=can_finish_early)
+def create_period(name: str = Form(...), exam_type: str = Form(...), allowed_groups: str = Form("ALL"), show_result: bool = Form(True), can_finish_early: bool = Form(True), db: Session = Depends(get_db)):
+    p = models.ExamPeriod(name=name, exam_type=exam_type, allowed_groups=allowed_groups, show_result=show_result, can_finish_early=can_finish_early)
     db.add(p); db.commit(); db.refresh(p)
     struct = {"UTBK":[("PU",30,1),("PPU",25,2),("PBM",25,3),("PK",20,4),("LBI",45,5),("LBE",20,6),("PM",42,7)], "CPNS":[("TWK",30,1),("TIU",35,2),("TKP",45,3)], "TKA":[("MATE",90,1),("FIS",60,2),("KIM",60,3),("BIO",60,4)], "MANDIRI":[("TPA",60,1),("B.ING",40,2)]}
     for c, dur, order in struct.get(exam_type, [("UMUM",60,1)]): db.add(models.Exam(id=f"P{p.id}_{c}", period_id=p.id, title=c, duration=dur, order_index=order))
@@ -223,11 +240,11 @@ async def bulk_majors(file: UploadFile = File(...), db: Session = Depends(get_db
 @app.post("/student/majors")
 def save_majors(data: MajorSelect, db: Session = Depends(get_db)): u = db.query(models.User).filter_by(username=data.username).first(); u.choice1_id = data.m1; u.choice2_id = data.m2; db.commit(); return {"msg": "Saved"}
 @app.get("/materials")
-def get_mats_ep(db: Session = Depends(get_db)): return db.query(models.Material).all()
+def get_mats_ep(db: Session = Depends(get_db)): return db.query(models.Material).options(joinedload(models.Material.folder)).all()
 @app.post("/materials")
-def add_mat(title:str=Form(...), type:str=Form(...), url:str=Form(...), category:str=Form(...), folder_name:str=Form(...), db:Session=Depends(get_db)):
-    folder = db.query(models.LMSFolder).filter_by(name=folder_name, category=category).first()
-    if not folder: folder = models.LMSFolder(name=folder_name, category=category); db.add(folder); db.commit(); db.refresh(folder)
+def add_mat(title:str=Form(...), type:str=Form(...), url:str=Form(...), category:str=Form(...), subcategory:str=Form(...), folder_name:str=Form(...), db:Session=Depends(get_db)):
+    folder = db.query(models.LMSFolder).filter_by(name=folder_name, category=category, subcategory=subcategory).first()
+    if not folder: folder = models.LMSFolder(name=folder_name, category=category, subcategory=subcategory); db.add(folder); db.commit(); db.refresh(folder)
     db.add(models.Material(title=title, type=type, content_url=url, folder_id=folder.id)); db.commit(); return {"msg":"OK"}
 @app.delete("/materials/{mid}")
 def del_mat(mid: int, db: Session = Depends(get_db)): db.query(models.Material).filter_by(id=mid).delete(); db.commit(); return {"msg":"Del"}

@@ -10,7 +10,7 @@ class User(Base):
     password = Column(String)
     full_name = Column(String)
     role = Column(String, default="peserta") 
-    group_code = Column(String, default="GENERAL") 
+    group_code = Column(String, default="GENERAL") # Kelas/Sekolah
     choice1_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
     choice2_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
     results = relationship("ExamResult", back_populates="user")
@@ -25,12 +25,10 @@ class ExamPeriod(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
     exam_type = Column(String) # UTBK, CPNS, TKA, MANDIRI
-    access_code = Column(String, nullable=True)
-    
-    # FITUR BARU: KONTROL ADMIN
-    show_result = Column(Boolean, default=True) # Tampilkan Nilai/Pembahasan?
-    can_finish_early = Column(Boolean, default=True) # Boleh selesai sebelum waktu habis?
-    
+    # Allowed Groups: Comma separated (misal: "XII-A, XII-B") atau "ALL"
+    allowed_groups = Column(String, default="ALL") 
+    show_result = Column(Boolean, default=True)
+    can_finish_early = Column(Boolean, default=True)
     exams = relationship("Exam", back_populates="period", cascade="all, delete-orphan")
 
 class Exam(Base):
@@ -75,7 +73,9 @@ class ExamResult(Base):
 class LMSFolder(Base):
     __tablename__ = "lms_folders"
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String); category = Column(String)
+    name = Column(String) # Nama Folder Materi
+    category = Column(String) # UTBK, CPNS
+    subcategory = Column(String) # PU, PK, TIU, TWK
     materials = relationship("Material", back_populates="folder", cascade="all, delete-orphan")
 
 class Material(Base):
