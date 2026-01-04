@@ -41,7 +41,7 @@ const App = () => {
                 <div className="text-center mb-10">
                     <div className="inline-flex p-4 bg-indigo-50 rounded-2xl mb-4 text-indigo-600 shadow-sm border border-indigo-100"><GraduationCap size={40} /></div>
                     <h1 className="text-4xl font-black text-slate-800 tracking-tight mb-2">Edu<span className="text-indigo-600">Prime</span></h1>
-                    <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[0.3em]">Enterprise System V51</p>
+                    <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[0.3em]">Enterprise System V54</p>
                 </div>
                 <form onSubmit={handleLogin} className="space-y-6">
                     {error && <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl text-rose-600 text-xs font-bold text-center flex items-center justify-center gap-2 animate-pulse"><XCircle size={16}/> {error}</div>}
