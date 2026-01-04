@@ -15,7 +15,18 @@ const StudentDashboard = ({ user, onLogout }) => {
     const [data, setData] = useState(null);
     const [majors, setMajors] = useState([]);
     
-    // State Ujian
+    // Filter State
+    const [selectedMajor, setSelectedMajor] = useState({ m1: user.c1||'', m2: user.c2||'' });
+    const [filterType, setFilterType] = useState('ALL');
+    const [lmsTab, setLmsTab] = useState('UTBK');
+    
+    const [uniList, setUniList] = useState([]);
+    const [prodiList1, setProdiList1] = useState([]);
+    const [prodiList2, setProdiList2] = useState([]);
+    const [selectedUni1, setSelectedUni1] = useState('');
+    const [selectedUni2, setSelectedUni2] = useState('');
+
+    // Exam State
     const [mode, setMode] = useState(null);
     const [examData, setExamData] = useState(null);
     const [answers, setAnswers] = useState({});
@@ -23,26 +34,22 @@ const StudentDashboard = ({ user, onLogout }) => {
     const [timeLeft, setTimeLeft] = useState(0);
     const [showNav, setShowNav] = useState(false);
 
-    // State Filter & LMS
-    const [selectedMajor, setSelectedMajor] = useState({ m1: user.c1||'', m2: user.c2||'' });
-    const [filterType, setFilterType] = useState('ALL');
-    const [lmsTab, setLmsTab] = useState('UTBK');
-
     const refresh = useCallback(() => {
         fetch(`${API_URL}/student/data?username=${user.username}`).then(r=>r.json()).then(setData);
-        fetch(`${API_URL}/majors`).then(r=>r.json()).then(setMajors);
+        fetch(`${API_URL}/majors`).then(r=>r.json()).then(d => { setMajors(d); const unis = [...new Set(d.map(item => item.university))].sort(); setUniList(unis); });
     }, [user.username]);
 
     useEffect(() => { refresh(); }, [refresh]);
+    useEffect(() => { if(selectedUni1) setProdiList1(majors.filter(m => m.university === selectedUni1)); }, [selectedUni1, majors]);
+    useEffect(() => { if(selectedUni2) setProdiList2(majors.filter(m => m.university === selectedUni2)); }, [selectedUni2, majors]);
 
     const saveMajors = () => { fetch(`${API_URL}/student/majors`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user.username, m1:selectedMajor.m1, m2:selectedMajor.m2})}).then(()=>alert("Target Disimpan!")); };
-    const startExam = (eid) => { if(!window.confirm("Mulai Ujian? Waktu berjalan.")) return; fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{ setExamData(d); setMode('exam'); setQIdx(0); setTimeLeft(d.duration * 60); setAnswers({}); }); };
+    const startExam = (eid) => { if(!window.confirm("Mulai Ujian?")) return; fetch(`${API_URL}/exams/${eid}`).then(r=>r.json()).then(d=>{ setExamData(d); setMode('exam'); setQIdx(0); setTimeLeft(d.duration * 60); setAnswers({}); }); };
     const submitExam = useCallback(() => { fetch(`${API_URL}/exams/${examData.id}/submit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user.username, answers})}).then(r=>r.json()).then(res=>{ alert(`Skor Akhir: ${res.score}`); setMode(null); refresh(); }); }, [examData, user.username, answers, refresh]);
     const openReview = (eid) => { fetch(`${API_URL}/exams/${eid}/review?username=${user.username}`).then(r=>r.json()).then(d=>{ setExamData(d); setMode('review'); setQIdx(0); }); };
 
-    useEffect(() => { if(mode === 'exam' && timeLeft > 0) { const t = setInterval(()=>setTimeLeft(p=>p-1), 1000); return ()=>clearInterval(t); } else if(mode === 'exam' && timeLeft === 0) { alert("WAKTU HABIS!"); submitExam(); } }, [timeLeft, mode, submitExam]);
+    useEffect(() => { if(mode === 'exam' && timeLeft > 0) { const t = setInterval(()=>setTimeLeft(p=>p-1), 1000); return ()=>clearInterval(t); } else if(mode === 'exam' && timeLeft === 0) { alert("Waktu Habis!"); submitExam(); } }, [timeLeft, mode, submitExam]);
 
-    // Handle Input
     const handleAnswer = (qid, val) => { if(mode!=='review') setAnswers(p=>({...p, [qid]:val})); };
 
     if(mode && examData) {
@@ -56,11 +63,9 @@ const StudentDashboard = ({ user, onLogout }) => {
                         <div><h1 className="font-bold text-slate-800 truncate max-w-[150px]">{examData.title}</h1><p className="text-xs text-slate-500">Soal {qIdx+1}</p></div>
                     </div>
                     {!isReview && <div className={`px-3 py-1 rounded-lg font-mono font-bold ${timeLeft<300?'bg-rose-100 text-rose-600':'bg-slate-100'}`}>{Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}</div>}
-                    {isReview && <button onClick={()=>setMode(null)}><XCircle/></button>}
+                    {isReview && <button onClick={()=>setMode(null)} className="p-2 hover:bg-slate-100 rounded-full"><XCircle/></button>}
                 </div>
-
                 <div className="flex-1 flex overflow-hidden relative">
-                    {/* SIDEBAR NO SOAL */}
                     <div className={`absolute md:relative inset-y-0 left-0 w-64 bg-white border-r transform transition-transform z-40 ${showNav?'translate-x-0':'-translate-x-full'} md:translate-x-0 flex flex-col`}>
                         <div className="p-4 grid grid-cols-5 gap-2 overflow-y-auto content-start flex-1">
                             {examData.questions.map((_, i) => (
@@ -69,8 +74,6 @@ const StudentDashboard = ({ user, onLogout }) => {
                         </div>
                         {!isReview && <div className="p-4 border-t"><button onClick={submitExam} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700">KUMPULKAN</button></div>}
                     </div>
-
-                    {/* SOAL AREA */}
                     <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-[#F8FAFC]">
                         {q.passage && <div className="w-full md:w-1/2 h-[30%] md:h-full overflow-y-auto p-6 border-b md:border-r bg-white"><div className="prose max-w-none"><RenderSoal text={q.passage}/></div></div>}
                         <div className="flex-1 h-full overflow-y-auto p-6 md:p-10">
@@ -95,8 +98,6 @@ const StudentDashboard = ({ user, onLogout }) => {
                         </div>
                     </div>
                 </div>
-                
-                {/* Mobile Footer Nav */}
                 <div className="h-16 bg-white border-t flex items-center justify-between px-6 md:hidden z-50">
                     <button onClick={()=>setQIdx(Math.max(0, qIdx-1))}><ChevronLeft/></button>
                     <span className="font-bold text-slate-600">{qIdx+1} / {examData.questions.length}</span>
@@ -106,9 +107,8 @@ const StudentDashboard = ({ user, onLogout }) => {
         );
     }
 
-    if(!data) return <div className="h-screen flex items-center justify-center">Loading V50...</div>;
+    if(!data) return <div className="h-screen flex items-center justify-center font-bold text-slate-400">Loading V50...</div>;
     const filteredPeriods = filterType === 'ALL' ? data.periods : data.periods.filter(p => p.type === filterType);
-    // Filter LMS sesuai Tab Aktif (UTBK, CPNS, dll)
     const filteredLMS = data.lms.filter(f => f.category === lmsTab);
 
     return (
@@ -121,22 +121,31 @@ const StudentDashboard = ({ user, onLogout }) => {
             <div className="max-w-7xl mx-auto p-6 space-y-8">
                 {view === 'home' && (
                     <>
-                        {/* Target Jurusan */}
                         <div className="bg-white p-6 rounded-[2rem] shadow-sm flex flex-col md:flex-row gap-4 items-center">
                             <div className="w-full"><h2 className="font-bold text-lg">Target Kampus</h2><p className="text-xs text-slate-500">Pilih jurusan impianmu.</p></div>
                             <div className="w-full flex gap-2">
-                                <select className="p-2 border rounded w-full text-xs" value={selectedMajor.m1} onChange={e=>setSelectedMajor({...selectedMajor, m1:e.target.value})}><option>Pilihan 1</option>{majors.map(m=><option key={m.id} value={m.id}>{m.university} - {m.program}</option>)}</select>
-                                <select className="p-2 border rounded w-full text-xs" value={selectedMajor.m2} onChange={e=>setSelectedMajor({...selectedMajor, m2:e.target.value})}><option>Pilihan 2</option>{majors.map(m=><option key={m.id} value={m.id}>{m.university} - {m.program}</option>)}</select>
-                                <button onClick={saveMajors} className="bg-indigo-600 text-white px-4 rounded text-xs font-bold">SIMPAN</button>
+                                <select className="p-2 border rounded w-full text-xs" value={selectedUni1} onChange={e=>setSelectedUni1(e.target.value)}><option value="">Universitas 1</option>{uniList.map(u=><option key={u} value={u}>{u}</option>)}</select>
+                                <select className="p-2 border rounded w-full text-xs" value={selectedMajor.m1} onChange={e=>setSelectedMajor({...selectedMajor, m1:e.target.value})}><option value="">Prodi 1</option>{prodiList1.map(m=><option key={m.id} value={m.id}>{m.program} (PG: {m.passing_grade})</option>)}</select>
+                            </div>
+                            <div className="w-full flex gap-2">
+                                <select className="p-2 border rounded w-full text-xs" value={selectedUni2} onChange={e=>setSelectedUni2(e.target.value)}><option value="">Universitas 2</option>{uniList.map(u=><option key={u} value={u}>{u}</option>)}</select>
+                                <select className="p-2 border rounded w-full text-xs" value={selectedMajor.m2} onChange={e=>setSelectedMajor({...selectedMajor, m2:e.target.value})}><option value="">Prodi 2</option>{prodiList2.map(m=><option key={m.id} value={m.id}>{m.program} (PG: {m.passing_grade})</option>)}</select>
+                            </div>
+                            <button onClick={saveMajors} className="bg-indigo-600 text-white px-4 rounded text-xs font-bold">SIMPAN</button>
+                        </div>
+
+                        {/* FIXED: BarChart2 Used Here */}
+                        <div className="bg-white p-6 rounded-[2rem] shadow-sm">
+                            <h3 className="font-bold mb-4 flex items-center gap-2"><BarChart2 className="text-indigo-600"/> Statistik</h3>
+                            <div className="space-y-3">
+                                {data.history.slice(0,3).map((h,i)=>(<div key={i} className="flex justify-between border-b pb-2"><span className="text-sm">{h.exam}</span><span className="font-bold text-indigo-600">{h.score}</span></div>))}
                             </div>
                         </div>
 
-                        {/* Statistik & Filter */}
                         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                             {['ALL', 'UTBK', 'CPNS', 'TKA', 'MANDIRI'].map(t => (<button key={t} onClick={()=>setFilterType(t)} className={`px-5 py-2 rounded-full text-xs font-bold whitespace-nowrap ${filterType===t?'bg-indigo-600 text-white':'bg-white border'}`}>{t}</button>))}
                         </div>
 
-                        {/* Daftar Ujian */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {filteredPeriods.map(p => (
                                 <div key={p.id} className="bg-white p-6 rounded-[2rem] shadow-sm border hover:shadow-md transition-all">
@@ -145,7 +154,8 @@ const StudentDashboard = ({ user, onLogout }) => {
                                         {p.exams.map(e => (
                                             <div key={e.id} className="p-4 border rounded-xl flex justify-between items-center hover:bg-slate-50">
                                                 <div><p className="font-bold text-sm">{e.title}</p><p className="text-[10px] text-slate-400">{e.duration} Menit</p></div>
-                                                {e.status==='done' ? <button onClick={()=>openReview(e.id)} className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold">NILAI: {e.score}</button> : <button onClick={()=>startExam(e.id)} className="p-2 bg-indigo-600 text-white rounded-lg"><Play size={14}/></button>}
+                                                {/* FIXED: CheckCircle Used Here */}
+                                                {e.status==='done' ? <div className="flex items-center gap-2 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold"><CheckCircle size={14}/> {e.score}</div> : <button onClick={()=>startExam(e.id)} className="p-2 bg-indigo-600 text-white rounded-lg"><Play size={14}/></button>}
                                             </div>
                                         ))}
                                     </div>
