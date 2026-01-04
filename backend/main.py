@@ -5,11 +5,11 @@ from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 import models, database, io
 import pandas as pd
+from datetime import datetime
 
-app = FastAPI(title="EduPrime V37 Final Stable")
+app = FastAPI(title="EduPrime V39 Ultimate")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# --- PERBAIKAN UTAMA: FUNGSI GET_DB DIPECAH AGAR AMAN ---
 def get_db():
     db = database.SessionLocal()
     try:
@@ -33,7 +33,7 @@ def init(db: Session = Depends(get_db)):
     if not db.query(models.User).filter_by(username="admin").first():
         db.add(models.User(username="admin", password="123", full_name="Super Admin", role="admin"))
     db.commit()
-    return {"status": "System Ready V37"}
+    return {"status": "V39 Ready"}
 
 # --- AUTH & USER ---
 @app.post("/login")
@@ -44,8 +44,7 @@ def login(data: dict, db: Session = Depends(get_db)):
     raise HTTPException(400, "Gagal Login")
 
 @app.get("/admin/users")
-def get_users(db: Session = Depends(get_db)): 
-    return db.query(models.User).all()
+def get_users(db: Session = Depends(get_db)): return db.query(models.User).all()
 
 @app.post("/admin/users/delete-list")
 def delete_list(data: DeleteList, db: Session = Depends(get_db)):
@@ -66,8 +65,7 @@ async def bulk_user(file: UploadFile = File(...), db: Session = Depends(get_db))
 # --- MAJORS ---
 @app.post("/admin/majors/bulk")
 async def bulk_majors(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    db.query(models.Major).delete()
-    db.commit()
+    db.query(models.Major).delete(); db.commit()
     df = pd.read_excel(io.BytesIO(await file.read()))
     for _, r in df.iterrows():
         db.add(models.Major(university=r['Universitas'], program=r['Prodi'], passing_grade=float(r['Passing_Grade'])))
@@ -75,24 +73,20 @@ async def bulk_majors(file: UploadFile = File(...), db: Session = Depends(get_db
     return {"msg": "Updated"}
 
 @app.get("/majors")
-def get_majors(db: Session = Depends(get_db)): 
-    return db.query(models.Major).all()
+def get_majors(db: Session = Depends(get_db)): return db.query(models.Major).all()
 
 @app.post("/student/majors")
 def save_majors(data: MajorSelect, db: Session = Depends(get_db)):
     u = db.query(models.User).filter_by(username=data.username).first()
-    u.choice1_id = data.m1
-    u.choice2_id = data.m2
-    db.commit()
+    u.choice1_id = data.m1; u.choice2_id = data.m2; db.commit()
     return {"msg": "Saved"}
 
 # --- EXAMS ---
 @app.post("/admin/periods")
 def create_period(name: str = Form(...), exam_type: str = Form(...), db: Session = Depends(get_db)):
     p = models.ExamPeriod(name=name, exam_type=exam_type)
-    db.add(p)
-    db.commit()
-    db.refresh(p)
+    db.add(p); db.commit(); db.refresh(p)
+    # Struktur Dasar (Bisa ditambah manual via Excel nanti)
     struct = {
         "UTBK": [("PU",30,1), ("PBM",25,2), ("PPU",15,3), ("PK",20,4), ("LBI",45,5), ("LBE",45,6), ("PM",45,7)],
         "CPNS": [("TWK",30,1), ("TIU",35,2), ("TKP",45,3)],
@@ -109,32 +103,24 @@ def get_periods(db: Session = Depends(get_db)):
 
 @app.delete("/admin/periods/{pid}")
 def del_period(pid: int, db: Session = Depends(get_db)):
-    db.query(models.ExamPeriod).filter_by(id=pid).delete()
-    db.commit()
+    db.query(models.ExamPeriod).filter_by(id=pid).delete(); db.commit()
     return {"msg": "Del"}
 
-# --- QUESTIONS ---
+# --- QUESTIONS (EXCEL & MANUAL) ---
 @app.post("/admin/upload-questions/{eid}")
 async def upload_q(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     df = pd.read_excel(io.BytesIO(await file.read()))
     db.query(models.Question).filter_by(exam_id=eid).delete()
-    
     for _, r in df.iterrows():
         tipe = str(r.get('Tipe', 'PG')).upper()
         q = models.Question(
-            exam_id=eid,
-            question_type=tipe,
-            text=str(r['Soal']),
+            exam_id=eid, question_type=tipe, text=str(r['Soal']),
             passage_text=str(r['Bacaan']) if pd.notna(r.get('Bacaan')) else None,
             media_url=str(r['Gambar']) if pd.notna(r.get('Gambar')) else None,
-            explanation=str(r.get('Pembahasan', '')),
-            difficulty=float(r.get('Kesulitan', 1.0)),
+            explanation=str(r.get('Pembahasan', '')), difficulty=float(r.get('Kesulitan', 1.0)),
             correct_answer_isian=str(r['Kunci']) if tipe == 'ISIAN' else None
         )
-        db.add(q)
-        db.commit()
-        db.refresh(q)
-        
+        db.add(q); db.commit(); db.refresh(q)
         if 'PG' in tipe:
             for char in ['A','B','C','D','E']:
                 if pd.notna(r.get(f'Opsi{char}')):
@@ -149,15 +135,13 @@ def add_manual(eid: str, data: ManualQuestion, db: Session = Depends(get_db)):
         exam_id=eid, text=data.text, difficulty=data.difficulty, explanation=data.explanation, 
         passage_text=data.passage, media_url=data.media, question_type=data.type
     )
-    db.add(q)
-    db.commit()
-    db.refresh(q)
+    db.add(q); db.commit(); db.refresh(q)
     for opt in data.options:
         db.add(models.Option(question_id=q.id, label=opt['label'], option_index=opt['idx'], is_correct=opt['is_correct']))
     db.commit()
     return {"msg": "Saved"}
 
-# --- STUDENT DATA (HISTORY & LMS) ---
+# --- STUDENT API (DENGAN PEMBAHASAN) ---
 @app.get("/student/data")
 def student_data(username: str, db: Session = Depends(get_db)):
     u = db.query(models.User).filter_by(username=username).first()
@@ -176,16 +160,11 @@ def student_data(username: str, db: Session = Depends(get_db)):
     results = db.query(models.ExamResult).filter_by(user_id=u.id).all()
     for res in results:
         ex = db.query(models.Exam).filter_by(id=res.exam_id).first()
-        if ex:
-            history.append({
-                "exam": ex.title,
-                "score": res.irt_score,
-                "correct": res.correct_count,
-                "date": res.completed_at
-            })
+        if ex: history.append({"exam": ex.title, "score": res.irt_score, "correct": res.correct_count, "date": res.completed_at})
 
     return {"user": u, "periods": exam_list, "materials": mats, "history": history}
 
+# Endpoint Ujian (Tanpa Kunci)
 @app.get("/exams/{eid}")
 def get_exam(eid: str, db: Session = Depends(get_db)):
     e = db.query(models.Exam).filter_by(id=eid).first()
@@ -194,6 +173,28 @@ def get_exam(eid: str, db: Session = Depends(get_db)):
         "questions": [{
             "id":q.id, "text":q.text, "passage":q.passage_text, "media":q.media_url, "type":q.question_type,
             "options": [{"id":o.option_index, "label":o.label} for o in q.options]
+        } for q in e.questions]
+    }
+
+# Endpoint Pembahasan (Dengan Kunci & Penjelasan) - FITUR BARU V39
+@app.get("/exams/{eid}/review")
+def get_exam_review(eid: str, username: str, db: Session = Depends(get_db)):
+    u = db.query(models.User).filter_by(username=username).first()
+    res = db.query(models.ExamResult).filter_by(user_id=u.id, exam_id=eid).first()
+    if not res: raise HTTPException(400, "Belum Mengerjakan")
+    
+    e = db.query(models.Exam).filter_by(id=eid).first()
+    user_answers = res.answers_json or {}
+    
+    return {
+        "title": e.title,
+        "score": res.irt_score,
+        "questions": [{
+            "id": q.id, "text": q.text, "passage": q.passage_text, "media": q.media_url, 
+            "explanation": q.explanation, # PEMBAHASAN MUNCUL DI SINI
+            "user_answer": user_answers.get(str(q.id)),
+            "correct_answer": q.correct_answer_isian if q.question_type=='ISIAN' else next((o.option_index for o in q.options if o.is_correct), None),
+            "options": [{"id":o.option_index, "label":o.label, "is_correct":o.is_correct} for o in q.options]
         } for q in e.questions]
     }
 
@@ -211,23 +212,16 @@ def submit(eid: str, data: AnswerSchema, db: Session = Depends(get_db)):
             if key and str(ans) == str(key.option_index): correct += 1
             
     score = (correct / len(e.questions) * 1000) if e.questions else 0
-    db.add(models.ExamResult(user_id=u.id, exam_id=eid, irt_score=round(score,2), correct_count=correct, answers_json=data.answers))
+    db.add(models.ExamResult(user_id=u.id, exam_id=eid, irt_score=round(score,2), correct_count=correct, wrong_count=len(e.questions)-correct, answers_json=data.answers))
     db.commit()
     return {"score": score}
 
 # --- LMS ---
 @app.get("/materials")
-def get_mats_ep(db: Session = Depends(get_db)): 
-    return db.query(models.Material).all()
-
+def get_mats_ep(db: Session = Depends(get_db)): return db.query(models.Material).all()
 @app.post("/materials")
 def add_mat(title:str=Form(...), type:str=Form(...), url:str=Form(...), category:str=Form(...), db:Session=Depends(get_db)):
-    db.add(models.Material(title=title, type=type, content_url=url, category=category))
-    db.commit()
-    return {"msg":"OK"}
-
+    db.add(models.Material(title=title, type=type, content_url=url, category=category)); db.commit(); return {"msg":"OK"}
 @app.delete("/materials/{mid}")
 def del_mat(mid: int, db: Session = Depends(get_db)):
-    db.query(models.Material).filter_by(id=mid).delete()
-    db.commit()
-    return {"msg":"Del"}
+    db.query(models.Material).filter_by(id=mid).delete(); db.commit(); return {"msg":"Del"}
