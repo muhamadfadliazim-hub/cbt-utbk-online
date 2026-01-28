@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, BookOpen, BarChart3, Lock, Trophy, PlayCircle, Eye, CheckCircle, XCircle, X } from 'lucide-react';
+import { LogOut, BookOpen, BarChart3, Lock, Trophy, Eye, X } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
+// PENTING: Tambahkan library Recharts untuk Radar Chart
+import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 
 const StudentDashboard = ({ user, onLogout, onSelectExam, apiUrl }) => {
   const [tab, setTab] = useState('exams');
   const [periods, setPeriods] = useState([]);
   const [stats, setStats] = useState(null);
-  const [reviewData, setReviewData] = useState(null); // Data pembahasan
+  const [reviewData, setReviewData] = useState(null);
 
   useEffect(() => {
     if (!user || !user.username) return;
@@ -15,7 +17,6 @@ const StudentDashboard = ({ user, onLogout, onSelectExam, apiUrl }) => {
     if (tab === 'stats') fetch(`${apiUrl}/student/dashboard-stats?username=${user.username}`).then(r => r.json()).then(setStats).catch(console.error);
   }, [tab, user, apiUrl]);
 
-  // Fungsi ambil pembahasan
   const handleViewReview = (examId) => {
       fetch(`${apiUrl}/student/review/${examId}`)
         .then(r => r.json())
@@ -124,6 +125,31 @@ const StudentDashboard = ({ user, onLogout, onSelectExam, apiUrl }) => {
                       <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                           <div className="p-4 bg-gray-50 rounded-xl border"><div className="text-gray-500">Pilihan 1</div><div className="font-bold">{stats.choice1}</div></div>
                           <div className="p-4 bg-gray-50 rounded-xl border"><div className="text-gray-500">Pilihan 2</div><div className="font-bold">{stats.choice2}</div></div>
+                      </div>
+                  </div>
+
+                  {/* KEMBALIKAN RADAR CHART & LEADERBOARD DISINI */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="bg-white p-6 rounded-2xl shadow border">
+                          <h3 className="font-bold text-center mb-4">Peta Kemampuan</h3>
+                          <div className="h-80">
+                              <ResponsiveContainer>
+                                  <RadarChart cx="50%" cy="50%" outerRadius="80%" data={stats.radar}>
+                                      <PolarGrid/>
+                                      <PolarAngleAxis dataKey="subject"/>
+                                      <PolarRadiusAxis angle={30} domain={[0,1000]}/>
+                                      <Radar dataKey="score" stroke="#4f46e5" fill="#4f46e5" fillOpacity={0.4}/>
+                                  </RadarChart>
+                              </ResponsiveContainer>
+                          </div>
+                      </div>
+                      <div className="bg-white p-6 rounded-2xl shadow border">
+                          <div className="flex gap-2 mb-4"><Trophy className="text-amber-500"/><h3 className="font-bold">Top 10 Siswa</h3></div>
+                          {stats.leaderboard.map((s,i)=>(
+                              <div key={i} className={`flex justify-between p-3 border-b ${s.name===user.name?'bg-indigo-50':''}`}>
+                                  <span>#{s.rank} {s.name}</span><span className="font-bold">{s.score}</span>
+                              </div>
+                          ))}
                       </div>
                   </div>
 

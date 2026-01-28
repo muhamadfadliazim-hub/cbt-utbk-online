@@ -84,19 +84,22 @@ def reset_exam_questions(eid: str, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Soal berhasil direset."}
 
-# --- DASHBOARD STATS ---
+# --- UPDATE: DASHBOARD STATS (PAKET LENGKAP: RAPOR + RADAR + LEADERBOARD) ---
 @app.get("/student/dashboard-stats")
 def get_stats(username: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=username).first()
     if not user: raise HTTPException(404)
     
+    # Cek Rilis
     config_release = db.query(models.SystemConfig).filter_by(key="release_announcement").first()
     is_released = (config_release.value == "true") if config_release else False
     
     if not is_released: return {"is_released": False}
 
+    # --- 1. HITUNG SKOR & RAPOR (Fitur Baru) ---
     total_score = 0
     subtest_details = []
+    subtest_scores_map = {} # Untuk Radar
     
     results = db.query(models.ExamResult).filter_by(user_id=user.id).all()
     
@@ -105,6 +108,7 @@ def get_stats(username: str, db: Session = Depends(get_db)):
         title = exam.title if exam else r.exam_id
         code = exam.code if exam else "Lainnya"
         
+        # Simpan Detail
         subtest_details.append({
             "id": r.exam_id, 
             "code": code,
@@ -113,10 +117,16 @@ def get_stats(username: str, db: Session = Depends(get_db)):
             "wrong": r.wrong_count,
             "score": r.irt_score
         })
+        
+        # Simpan Score Map untuk Radar
+        if code not in subtest_scores_map: subtest_scores_map[code] = []
+        subtest_scores_map[code].append(r.irt_score)
+
         total_score += r.irt_score
 
     avg_score = int(total_score / 7) if total_score > 0 else 0
     
+    # Cek Status Kelulusan
     c1 = db.query(models.Major).filter_by(id=user.choice1_id).first()
     c2 = db.query(models.Major).filter_by(id=user.choice2_id).first()
     
@@ -129,19 +139,35 @@ def get_stats(username: str, db: Session = Depends(get_db)):
     elif c2 and avg_score >= c2.passing_grade:
         status_text = f"LULUS PILIHAN 2: {c2.university} - {c2.name}"
         status_color = "blue"
+
+    # --- 2. DATA ANALISIS (Fitur Lama yang Dikembalikan) ---
+    # Leaderboard (Top 10)
+    all_results = db.query(models.User.full_name, func.sum(models.ExamResult.irt_score).label('total_score')).join(models.ExamResult).filter(models.User.role == 'student').group_by(models.User.id).order_by(desc('total_score')).limit(10).all()
+    leaderboard = [{"rank": i+1, "name": r[0], "score": int(r[1])} for i, r in enumerate(all_results)]
+
+    # Radar Chart Data
+    std_codes = ["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"]
+    radar_data = []
+    for c in std_codes:
+        scores = subtest_scores_map.get(c, [])
+        s_avg = sum(scores) / len(scores) if scores else 0
+        radar_data.append({"subject": c, "score": int(s_avg), "fullMark": 1000})
         
     return {
         "is_released": True,
+        # Data Rapor
         "average": avg_score,
         "total": total_score,
         "status": status_text,
         "status_color": status_color,
         "details": subtest_details,
         "choice1": f"{c1.university} - {c1.name} (PG: {c1.passing_grade})" if c1 else "-",
-        "choice2": f"{c2.university} - {c2.name} (PG: {c2.passing_grade})" if c2 else "-"
+        "choice2": f"{c2.university} - {c2.name} (PG: {c2.passing_grade})" if c2 else "-",
+        # Data Analisis (Restore)
+        "leaderboard": leaderboard,
+        "radar": radar_data
     }
 
-# --- PEMBAHASAN SOAL ---
 @app.get("/student/review/{exam_id}")
 def get_exam_review(exam_id: str, db: Session = Depends(get_db)):
     exam = db.query(models.Exam).filter_by(id=exam_id).first()
@@ -401,7 +427,6 @@ def get_institute_config(db: Session = Depends(get_db)):
         res[k] = c.value if c else ""
     return res
 
-# --- FUNGSI REKAPITULASI (REVISI STATUS LULUS/TIDAK) ---
 def get_recap_data_internal(period_id, db):
     query = db.query(models.ExamResult).join(models.User).filter(models.User.role == 'student')
     if period_id: query = query.filter(models.ExamResult.exam_id.like(f"P{period_id}_%"))
@@ -436,7 +461,6 @@ def get_recap_data_internal(period_id, db):
             
         avg = int(total / 7); row["average"] = avg
         
-        # LOGIKA STATUS BARU
         status_text = "TIDAK LULUS"
         if mj1 and avg >= mj1.passing_grade: status_text = f"LULUS - {mj1.university}"
         elif mj2 and avg >= mj2.passing_grade: status_text = f"LULUS - {mj2.university}"
@@ -452,7 +476,6 @@ def download_pdf_recap(period_id: Optional[str] = None, db: Session = Depends(ge
     conf = get_institute_config(db)
     
     buffer = io.BytesIO()
-    # Margin diperkecil agar tabel muat
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=20, leftMargin=20, topMargin=30, bottomMargin=30)
     elements = []
     styles = getSampleStyleSheet()
@@ -475,7 +498,6 @@ def download_pdf_recap(period_id: Optional[str] = None, db: Session = Depends(ge
         ]
         table_data.append(r)
     
-    # Kolom status diperlebar (140)
     col_widths = [25, 130, 90, 35,35,35,35,35,35,35, 45, 140] 
     t = Table(table_data, colWidths=col_widths)
     t.setStyle(TableStyle([
