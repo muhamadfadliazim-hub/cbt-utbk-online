@@ -1,129 +1,143 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, ArrowRight, FileText, CheckCircle, XCircle } from 'lucide-react';
+import { CheckCircle, BookOpen, Clock, School, Search, ChevronRight } from 'lucide-react';
 
+// --- 1. KOMPONEN PILIH JURUSAN ---
 export const MajorSelection = ({ onNext }) => {
   const [majors, setMajors] = useState([]);
-  const [universities, setUniversities] = useState([]);
-  const [univ1, setUniv1] = useState('');
-  const [majorId1, setMajorId1] = useState('');
-  const [univ2, setUniv2] = useState('');
-  const [majorId2, setMajorId2] = useState('');
+  const [search, setSearch] = useState("");
+  const [choice1, setChoice1] = useState(null);
+  const [choice2, setChoice2] = useState(null);
 
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/majors').then(res => res.json()).then(data => {
-        setMajors(data);
-        setUniversities([...new Set(data.map(m => m.university))].sort());
-    }).catch(() => alert("Gagal mengambil data jurusan."));
+    // Ambil data jurusan dari API (Pastikan API_URL sesuai settingan global Anda jika perlu, 
+    // tapi disini kita fetch relative path atau hardcode sementara jika context tidak dikirim)
+    // Untuk aman, kita asumsikan fetch relatif ke proxy atau URL standar
+    fetch("http://127.0.0.1:8000/majors")
+      .then(r => r.json())
+      .then(setMajors)
+      .catch(e => console.error("Gagal load jurusan", e));
   }, []);
 
-  const getMajorsByUniv = (univName) => majors.filter(m => m.university === univName).sort((a,b) => a.name.localeCompare(b.name));
+  const filtered = majors.filter(m => 
+    m.university.toLowerCase().includes(search.toLowerCase()) || 
+    m.name.toLowerCase().includes(search.toLowerCase())
+  );
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!majorId1) { alert("Pilihan 1 Wajib!"); return; }
-    const c1 = majors.find(m => m.id === parseInt(majorId1));
-    const c2 = majors.find(m => m.id === parseInt(majorId2));
-    onNext({
-      choice1_id: parseInt(majorId1), choice2_id: majorId2 ? parseInt(majorId2) : null,
-      display1: c1 ? `${c1.university} - ${c1.name}` : '', pg1: c1 ? c1.passing_grade : '',
-      display2: c2 ? `${c2.university} - ${c2.name}` : '-', pg2: c2 ? c2.passing_grade : ''
-    });
+  const handleSelect = (m) => {
+    if (!choice1) setChoice1(m);
+    else if (!choice2 && m.id !== choice1.id) setChoice2(m);
   };
 
   return (
-    <div className="min-h-screen bg-blue-50 flex items-center justify-center p-4 font-sans">
-      <div className="bg-white p-8 rounded-xl shadow-lg max-w-2xl w-full">
-        <div className="flex items-center gap-3 mb-6 border-b pb-4"><Building2 className="text-blue-600" size={32} /><div><h2 className="text-xl font-bold text-gray-800">Pilih Jurusan & PTN</h2><p className="text-sm text-gray-500">Tentukan target masa depanmu</p></div></div>
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-            <h3 className="font-bold text-blue-800 mb-3 text-sm">Pilihan 1 (Prioritas)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <select className="w-full p-2 border rounded text-sm" value={univ1} onChange={(e) => { setUniv1(e.target.value); setMajorId1(''); }}><option value="">-- Pilih PTN --</option>{universities.map((univ) => <option key={univ} value={univ}>{univ}</option>)}</select>
-              <select className="w-full p-2 border rounded text-sm" value={majorId1} onChange={(e) => setMajorId1(e.target.value)} disabled={!univ1}><option value="">-- Pilih Jurusan --</option>{getMajorsByUniv(univ1).map((m) => <option key={m.id} value={m.id}>{m.name} (PG: {m.passing_grade})</option>)}</select>
+    <div className="min-h-screen bg-slate-50 p-6 flex flex-col items-center">
+      <div className="max-w-2xl w-full bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+        <div className="p-8 border-b border-gray-100 bg-indigo-900 text-white">
+          <h2 className="text-2xl font-bold mb-2">Pilih Jurusan Target</h2>
+          <p className="text-indigo-200">Tentukan PTN impianmu sekarang.</p>
+        </div>
+        
+        <div className="p-6 bg-indigo-50 border-b border-indigo-100 flex gap-4">
+            <div className="flex-1 bg-white p-4 rounded-xl border border-indigo-100 shadow-sm">
+                <div className="text-xs text-gray-500 font-bold uppercase">Pilihan 1</div>
+                <div className="font-bold text-indigo-900 truncate">{choice1 ? `${choice1.university} - ${choice1.name}` : "Belum dipilih"}</div>
+                {choice1 && <button onClick={()=>setChoice1(null)} className="text-xs text-red-500 mt-1 hover:underline">Hapus</button>}
             </div>
-          </div>
-          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-            <h3 className="font-bold text-gray-600 mb-3 text-sm">Pilihan 2 (Opsional)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <select className="w-full p-2 border rounded text-sm" value={univ2} onChange={(e) => { setUniv2(e.target.value); setMajorId2(''); }}><option value="">-- Pilih PTN --</option>{universities.map((univ) => <option key={univ} value={univ}>{univ}</option>)}</select>
-              <select className="w-full p-2 border rounded text-sm" value={majorId2} onChange={(e) => setMajorId2(e.target.value)} disabled={!univ2}><option value="">-- Pilih Jurusan --</option>{getMajorsByUniv(univ2).map((m) => <option key={m.id} value={m.id}>{m.name} (PG: {m.passing_grade})</option>)}</select>
+            <div className="flex-1 bg-white p-4 rounded-xl border border-indigo-100 shadow-sm">
+                <div className="text-xs text-gray-500 font-bold uppercase">Pilihan 2</div>
+                <div className="font-bold text-indigo-900 truncate">{choice2 ? `${choice2.university} - ${choice2.name}` : "Belum dipilih"}</div>
+                {choice2 && <button onClick={()=>setChoice2(null)} className="text-xs text-red-500 mt-1 hover:underline">Hapus</button>}
             </div>
-          </div>
-          <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition shadow-lg">Simpan Pilihan & Lanjutkan</button>
-        </form>
+        </div>
+
+        <div className="p-6">
+            <div className="relative mb-4">
+                <Search className="absolute left-3 top-3 text-gray-400" size={20}/>
+                <input className="w-full pl-10 p-3 border rounded-xl bg-gray-50 focus:bg-white transition" placeholder="Cari Universitas atau Prodi..." value={search} onChange={e=>setSearch(e.target.value)}/>
+            </div>
+            <div className="h-64 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {filtered.map(m => (
+                    <button key={m.id} onClick={()=>handleSelect(m)} className="w-full text-left p-3 hover:bg-indigo-50 rounded-lg border border-transparent hover:border-indigo-100 transition group">
+                        <div className="font-bold text-gray-800 group-hover:text-indigo-700">{m.university}</div>
+                        <div className="text-sm text-gray-500">{m.name}</div>
+                    </button>
+                ))}
+            </div>
+        </div>
+
+        <div className="p-6 border-t bg-gray-50 flex justify-end">
+            <button 
+                onClick={() => onNext({ choice1_id: choice1.id, choice2_id: choice2 ? choice2.id : null })} 
+                disabled={!choice1}
+                className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2"
+            >
+                Simpan & Lanjut <ChevronRight size={18}/>
+            </button>
+        </div>
       </div>
     </div>
   );
 };
 
+// --- 2. KOMPONEN KONFIRMASI MULAI ---
 export const Confirmation = ({ userData, onStart, onBack }) => {
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-6 font-sans">
-      <div className="bg-white p-8 rounded-xl shadow-2xl max-w-3xl w-full border-t-8 border-indigo-600">
-        <h2 className="text-2xl font-extrabold text-gray-900 mb-2 flex items-center gap-2"><FileText className="text-indigo-600" /> TATA TERTIB & TARGET</h2>
-        <p className="text-gray-500 mb-6 text-sm">Mohon periksa pilihan jurusan dan baca aturan ujian.</p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-sm">
-            <div className="bg-gray-50 p-4 rounded border border-gray-200"><span className="block text-gray-500 text-xs uppercase font-bold mb-1">Nama Peserta</span><span className="font-bold text-gray-800 text-lg">{userData.name}</span></div>
-            <div className="bg-blue-50 p-4 rounded border border-blue-200"><span className="block text-blue-600 text-xs uppercase font-bold mb-1">Pilihan 1</span><div className="font-bold text-gray-800 mb-1 leading-tight">{userData.display1 || "-"}</div>{userData.pg1 && <div className="text-xs text-blue-700 font-mono">Target PG: {userData.pg1}</div>}</div>
-            <div className="bg-gray-50 p-4 rounded border border-gray-200"><span className="block text-gray-500 text-xs uppercase font-bold mb-1">Pilihan 2</span><div className="font-bold text-gray-800 mb-1 leading-tight">{userData.display2 || "-"}</div>{userData.pg2 && <div className="text-xs text-gray-600 font-mono">Target PG: {userData.pg2}</div>}</div>
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-md w-full border border-gray-100 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
+            <h2 className="text-2xl font-extrabold text-gray-900 mb-6 text-center">Konfirmasi Ujian</h2>
+            
+            <div className="space-y-4 mb-8">
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center gap-4">
+                    <div className="bg-white p-2 rounded-lg shadow-sm"><School className="text-indigo-600"/></div>
+                    <div><div className="text-xs text-gray-500 font-bold uppercase">Nama Peserta</div><div className="font-bold text-gray-800">{userData.name}</div></div>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center gap-4">
+                    <div className="bg-white p-2 rounded-lg shadow-sm"><BookOpen className="text-purple-600"/></div>
+                    <div><div className="text-xs text-gray-500 font-bold uppercase">Mode Ujian</div><div className="font-bold text-gray-800">CBT Online</div></div>
+                </div>
+                <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-100 text-sm text-yellow-800 leading-relaxed">
+                    <strong className="block mb-1">Perhatian:</strong>
+                    Waktu akan berjalan otomatis saat Anda menekan tombol mulai. Pastikan koneksi internet stabil.
+                </div>
+            </div>
+
+            <div className="flex gap-3">
+                <button onClick={onBack} className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition">Batal</button>
+                <button onClick={onStart} className="flex-1 py-3 font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 rounded-xl transition">MULAI SEKARANG</button>
+            </div>
         </div>
-        <div className="space-y-4 text-gray-700 text-sm mb-8 border p-4 rounded-lg bg-gray-50 h-56 overflow-y-auto">
-            <h3 className="font-bold text-gray-800 border-b pb-2">Peraturan Ujian CBT:</h3>
-            <ul className="list-disc pl-5 space-y-2"><li>Waktu ujian berjalan otomatis.</li><li>Dilarang membuka tab lain.</li><li>Sistem penilaian IRT (Tidak ada poin minus).</li></ul>
-        </div>
-        <div className="flex gap-4"><button onClick={onBack} className="w-1/3 py-3 rounded-lg font-bold text-gray-600 border border-gray-300 hover:bg-gray-100">Ubah Jurusan</button><button onClick={onStart} className="w-2/3 bg-indigo-600 text-white py-3 rounded-lg font-bold hover:bg-indigo-700 shadow-lg flex items-center justify-center gap-2 animate-pulse">SAYA SIAP MENGERJAKAN <ArrowRight size={18}/></button></div>
-      </div>
     </div>
   );
 };
 
-// ... (Bagian MajorSelection dan Confirmation biarkan tetap sama) ...
-
-// --- 3. KOMPONEN HASIL UJIAN (FIXED) ---
-export const ResultSummary = ({ result, onBack }) => {
-  // Pengaman jika result null/undefined
-  if (!result) {
-      return (
-          <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-              <div className="bg-white p-8 rounded-xl shadow-lg text-center">
-                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-                  <p>Memproses Hasil...</p>
-              </div>
-          </div>
-      );
-  }
-
+// --- 3. KOMPONEN HASIL (VERSI SIMPEL / BLIND) ---
+export const ResultSummary = ({ onBack }) => {
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans">
-      <div className="bg-white p-10 rounded-2xl shadow-2xl max-w-lg w-full text-center border-t-8 border-indigo-600">
-        <div className="mb-6">
-            <h2 className="text-3xl font-extrabold text-gray-900 mb-2">Ujian Selesai!</h2>
-            <p className="text-gray-500">Jawaban Anda telah berhasil disimpan ke sistem.</p>
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+      <div className="bg-white p-10 rounded-3xl shadow-xl text-center max-w-lg w-full border border-gray-100 relative">
+        
+        {/* Ikon Sukses Besar */}
+        <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
+          <CheckCircle size={48} />
         </div>
 
-        <div className="grid grid-cols-2 gap-6 mb-8">
-          <div className="bg-green-50 p-6 rounded-2xl border border-green-100 shadow-sm flex flex-col items-center">
-            <CheckCircle className="text-green-500 mb-2" size={40} />
-            <div className="text-4xl font-extrabold text-green-700">{result.correct || 0}</div>
-            <div className="text-sm font-bold text-green-600 uppercase tracking-wide">Jawaban Benar</div>
-          </div>
-
-          <div className="bg-red-50 p-6 rounded-2xl border border-red-100 shadow-sm flex flex-col items-center">
-            <XCircle className="text-red-500 mb-2" size={40} />
-            <div className="text-4xl font-extrabold text-red-700">{result.wrong || 0}</div>
-            <div className="text-sm font-bold text-red-600 uppercase tracking-wide">Jawaban Salah</div>
-          </div>
-        </div>
-
-        <div className="text-sm text-gray-400 mb-8 italic">
-            *Nilai IRT lengkap dapat dilihat di menu "Rekap Hasil" setelah semua sesi berakhir.
+        <h2 className="text-3xl font-extrabold text-gray-900 mb-4">Ujian Selesai!</h2>
+        
+        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-8">
+            <p className="text-gray-600 text-lg leading-relaxed">
+              Jawaban Anda telah <strong>berhasil disimpan</strong> ke dalam sistem.
+            </p>
+            <hr className="my-4 border-gray-200"/>
+            <p className="text-sm text-gray-500">
+              Rincian nilai (Skor, Benar, Salah) akan diumumkan oleh <strong>Admin/Panitia</strong>. Silakan cek dashboard Anda secara berkala.
+            </p>
         </div>
 
         <button 
-            onClick={onBack} 
-            className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-lg hover:bg-indigo-700 transition shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+          onClick={onBack}
+          className="w-full py-4 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition transform hover:scale-[1.02] flex items-center justify-center gap-2"
         >
-            Kembali ke Dashboard
+          Kembali ke Dashboard
         </button>
       </div>
     </div>

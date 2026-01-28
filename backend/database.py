@@ -1,11 +1,23 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# Ganti 'muhamadfadliazim' dan '12345' sesuai settingan PostgreSQL Anda tadi
-SQLALCHEMY_DATABASE_URL = "postgresql://postgres:12345@localhost:5300/utbk_db"
+# Cek apakah ada environment variable DATABASE_URL (Otomatis ada di Railway)
+# Jika tidak ada, fallback ke SQLite (untuk lokal)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./cbt_system.db")
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+# Fix untuk URL Postgres di SQLAlchemy (Railway kadang pakai postgres://, harus postgresql://)
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Konfigurasi Engine
+if "sqlite" in DATABASE_URL:
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    # Konfigurasi untuk PostgreSQL
+    engine = create_engine(DATABASE_URL)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
