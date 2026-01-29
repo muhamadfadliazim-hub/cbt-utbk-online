@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { BookOpen, Calculator, PenTool, BrainCircuit, ChevronRight, Loader2, Clock, FileText, LogOut, FileBarChart, Folder } from 'lucide-react';
 
-const Dashboard = ({ onSelectExam, userName, onLogout, onGoToRecap }) => {
+// PERBAIKAN 1: Tambahkan 'apiUrl' di sini agar bisa menerima alamat dari App.js
+const Dashboard = ({ onSelectExam, userName, onLogout, onGoToRecap, apiUrl }) => {
   const [periods, setPeriods] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [expandedPeriod, setExpandedPeriod] = useState(null);
 
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/student/periods')
+    // PERBAIKAN 2: Gunakan apiUrl, JANGAN localhost
+    fetch(`${apiUrl}/student/periods`)
       .then(res => {
         if (!res.ok) throw new Error("Gagal mengambil data periode");
         return res.json();
@@ -17,8 +19,12 @@ const Dashboard = ({ onSelectExam, userName, onLogout, onGoToRecap }) => {
         else setPeriods([]); 
         setLoading(false); 
       })
-      .catch(err => { setPeriods([]); setLoading(false); });
-  }, []);
+      .catch(err => { 
+        console.error(err); // Log error biar tau kenapa
+        setPeriods([]); 
+        setLoading(false); 
+      });
+  }, [apiUrl]); // PERBAIKAN 3: Tambahkan dependency apiUrl
 
   const getIcon = (title) => {
     if (title.includes('Kuantitatif') || title.includes('Matematika')) return <Calculator className="text-blue-500" />;

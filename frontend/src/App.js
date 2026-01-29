@@ -5,7 +5,7 @@ import StudentDashboard from './StudentDashboard';
 import ExamSimulation from './ExamSimulation';
 import { MajorSelection, Confirmation, ResultSummary } from './FlowComponents';
 
-const API_URL = "http://127.0.0.1:8000"; 
+import { API_URL } from './config';
 
 function App() {
   const [user, setUser] = useState(() => {
