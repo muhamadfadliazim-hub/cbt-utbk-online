@@ -24,6 +24,9 @@ if not os.path.exists(UPLOAD_DIR): os.makedirs(UPLOAD_DIR)
 models.Base.metadata.create_all(bind=database.engine)
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
+@app.get("/")
+def read_root():
+    return {"status": "ok", "message": "Backend CBT Aktif! Silakan akses endpoint API atau buka /docs."}
 
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
