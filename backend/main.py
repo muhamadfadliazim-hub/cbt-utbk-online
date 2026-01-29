@@ -20,6 +20,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 from database import engine
 
+
 # --- SETUP ---
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
@@ -37,13 +38,14 @@ app.add_middleware(
 )
 
 # --- STARTUP EVENT (UNTUK AUTO-CREATE TABLE) ---
+# --- DI DALAM main.py ---
 @app.on_event("startup")
 def startup_event():
     try:
         models.Base.metadata.create_all(bind=database.engine)
-        print("DATABASE CONNECTED: Semua tabel berhasil disinkronkan.")
+        print("DATABASE CONNECTED: Semua tabel berhasil dibuat otomatis.")
     except Exception as e:
-        print(f"DATABASE STARTUP ERROR: {str(e)}")
+        print(f"ERROR STARTUP: {e}")
 
 # --- GLOBAL ERROR HANDLER ---
 @app.exception_handler(Exception)
