@@ -10,4 +10,5 @@ cmds = ["npm install"]
 cmds = ["npm run build"]
 
 [start]
+# Perintah ini KHUSUS untuk react-scripts (Create React App)
 cmd = "npx serve -s build -l $PORT"
