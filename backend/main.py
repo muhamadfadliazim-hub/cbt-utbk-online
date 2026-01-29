@@ -20,14 +20,14 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 from database import engine
 
-# --- 1. SETUP APLIKASI & DIREKTORI ---
+# --- 1. KONFIGURASI SISTEM ---
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
-app = FastAPI(title="CBT UTBK System")
+app = FastAPI(title="CBT UTBK System - Full Version")
 
-# --- 2. MIDDLEWARE CORS (WAJIB ADA) ---
+# --- 2. CORS (WAJIB) ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,21 +36,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 3. STARTUP EVENT: PEMBUAT TABEL OTOMATIS ---
-# Ini yang menjamin tabel muncul di Railway tanpa perlu ketik SQL manual
+# --- 3. AUTO-MIGRATE DATABASE (KUNCI TABEL MUNCUL) ---
 @app.on_event("startup")
 def startup_event():
     try:
+        # Perintah ini akan membuat tabel otomatis di Postgres Railway
         models.Base.metadata.create_all(bind=database.engine)
-        print("DATABASE SYSTEM: Tabel berhasil dicek dan disinkronkan.")
+        print(">>> SUKSES: Tabel Database Berhasil Dibuat/Disinkronkan! <<<")
     except Exception as e:
-        print(f"DATABASE CRITICAL ERROR: {str(e)}")
+        print(f">>> ERROR FATAL DATABASE: {str(e)} <<<")
 
-# --- 4. GLOBAL ERROR HANDLER ---
+# --- 4. ERROR HANDLER ---
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     err_trace = traceback.format_exc()
-    print(f"INTERNAL SERVER ERROR: {err_trace}")
+    print(f"SERVER ERROR: {err_trace}")
     return JSONResponse(
         status_code=500,
         content={
@@ -62,7 +62,6 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
-# Dependency Database
 def get_db():
     db = database.SessionLocal()
     try:
@@ -122,14 +121,11 @@ class InstituteConfigSchema(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"status": "ok", "message": "Backend CBT Siap Digunakan!"}
+    return {"status": "ok", "message": "Backend CBT Aktif & Terhubung!"}
 
 @app.post("/login")
 def login(data: LoginSchema, db: Session = Depends(get_db)):
-    # Cari user berdasarkan username
     user = db.query(models.User).filter_by(username=data.username).first()
-    
-    # Validasi password (masih plain text sesuai request awal)
     if user and user.password == data.password:
         c1 = db.query(models.Major).filter_by(id=user.choice1_id).first()
         c2 = db.query(models.Major).filter_by(id=user.choice2_id).first()
@@ -146,9 +142,9 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
             "display2": f"{c2.university} - {c2.name}" if c2 else "",
             "pg2": c2.passing_grade if c2 else 0
         }
-    raise HTTPException(400, "Login Gagal. Cek username/password.")
+    raise HTTPException(400, "Login Gagal. Username/Password Salah.")
 
-# --- 7. ENDPOINTS ADMIN: MANAJEMEN ---
+# --- 7. ENDPOINTS ADMIN MANAJEMEN ---
 
 @app.get("/admin/schools-list")
 def get_schools_list(db: Session = Depends(get_db)):
@@ -176,7 +172,7 @@ def reset_exam_questions(eid: str, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Soal ujian berhasil dikosongkan."}
 
-# --- 8. ENDPOINTS SISWA: DASHBOARD & STATISTIK ---
+# --- 8. ENDPOINTS SISWA (DASHBOARD & IRT SCORING) ---
 
 @app.get("/student/dashboard-stats")
 def get_stats(username: str, db: Session = Depends(get_db)):
@@ -184,7 +180,7 @@ def get_stats(username: str, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(404, "User tidak ditemukan")
     
-    # Cek konfigurasi pengumuman
+    # Cek Pengumuman
     config_release = db.query(models.SystemConfig).filter_by(key="release_announcement").first()
     is_released = (config_release.value == "true") if config_release else False
     
@@ -195,7 +191,7 @@ def get_stats(username: str, db: Session = Depends(get_db)):
     subtest_details = []
     subtest_scores_map = {}
     
-    # Ambil hasil ujian
+    # Ambil Hasil Ujian
     results = db.query(models.ExamResult).filter_by(user_id=user.id).all()
     
     for r in results:
@@ -220,7 +216,7 @@ def get_stats(username: str, db: Session = Depends(get_db)):
     # Hitung Rata-rata
     avg_score = int(total_score / 7) if total_score > 0 else 0
     
-    # Cek Kelulusan Pilihan 1 & 2
+    # Cek Kelulusan
     c1 = db.query(models.Major).filter_by(id=user.choice1_id).first()
     c2 = db.query(models.Major).filter_by(id=user.choice2_id).first()
     
@@ -234,7 +230,7 @@ def get_stats(username: str, db: Session = Depends(get_db)):
         status_text = f"LULUS PILIHAN 2: {c2.university} - {c2.name}"
         status_color = "blue"
 
-    # Leaderboard Logic
+    # Leaderboard (Top 10)
     all_results = db.query(
         models.User.full_name, 
         func.sum(models.ExamResult.irt_score).label('total_score')
@@ -273,7 +269,7 @@ def get_stats(username: str, db: Session = Depends(get_db)):
         "radar": radar_data
     }
 
-# --- 9. ENDPOINTS UJIAN (Submit & Review) ---
+# --- 9. ENDPOINTS UJIAN (REVIEW & SUBMIT) ---
 
 @app.get("/student/review/{exam_id}")
 def get_exam_review(exam_id: str, db: Session = Depends(get_db)):
@@ -301,19 +297,14 @@ def get_exam_review(exam_id: str, db: Session = Depends(get_db)):
 
 @app.get("/student/periods")
 def get_student_periods(username: str, db: Session = Depends(get_db)):
-    # Ambil periode aktif
     periods = db.query(models.ExamPeriod).filter_by(is_active=True).order_by(models.ExamPeriod.id.desc()).all()
     user = db.query(models.User).filter_by(username=username).first()
-    
     res = []
     for p in periods:
-        # Filter jika username dibatasi
         if p.allowed_usernames and username.lower() not in p.allowed_usernames.lower():
             continue
-            
         exams_data = []
         for e in p.exams:
-            # Cek apakah sudah dikerjakan
             is_done = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=e.id).first() is not None
             exams_data.append({
                 "id": e.id, 
@@ -338,7 +329,6 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
     if not user:
         raise HTTPException(404)
         
-    # Cek duplikasi submit
     if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first():
         return {"message": "Already Submitted", "score": 0}
     
@@ -354,7 +344,7 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
         
         if not user_ans:
             is_correct = False
-        # Logika Soal Tabel Benar/Salah
+        # Logika Tabel Benar/Salah
         elif q.type == 'table_boolean' and isinstance(user_ans, dict):
             all_match = True
             for opt in q.options:
@@ -363,12 +353,12 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
                 if ua != key:
                     all_match = False
             is_correct = all_match
-        # Logika Soal Isian Singkat
+        # Logika Isian Singkat
         elif q.type == 'short_answer':
             key_opt = next((o for o in q.options if o.is_correct), None)
             if key_opt and str(user_ans).strip().lower() == key_opt.label.strip().lower():
                 is_correct = True
-        # Logika Soal Kompleks
+        # Logika Kompleks
         elif q.type == 'complex':
             correct_ids = {o.option_index for o in q.options if o.is_correct}
             user_ids = set(user_ans) if isinstance(user_ans, list) else {user_ans}
@@ -380,14 +370,12 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
             if key_opt and str(user_ans) == str(key_opt.option_index):
                 is_correct = True
         
-        # Update statistik soal
         q.stats_total += 1
         if is_correct:
             correct_count += 1
             total_diff_earned += q.difficulty
             q.stats_correct += 1
             
-    # IRT Scoring Sederhana (Ratio Difficulty)
     ratio = total_diff_earned / total_diff_possible if total_diff_possible > 0 else 0
     final_score = 200 + (ratio * 800)
     
@@ -402,7 +390,7 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
     db.commit()
     return {"message": "Saved", "correct": correct_count, "wrong": len(questions)-correct_count, "score": final_score}
 
-# --- 10. ENDPOINTS DATA UTAMA (Majors, Periods, Users) ---
+# --- 10. ENDPOINTS DATA UTAMA (JURUSAN, PERIODE, USER) ---
 
 @app.get("/majors")
 def get_majors(db: Session = Depends(get_db)):
@@ -451,7 +439,6 @@ def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(p)
     
-    # Generate Subtes Standar UTBK
     codes = [
         ("PU", 30), ("PPU", 15), ("PBM", 25), ("PK", 20), 
         ("LBI", 42.5), ("LBE", 20), ("PM", 42.5)
@@ -503,7 +490,7 @@ def del_users(d: BulkDeleteSchema, db: Session = Depends(get_db)):
     db.commit()
     return {"message":"OK"}
 
-# --- 11. ENDPOINTS UPLOAD & EDIT SOAL ---
+# --- 11. ENDPOINTS SOAL & UPLOAD (BULK IMPORT) ---
 
 @app.get("/admin/exams/{eid}/preview") 
 def admin_preview_exam(eid: str, db: Session = Depends(get_db)):
@@ -566,12 +553,15 @@ def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get
 async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         content = await file.read()
+        # Deteksi format file
         if file.filename.endswith('.csv'):
             df = pd.read_csv(io.BytesIO(content))
         else:
             df = pd.read_excel(io.BytesIO(content))
             
         df.columns = df.columns.str.strip().str.lower()
+        
+        # Hapus soal lama
         db.query(models.Question).filter_by(exam_id=eid).delete()
         db.commit()
         
@@ -579,6 +569,8 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
         for _, r in df.iterrows():
             raw_type = str(r.get('tipe', 'PG')).upper()
             q_type = 'multiple_choice'
+            
+            # Deteksi Tipe Soal
             if 'ISIAN' in raw_type:
                 q_type = 'short_answer'
             elif 'KOMPLEKS' in raw_type:
@@ -605,7 +597,7 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
             
             k = str(r.get('kunci','')).strip().upper()
             
-            # Handler Opsi berdasarkan Tipe
+            # Proses Opsi Jawaban
             if q_type == 'table_boolean':
                 keys = [x.strip() for x in k.split(',')]
                 for i, char in enumerate(['a','b','c','d','e']):
@@ -692,7 +684,7 @@ async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_
     except Exception as e:
         return {"message": f"Gagal Import: {str(e)}"}
 
-# --- 12. ENDPOINTS PDF & RECAP (REPORTLAB) ---
+# --- 12. ENDPOINTS REKAP (PDF REPORTLAB & EXCEL) ---
 
 @app.post("/admin/config/institute")
 def save_institute_config(d: InstituteConfigSchema, db: Session = Depends(get_db)):
