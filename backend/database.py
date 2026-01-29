@@ -5,16 +5,16 @@ import os
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Perbaikan otomatis format postgres untuk Railway
+# Mengatasi prefix 'postgres://' otomatis dari Railway
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# pool_pre_ping mencegah error "SSL SYSCALL error: EOF detected"
+# pool_pre_ping memastikan koneksi tidak mati saat booting
 engine = create_engine(
     DATABASE_URL, 
     pool_pre_ping=True, 
     pool_recycle=300,
-    connect_args={"sslmode": "require"} if "internal" not in DATABASE_URL else {}
+    connect_args={"sslmode": "require"} if "internal" not in str(DATABASE_URL) else {}
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

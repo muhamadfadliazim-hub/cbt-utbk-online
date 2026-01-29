@@ -20,14 +20,14 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 from database import engine
 
-# --- SETUP ---
+# --- SETUP DIREKTORI ---
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
 app = FastAPI()
 
-# --- MIDDLEWARE CORS (WAJIB POSISI ATAS) ---
+# --- MIDDLEWARE CORS (WAJIB POSISI PALING ATAS) ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,16 +36,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- STARTUP EVENT (UNTUK MEMBUAT TABEL OTOMATIS) ---
+# --- STARTUP HANDLER (UNTUK MEMBUAT TABEL OTOMATIS) ---
 @app.on_event("startup")
 def startup_event():
     try:
+        # Memeriksa dan membuat tabel otomatis di database kosong
         models.Base.metadata.create_all(bind=database.engine)
         print("DATABASE CONNECTED: Semua tabel berhasil disinkronkan.")
     except Exception as e:
         print(f"DATABASE STARTUP ERROR: {str(e)}")
 
-# --- GLOBAL DEBUGGER (Agar traceback muncul di log browser) ---
+# --- GLOBAL DEBUGGER (Agar traceback muncul di layar dashboard) ---
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     err_trace = traceback.format_exc()
@@ -63,7 +64,7 @@ app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
 @app.get("/")
 def read_root():
-    return {"status": "ok", "message": "Backend CBT Aktif! Silakan akses endpoint API atau buka /docs."}
+    return {"status": "ok", "message": "Backend CBT Online Aktif! Silakan buka /docs untuk manajemen."}
 
 def get_db():
     db = database.SessionLocal()
@@ -120,7 +121,7 @@ class InstituteConfigSchema(BaseModel):
     signer_jabatan: str
     signer_nip: str
 
-# --- ENDPOINTS ---
+# --- ENDPOINTS OTENTIKASI ---
 
 @app.post("/login")
 def login(data: LoginSchema, db: Session = Depends(get_db)):
@@ -142,6 +143,8 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
             "pg2": c2.passing_grade if c2 else 0
         }
     raise HTTPException(400, "Login Gagal.")
+
+# --- ENDPOINTS ADMIN MANAJEMEN ---
 
 @app.get("/admin/schools-list")
 def get_schools_list(db: Session = Depends(get_db)):
@@ -169,7 +172,8 @@ def reset_exam_questions(eid: str, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Soal berhasil direset."}
 
-# --- DASHBOARD STATS (FULL RAPOR + RADAR + LEADERBOARD) ---
+# --- ENDPOINTS DASHBOARD & STATISTIK ---
+
 @app.get("/student/dashboard-stats")
 def get_stats(username: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=username).first()
@@ -229,14 +233,22 @@ def get_stats(username: str, db: Session = Depends(get_db)):
     
     leaderboard = []
     for i, r in enumerate(all_results):
-        leaderboard.append({"rank": i + 1, "name": r[0], "score": int(r[1])})
+        leaderboard.append({
+            "rank": i + 1,
+            "name": r[0],
+            "score": int(r[1])
+        })
 
     std_codes = ["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"]
     radar_data = []
     for c in std_codes:
         scores = subtest_scores_map.get(c, [])
         s_avg = sum(scores) / len(scores) if scores else 0
-        radar_data.append({"subject": c, "score": int(s_avg), "fullMark": 1000})
+        radar_data.append({
+            "subject": c, 
+            "score": int(s_avg), 
+            "fullMark": 1000
+        })
         
     return {
         "is_released": True,
@@ -250,6 +262,8 @@ def get_stats(username: str, db: Session = Depends(get_db)):
         "leaderboard": leaderboard,
         "radar": radar_data
     }
+
+# --- ENDPOINTS PELAKSANAAN UJIAN ---
 
 @app.get("/student/review/{exam_id}")
 def get_exam_review(exam_id: str, db: Session = Depends(get_db)):
@@ -266,8 +280,11 @@ def get_exam_review(exam_id: str, db: Session = Depends(get_db)):
                 break
         
         qs.append({
-            "id": q.id, "text": q.text, "image_url": q.image_url,
-            "reading_material": q.reading_material, "explanation": q.explanation, 
+            "id": q.id,
+            "text": q.text,
+            "image_url": q.image_url,
+            "reading_material": q.reading_material,
+            "explanation": q.explanation, 
             "correct_answer": key_label
         })
     return {"title": exam.title, "questions": qs}
@@ -284,11 +301,17 @@ def get_student_periods(username: str, db: Session = Depends(get_db)):
         for e in p.exams:
             is_done = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=e.id).first() is not None
             exams_data.append({
-                "id": e.id, "title": e.title, "code": e.code, "duration": e.duration, 
-                "is_done": is_done, "q_count": len(e.questions)
+                "id": e.id, 
+                "title": e.title, 
+                "code": e.code, 
+                "duration": e.duration, 
+                "is_done": is_done, 
+                "q_count": len(e.questions)
             })
         res.append({
-            "id": p.id, "name": p.name, "type": p.exam_type, 
+            "id": p.id, 
+            "name": p.name, 
+            "type": p.exam_type, 
             "mode": p.target_schools if p.target_schools in ['full', 'standard'] else 'standard', 
             "exams": exams_data
         })
@@ -346,13 +369,17 @@ def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db))
     final_score = 200 + (ratio * 800)
     
     result = models.ExamResult(
-        user_id=user.id, exam_id=exam_id, 
-        correct_count=correct_count, wrong_count=len(questions)-correct_count, 
+        user_id=user.id, 
+        exam_id=exam_id, 
+        correct_count=correct_count, 
+        wrong_count=len(questions)-correct_count, 
         irt_score=final_score
     )
     db.add(result)
     db.commit()
     return {"message": "Saved", "correct": correct_count, "wrong": len(questions)-correct_count, "score": final_score}
+
+# --- ENDPOINTS JURUSAN & KONFIGURASI ---
 
 @app.get("/majors")
 def get_majors(db: Session = Depends(get_db)):
@@ -376,8 +403,21 @@ def get_periods(db: Session = Depends(get_db)):
     for p in periods:
         exams_info = []
         for e in p.exams:
-            exams_info.append({"id": e.id, "title": e.title, "code": e.code, "duration": e.duration, "q_count": len(e.questions)})
-        res.append({"id": p.id, "name": p.name, "target_schools": p.target_schools, "is_active": p.is_active, "type": p.exam_type, "exams": exams_info})
+            exams_info.append({
+                "id": e.id,
+                "title": e.title,
+                "code": e.code,
+                "duration": e.duration,
+                "q_count": len(e.questions)
+            })
+        res.append({
+            "id": p.id,
+            "name": p.name,
+            "target_schools": p.target_schools,
+            "is_active": p.is_active,
+            "type": p.exam_type,
+            "exams": exams_info
+        })
     return res
 
 @app.post("/admin/periods")
@@ -388,9 +428,18 @@ def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(p)
     
-    codes = [("PU", 30), ("PPU", 15), ("PBM", 25), ("PK", 20), ("LBI", 42.5), ("LBE", 20), ("PM", 42.5)]
+    codes = [
+        ("PU", 30), ("PPU", 15), ("PBM", 25), ("PK", 20), 
+        ("LBI", 42.5), ("LBE", 20), ("PM", 42.5)
+    ]
     for c, dur in codes:
-        db.add(models.Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=dur))
+        db.add(models.Exam(
+            id=f"P{p.id}_{c}", 
+            period_id=p.id, 
+            code=c, 
+            title=f"Tes {c}", 
+            duration=dur
+        ))
     db.commit()
     return {"message": "OK"}
 
@@ -414,7 +463,13 @@ def get_users(db: Session = Depends(get_db)):
 
 @app.post("/admin/users")
 def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
-    db.add(models.User(username=u.username, password=u.password, full_name=u.full_name, role=u.role, school=u.school))
+    db.add(models.User(
+        username=u.username, 
+        password=u.password, 
+        full_name=u.full_name, 
+        role=u.role, 
+        school=u.school
+    ))
     db.commit()
     return {"message":"OK"}
 
@@ -423,6 +478,8 @@ def del_users(d: BulkDeleteSchema, db: Session = Depends(get_db)):
     db.query(models.User).filter(models.User.id.in_(d.user_ids)).delete(synchronize_session=False)
     db.commit()
     return {"message":"OK"}
+
+# --- ENDPOINTS SOAL & UPLOAD ---
 
 @app.get("/admin/exams/{eid}/preview") 
 def admin_preview_exam(eid: str, db: Session = Depends(get_db)):
@@ -438,12 +495,23 @@ def get_exam_detail(eid: str, db: Session = Depends(get_db)):
     for q in exam.questions:
         options_list = []
         for o in q.options:
-            options_list.append({"id": o.option_index, "label": o.label, "is_correct": o.is_correct})
+            options_list.append({
+                "id": o.option_index, 
+                "label": o.label, 
+                "is_correct": o.is_correct
+            })
             
         qs.append({
-            "id": q.id, "type": q.type, "text": q.text, "reading_material": q.reading_material, 
-            "explanation": q.explanation, "image_url": q.image_url, "difficulty": q.difficulty, 
-            "label1": q.label1, "label2": q.label2, "stats": {"correct": q.stats_correct, "total": q.stats_total},
+            "id": q.id, 
+            "type": q.type, 
+            "text": q.text, 
+            "reading_material": q.reading_material, 
+            "explanation": q.explanation, 
+            "image_url": q.image_url, 
+            "difficulty": q.difficulty, 
+            "label1": q.label1, 
+            "label2": q.label2, 
+            "stats": {"correct": q.stats_correct, "total": q.stats_total},
             "options": options_list
         })
     return {"id": exam.id, "title": exam.title, "duration": exam.duration, "questions": qs}
@@ -463,7 +531,10 @@ def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get
     if q.type == 'multiple_choice':
         options = db.query(models.Option).filter_by(question_id=qid).all()
         for opt in options:
-            opt.is_correct = (opt.option_index == d.key)
+            if opt.option_index == d.key:
+                opt.is_correct = True
+            else:
+                opt.is_correct = False
     db.commit()
     return {"message": "Soal Berhasil Diupdate"}
 
@@ -471,7 +542,11 @@ def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get
 async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         content = await file.read()
-        df = pd.read_csv(io.BytesIO(content)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(content))
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            df = pd.read_excel(io.BytesIO(content))
+            
         df.columns = df.columns.str.strip().str.lower()
         db.query(models.Question).filter_by(exam_id=eid).delete()
         db.commit()
@@ -480,19 +555,26 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
         for _, r in df.iterrows():
             raw_type = str(r.get('tipe', 'PG')).upper()
             q_type = 'multiple_choice'
-            if 'ISIAN' in raw_type: q_type = 'short_answer'
-            elif 'KOMPLEKS' in raw_type: q_type = 'complex'
-            elif 'TABEL' in raw_type: q_type = 'table_boolean'
+            if 'ISIAN' in raw_type:
+                q_type = 'short_answer'
+            elif 'KOMPLEKS' in raw_type:
+                q_type = 'complex'
+            elif 'TABEL' in raw_type:
+                q_type = 'table_boolean'
                 
             l1 = str(r['label1']) if 'label1' in r and pd.notna(r['label1']) else "Benar"
             l2 = str(r['label2']) if 'label2' in r and pd.notna(r['label2']) else "Salah"
             
             q = models.Question(
-                exam_id=eid, text=str(r.get('soal', '-')), type=q_type, difficulty=float(r.get('kesulitan', 1)),
+                exam_id=eid, 
+                text=str(r.get('soal', '-')), 
+                type=q_type, 
+                difficulty=float(r.get('kesulitan', 1)),
                 reading_material=str(r['bacaan']) if 'bacaan' in r and pd.notna(r['bacaan']) else None,
                 explanation=str(r['pembahasan']) if 'pembahasan' in r and pd.notna(r['pembahasan']) else None,
                 image_url=str(r['gambar']) if 'gambar' in r and pd.notna(r['gambar']) else None,
-                label1=l1, label2=l2
+                label1=l1, 
+                label2=l2
             )
             db.add(q)
             db.commit() 
@@ -528,18 +610,29 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
 async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         content = await file.read()
-        df = pd.read_csv(io.BytesIO(content)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(content))
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            df = pd.read_excel(io.BytesIO(content))
+            
         df.columns = df.columns.str.strip().str.lower()
         added = 0
         for _, r in df.iterrows():
             uname = str(r['username']).strip()
-            if db.query(models.User).filter_by(username=uname).first(): continue 
+            if db.query(models.User).filter_by(username=uname).first():
+                continue 
             sch = None
             for key in ['sekolah', 'cabang', 'unit', 'school']:
                 if key in r and pd.notna(r[key]):
                     sch = str(r[key]).strip()
                     break
-            u = models.User(username=uname, password=str(r['password']).strip(), full_name=str(r['full_name']).strip(), role=str(r.get('role', 'student')).strip(), school=sch)
+            u = models.User(
+                username=uname, 
+                password=str(r['password']).strip(), 
+                full_name=str(r['full_name']).strip(), 
+                role=str(r.get('role', 'student')).strip(), 
+                school=sch
+            )
             db.add(u)
             added += 1
         db.commit()
@@ -551,14 +644,20 @@ async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(g
 async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         content = await file.read()
-        df = pd.read_csv(io.BytesIO(content)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(content))
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            df = pd.read_excel(io.BytesIO(content))
+            
         df.columns = df.columns.str.strip().str.lower()
         db.query(models.Major).delete()
         db.commit()
         
         count = 0
         for _, r in df.iterrows():
-            univ = str(r.get('universitas', '')).strip(); prodi = str(r.get('prodi', '')).strip(); pg = float(r.get('passing_grade', 0))
+            univ = str(r.get('universitas', '')).strip()
+            prodi = str(r.get('prodi', '')).strip()
+            pg = float(r.get('passing_grade', 0))
             if univ and prodi:
                 db.add(models.Major(university=univ, name=prodi, passing_grade=pg))
                 count += 1
@@ -567,13 +666,23 @@ async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_
     except Exception as e:
         return {"message": f"Gagal Import: {str(e)}"}
 
+# --- ENDPOINTS REKAP & LAPORAN ---
+
 @app.post("/admin/config/institute")
 def save_institute_config(d: InstituteConfigSchema, db: Session = Depends(get_db)):
-    configs = {"institute_name": d.name, "institute_city": d.city, "signer_name": d.signer_name, "signer_jabatan": d.signer_jabatan, "signer_nip": d.signer_nip}
+    configs = {
+        "institute_name": d.name, 
+        "institute_city": d.city, 
+        "signer_name": d.signer_name, 
+        "signer_jabatan": d.signer_jabatan, 
+        "signer_nip": d.signer_nip
+    }
     for key, val in configs.items():
         c = db.query(models.SystemConfig).filter_by(key=key).first()
-        if c: c.value = val
-        else: db.add(models.SystemConfig(key=key, value=val))
+        if c:
+            c.value = val
+        else:
+            db.add(models.SystemConfig(key=key, value=val))
     db.commit()
     return {"message": "Pengaturan Tersimpan"}
 
@@ -595,7 +704,16 @@ def get_recap_data_internal(period_id, db):
     
     for r in results:
         if r.user_id not in user_map:
-            user_map[r.user_id] = {"id": r.user.id, "full_name": r.user.full_name, "username": r.user.username, "school": r.user.school, "choice1": r.user.choice1_id, "choice2": r.user.choice2_id, "scores": {}, "stats": {}}
+            user_map[r.user_id] = {
+                "id": r.user.id, 
+                "full_name": r.user.full_name, 
+                "username": r.user.username, 
+                "school": r.user.school, 
+                "choice1": r.user.choice1_id, 
+                "choice2": r.user.choice2_id, 
+                "scores": {}, 
+                "stats": {}
+            }
         code = r.exam_id.split('_')[-1]
         user_map[r.user_id]["scores"][code] = r.irt_score
         user_map[r.user_id]["stats"][code] = {"correct": r.correct_count, "wrong": r.wrong_count}
@@ -603,43 +721,145 @@ def get_recap_data_internal(period_id, db):
     final_data = []
     std_codes = ["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"]
     for uid, data in user_map.items():
-        row = {"id": data["id"], "full_name": data["full_name"], "username": data["username"], "school": data["school"] or "-"}
-        mj1 = db.query(models.Major).filter_by(id=data["choice1"]).first(); mj2 = db.query(models.Major).filter_by(id=data["choice2"]).first()
-        row["Pilihan 1"] = f"{mj1.university} - {mj1.name}" if mj1 else "-"; row["Pilihan 2"] = f"{mj2.university} - {mj2.name}" if mj2 else "-"
+        row = {
+            "id": data["id"], 
+            "full_name": data["full_name"], 
+            "username": data["username"], 
+            "school": data["school"] or "-"
+        }
+        
+        mj1 = db.query(models.Major).filter_by(id=data["choice1"]).first()
+        mj2 = db.query(models.Major).filter_by(id=data["choice2"]).first()
+        row["Pilihan 1"] = f"{mj1.university} - {mj1.name}" if mj1 else "-"
+        row["Pilihan 2"] = f"{mj2.university} - {mj2.name}" if mj2 else "-"
+        
         total = 0
         for c in std_codes: 
-            sc = data["scores"].get(c, 0); st = data["stats"].get(c, {"correct":0, "wrong":0})
-            row[c] = int(sc); row[f"{c}_Benar"] = st["correct"]; row[f"{c}_Salah"] = st["wrong"]; total += sc
+            sc = data["scores"].get(c, 0)
+            st = data["stats"].get(c, {"correct":0, "wrong":0})
+            row[c] = int(sc)
+            row[f"{c}_Benar"] = st["correct"]
+            row[f"{c}_Salah"] = st["wrong"]
+            total += sc
             
         avg = int(total / 7)
-        row["average"] = avg; status_text = "TIDAK LULUS"
-        if mj1 and avg >= mj1.passing_grade: status_text = f"LULUS - {mj1.university}"
-        elif mj2 and avg >= mj2.passing_grade: status_text = f"LULUS - {mj2.university}"
-        row["status"] = status_text; final_data.append(row)
+        row["average"] = avg
+        
+        status_text = "TIDAK LULUS"
+        if mj1 and avg >= mj1.passing_grade:
+            status_text = f"LULUS - {mj1.university}"
+        elif mj2 and avg >= mj2.passing_grade:
+            status_text = f"LULUS - {mj2.university}"
+            
+        row["status"] = status_text
+        final_data.append(row)
         
     return sorted(final_data, key=lambda x: x['average'], reverse=True)
 
 @app.get("/admin/recap/download-pdf")
 def download_pdf_recap(period_id: Optional[str] = None, db: Session = Depends(get_db)):
-    data = get_recap_data_internal(period_id, db); conf = get_institute_config(db)
-    buffer = io.BytesIO(); doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=20, leftMargin=20, topMargin=30, bottomMargin=30)
-    elements = []; styles = getSampleStyleSheet()
+    data = get_recap_data_internal(period_id, db)
+    conf = get_institute_config(db)
+    
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, 
+        pagesize=landscape(A4), 
+        rightMargin=20, 
+        leftMargin=20, 
+        topMargin=30, 
+        bottomMargin=30
+    )
+    elements = []
+    styles = getSampleStyleSheet()
+
     inst_name = conf.get("institute_name", "LEMBAGA PENDIDIKAN")
-    elements.append(Paragraph(inst_name, ParagraphStyle(name='Title', parent=styles['Heading1'], alignment=TA_CENTER, fontSize=16, spaceAfter=2)))
-    elements.append(Paragraph("LAPORAN HASIL TRYOUT UTBK - SNBT", ParagraphStyle(name='Subtitle', parent=styles['Normal'], alignment=TA_CENTER, fontSize=12, spaceAfter=20)))
-    headers = ["No", "Nama Siswa", "Sekolah", "PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM", "Rata2", "Status Kelulusan"]; table_data = [headers]
+    elements.append(Paragraph(inst_name, ParagraphStyle(
+        name='Title', 
+        parent=styles['Heading1'], 
+        alignment=TA_CENTER, 
+        fontSize=16, 
+        spaceAfter=2
+    )))
+    elements.append(Paragraph("LAPORAN HASIL TRYOUT UTBK - SNBT", ParagraphStyle(
+        name='Subtitle', 
+        parent=styles['Normal'], 
+        alignment=TA_CENTER, 
+        fontSize=12, 
+        spaceAfter=20
+    )))
+    
+    headers = [
+        "No", "Nama Siswa", "Sekolah", "PU", "PPU", "PBM", "PK", 
+        "LBI", "LBE", "PM", "Rata2", "Status Kelulusan"
+    ]
+    table_data = [headers]
+    
     for i, row in enumerate(data):
-        r = [str(i+1), row['full_name'][:20], row['school'][:15], row['PU'], row['PPU'], row['PBM'], row['PK'], row['LBI'], row['LBE'], row['PM'], row['average'], row['status']]
+        r = [
+            str(i+1), 
+            row['full_name'][:20], 
+            row['school'][:15], 
+            row['PU'], row['PPU'], row['PBM'], row['PK'], row['LBI'], row['LBE'], row['PM'], 
+            row['average'], 
+            row['status']
+        ]
         table_data.append(r)
-    t = Table(table_data, colWidths=[25, 130, 90, 35, 35, 35, 35, 35, 35, 35, 45, 140])
-    t.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1e293b")), ('TEXTCOLOR', (0, 0), (-1, 0), colors.white), ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('ALIGN', (1, 1), (1, -1), 'LEFT'), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('BOTTOMPADDING', (0, 0), (-1, 0), 8), ('GRID', (0, 0), (-1, -1), 0.5, colors.grey), ('FONTSIZE', (0, 0), (-1, -1), 9), ('TEXTCOLOR', (-1, 1), (-1, -1), colors.black)]))
-    elements.append(t); elements.append(Spacer(1, 40))
-    city = conf.get("institute_city", "Kota"); signer = conf.get("signer_name", "(.......................)"); jabatan = conf.get("signer_jabatan", "Kepala"); nip = conf.get("signer_nip", "")
-    qr_data = f"Verified: Rekap Nilai {inst_name}\nJml Siswa: {len(data)}\nTop Score: {data[0]['average'] if data else 0}"; qr = qrcode.make(qr_data); qr_io = io.BytesIO(); qr.save(qr_io, format='PNG'); qr_io.seek(0); qr_img = RLImage(qr_io, width=70, height=70)
-    ttd_content = [[Paragraph(f"{city}, ................. 20..", ParagraphStyle(name='Date', alignment=TA_CENTER))], [Paragraph(f"Mengetahui, {jabatan}", ParagraphStyle(name='Jabatan', alignment=TA_CENTER))], [qr_img], [Paragraph(f"<u>{signer}</u>", ParagraphStyle(name='Signer', alignment=TA_CENTER, fontName='Helvetica-Bold'))], [Paragraph(f"NIP/NIY. {nip}", ParagraphStyle(name='NIP', alignment=TA_CENTER))]]
-    ttd_table = Table([[ "", Table(ttd_content, colWidths=[200]) ]], colWidths=[450, 250]); ttd_table.setStyle(TableStyle([('ALIGN', (1, 0), (1, 0), 'CENTER')])); elements.append(ttd_table)
-    doc.build(elements); buffer.seek(0)
-    return StreamingResponse(buffer, media_type='application/pdf', headers={'Content-Disposition': f'attachment; filename="Rekap_Nilai.pdf"'})
+    
+    col_widths = [25, 130, 90, 35, 35, 35, 35, 35, 35, 35, 45, 140] 
+    t = Table(table_data, colWidths=col_widths)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1e293b")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'), 
+        ('ALIGN', (1, 1), (1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('TEXTCOLOR', (-1, 1), (-1, -1), colors.black), 
+    ]))
+    
+    for i, row in enumerate(data):
+        if "TIDAK" in row['status']:
+            t.setStyle(TableStyle([('TEXTCOLOR', (-1, i+1), (-1, i+1), colors.red)]))
+        else:
+            t.setStyle(TableStyle([('TEXTCOLOR', (-1, i+1), (-1, i+1), colors.green)]))
+
+    elements.append(t)
+    elements.append(Spacer(1, 40))
+
+    city = conf.get("institute_city", "Kota")
+    signer = conf.get("signer_name", "(.......................)")
+    jabatan = conf.get("signer_jabatan", "Kepala")
+    nip = conf.get("signer_nip", "")
+    
+    qr_data = f"Verified: Rekap Nilai {inst_name}\nJml Siswa: {len(data)}\nTop Score: {data[0]['average'] if data else 0}"
+    qr = qrcode.make(qr_data)
+    qr_io = io.BytesIO()
+    qr.save(qr_io, format='PNG')
+    qr_io.seek(0)
+    qr_img = RLImage(qr_io, width=70, height=70)
+
+    ttd_content = [
+        [Paragraph(f"{city}, ................. 20..", ParagraphStyle(name='Date', alignment=TA_CENTER))],
+        [Paragraph(f"Mengetahui, {jabatan}", ParagraphStyle(name='Jabatan', alignment=TA_CENTER))],
+        [qr_img],
+        [Paragraph(f"<u>{signer}</u>", ParagraphStyle(name='Signer', alignment=TA_CENTER, fontName='Helvetica-Bold'))],
+        [Paragraph(f"NIP/NIY. {nip}", ParagraphStyle(name='NIP', alignment=TA_CENTER))]
+    ]
+    
+    ttd_table = Table([[ "", Table(ttd_content, colWidths=[200]) ]], colWidths=[450, 250])
+    ttd_table.setStyle(TableStyle([('ALIGN', (1, 0), (1, 0), 'CENTER')]))
+    elements.append(ttd_table)
+    
+    doc.build(elements)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer, 
+        media_type='application/pdf', 
+        headers={'Content-Disposition': f'attachment; filename="Rekap_Nilai.pdf"'}
+    )
 
 @app.get("/admin/recap")
 def get_recap(period_id: Optional[str] = None, db: Session = Depends(get_db)):
@@ -647,30 +867,60 @@ def get_recap(period_id: Optional[str] = None, db: Session = Depends(get_db)):
 
 @app.get("/admin/recap/download")
 def download_recap_excel(period_id: Optional[str] = None, db: Session = Depends(get_db)):
-    data = get_recap_data_internal(period_id, db); df = pd.DataFrame(data if data else [{"Info": "Belum ada data"}])
+    data = get_recap_data_internal(period_id, db)
+    df = pd.DataFrame(data if data else [{"Info": "Belum ada data"}])
+    
     for k in ["id", "choice1", "choice2", "scores"]:
-        if k in df.columns: del df[k]
+        if k in df.columns:
+            del df[k]
+    
     out = io.BytesIO()
     with pd.ExcelWriter(out, engine='xlsxwriter') as writer: 
-        df.to_excel(writer, index=False, sheet_name='Rekap Nilai'); worksheet = writer.sheets['Rekap Nilai']; worksheet.set_column(0, 15, 20) 
+        df.to_excel(writer, index=False, sheet_name='Rekap Nilai')
+        worksheet = writer.sheets['Rekap Nilai']
+        worksheet.set_column(0, 15, 20) 
+    
     out.seek(0)
-    return StreamingResponse(out, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="Rekap_Nilai_Lengkap.xlsx"'})
+    return StreamingResponse(
+        out, 
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+        headers={'Content-Disposition': 'attachment; filename="Rekap_Nilai_Lengkap.xlsx"'}
+    )
 
 @app.get("/admin/download-template")
 def download_template():
-    data = [{"Tipe":"PG", "Soal":"Contoh Soal", "OpsiA":"A", "OpsiB":"B", "OpsiC":"C", "OpsiD":"D", "OpsiE":"E", "Kunci":"A", "Kesulitan":1, "Bacaan":"", "Gambar":"", "Pembahasan":"", "Label1":"Benar", "Label2":"Salah"}]
-    df = pd.DataFrame(data); out = io.BytesIO()
-    with pd.ExcelWriter(out, engine='xlsxwriter') as writer: df.to_excel(writer, index=False, sheet_name='Template')
+    data = [{
+        "Tipe":"PG", "Soal":"Contoh Soal", "OpsiA":"A", "OpsiB":"B", "OpsiC":"C", 
+        "OpsiD":"D", "OpsiE":"E", "Kunci":"A", "Kesulitan":1, "Bacaan":"", 
+        "Gambar":"", "Pembahasan":"", "Label1":"Benar", "Label2":"Salah"
+    }]
+    df = pd.DataFrame(data)
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Template')
     out.seek(0)
-    return StreamingResponse(out, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="Template_Soal_CBT.xlsx"'})
+    return StreamingResponse(
+        out, 
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+        headers={'Content-Disposition': 'attachment; filename="Template_Soal_CBT.xlsx"'}
+    )
 
 @app.get("/admin/download-user-template")
 def download_user_template():
-    data = [{"username": "siswa001", "password": "123", "full_name": "Ahmad", "role": "student", "sekolah": "Darul Iman"}]
-    df = pd.DataFrame(data); out = io.BytesIO()
-    with pd.ExcelWriter(out, engine='xlsxwriter') as writer: df.to_excel(writer, index=False, sheet_name='Data Siswa')
+    data = [{
+        "username": "siswa001", "password": "123", "full_name": "Ahmad", 
+        "role": "student", "sekolah": "Darul Iman"
+    }]
+    df = pd.DataFrame(data)
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Data Siswa')
     out.seek(0)
-    return StreamingResponse(out, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="Template_Peserta.xlsx"'})
+    return StreamingResponse(
+        out, 
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+        headers={'Content-Disposition': 'attachment; filename="Template_Peserta.xlsx"'}
+    )
 
 @app.get("/config/release")
 def get_conf(db: Session = Depends(get_db)):
@@ -680,7 +930,9 @@ def get_conf(db: Session = Depends(get_db)):
 @app.post("/config/release")
 def set_conf(d: ConfigSchema, db: Session = Depends(get_db)):
     c = db.query(models.SystemConfig).filter_by(key="release_announcement").first()
-    if c: c.value = d.value
-    else: db.add(models.SystemConfig(key="release_announcement", value=d.value))
+    if c:
+        c.value = d.value
+    else:
+        db.add(models.SystemConfig(key="release_announcement", value=d.value))
     db.commit()
     return {"message":"OK", "is_released": d.value == "true"}
