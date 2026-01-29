@@ -1,3 +1,5 @@
+# FILE: backend/main.py
+
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
@@ -24,6 +26,7 @@ if not os.path.exists(UPLOAD_DIR): os.makedirs(UPLOAD_DIR)
 models.Base.metadata.create_all(bind=database.engine)
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
+
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "Backend CBT Aktif! Silakan akses endpoint API atau buka /docs."}

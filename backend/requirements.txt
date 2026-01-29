@@ -10,7 +10,7 @@ openpyxl
 xlsxwriter
 reportlab
 qrcode
-Pillow>=10.3.0
+Pillow
 psycopg2-binary
 python-dotenv
 anyio
