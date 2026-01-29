@@ -1,8 +1,6 @@
-# FILE: backend/main.py
-
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, desc, distinct
@@ -13,6 +11,7 @@ import pandas as pd
 import io
 import os
 import qrcode
+import traceback
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
@@ -24,17 +23,41 @@ from database import engine
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR): os.makedirs(UPLOAD_DIR)
 
-models.Base.metadata.create_all(bind=database.engine)
 app = FastAPI()
+
+# --- MIDDLEWARE CORS (WAJIB PALING ATAS) ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- STARTUP EVENT (Mencegah Error 500/502 Saat Koneksi Database Berat) ---
+@app.on_event("startup")
+def startup_event():
+    try:
+        models.Base.metadata.create_all(bind=database.engine)
+        print("DATABASE SUCCESS: Struktur tabel telah disinkronkan.")
+    except Exception as e:
+        print(f"DATABASE FAIL: Gagal membuat tabel. Cek DATABASE_URL di Railway! Error: {e}")
+
+# --- GLOBAL ERROR HANDLER (Biar Errornya Muncul di Layar Anda) ---
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_trace = traceback.format_exc()
+    print(error_trace)
+    return JSONResponse(
+        status_code=500,
+        content={"message": "Internal Server Error", "detail": str(exc), "traceback": error_trace}
+    )
+
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "Backend CBT Aktif! Silakan akses endpoint API atau buka /docs."}
-
-app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
-)
 
 def get_db():
     db = database.SessionLocal()
@@ -42,18 +65,52 @@ def get_db():
     finally: db.close()
 
 # --- SCHEMAS ---
-class LoginSchema(BaseModel): username: str; password: str
-class AnswerSchema(BaseModel): answers: Dict[str, Any]; username: str
-class UserCreateSchema(BaseModel): username: str; full_name: str; password: str; role: str = "student"; school: Optional[str] = None
-class BulkDeleteSchema(BaseModel): user_ids: List[int]
-class MajorSelectionSchema(BaseModel): username: str; choice1_id: int; choice2_id: Optional[int] = None
-class ConfigSchema(BaseModel): value: str
+class LoginSchema(BaseModel):
+    username: str
+    password: str
+
+class AnswerSchema(BaseModel):
+    answers: Dict[str, Any]
+    username: str
+
+class UserCreateSchema(BaseModel):
+    username: str
+    full_name: str
+    password: str
+    role: str = "student"
+    school: Optional[str] = None
+
+class BulkDeleteSchema(BaseModel):
+    user_ids: List[int]
+
+class MajorSelectionSchema(BaseModel):
+    username: str
+    choice1_id: int
+    choice2_id: Optional[int] = None
+
+class ConfigSchema(BaseModel):
+    value: str
+
 class PeriodCreateSchema(BaseModel): 
-    name: str; target_schools: Optional[str] = None; exam_type: str = "UTBK"; mode: str = "standard"
+    name: str
+    target_schools: Optional[str] = None
+    exam_type: str = "UTBK"
+    mode: str = "standard"
+
 class QuestionUpdateSchema(BaseModel):
-    text: str; explanation: Optional[str] = None; reading_material: Optional[str] = None; key: str; label1: Optional[str] = "Benar"; label2: Optional[str] = "Salah"
+    text: str
+    explanation: Optional[str] = None
+    reading_material: Optional[str] = None
+    key: str
+    label1: Optional[str] = "Benar"
+    label2: Optional[str] = "Salah"
+
 class InstituteConfigSchema(BaseModel):
-    name: str; city: str; signer_name: str; signer_jabatan: str; signer_nip: str
+    name: str
+    city: str
+    signer_name: str
+    signer_jabatan: str
+    signer_nip: str
 
 # --- ENDPOINTS ---
 
@@ -91,22 +148,20 @@ def reset_exam_questions(eid: str, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Soal berhasil direset."}
 
-# --- UPDATE: DASHBOARD STATS (PAKET LENGKAP: RAPOR + RADAR + LEADERBOARD) ---
+# --- UPDATE: DASHBOARD STATS ---
 @app.get("/student/dashboard-stats")
 def get_stats(username: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=username).first()
     if not user: raise HTTPException(404)
     
-    # Cek Rilis
     config_release = db.query(models.SystemConfig).filter_by(key="release_announcement").first()
     is_released = (config_release.value == "true") if config_release else False
     
     if not is_released: return {"is_released": False}
 
-    # --- 1. HITUNG SKOR & RAPOR (Fitur Baru) ---
     total_score = 0
     subtest_details = []
-    subtest_scores_map = {} # Untuk Radar
+    subtest_scores_map = {} 
     
     results = db.query(models.ExamResult).filter_by(user_id=user.id).all()
     
@@ -115,7 +170,6 @@ def get_stats(username: str, db: Session = Depends(get_db)):
         title = exam.title if exam else r.exam_id
         code = exam.code if exam else "Lainnya"
         
-        # Simpan Detail
         subtest_details.append({
             "id": r.exam_id, 
             "code": code,
@@ -125,15 +179,12 @@ def get_stats(username: str, db: Session = Depends(get_db)):
             "score": r.irt_score
         })
         
-        # Simpan Score Map untuk Radar
         if code not in subtest_scores_map: subtest_scores_map[code] = []
         subtest_scores_map[code].append(r.irt_score)
-
         total_score += r.irt_score
 
     avg_score = int(total_score / 7) if total_score > 0 else 0
     
-    # Cek Status Kelulusan
     c1 = db.query(models.Major).filter_by(id=user.choice1_id).first()
     c2 = db.query(models.Major).filter_by(id=user.choice2_id).first()
     
@@ -147,12 +198,9 @@ def get_stats(username: str, db: Session = Depends(get_db)):
         status_text = f"LULUS PILIHAN 2: {c2.university} - {c2.name}"
         status_color = "blue"
 
-    # --- 2. DATA ANALISIS (Fitur Lama yang Dikembalikan) ---
-    # Leaderboard (Top 10)
     all_results = db.query(models.User.full_name, func.sum(models.ExamResult.irt_score).label('total_score')).join(models.ExamResult).filter(models.User.role == 'student').group_by(models.User.id).order_by(desc('total_score')).limit(10).all()
     leaderboard = [{"rank": i+1, "name": r[0], "score": int(r[1])} for i, r in enumerate(all_results)]
 
-    # Radar Chart Data
     std_codes = ["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"]
     radar_data = []
     for c in std_codes:
@@ -162,7 +210,6 @@ def get_stats(username: str, db: Session = Depends(get_db)):
         
     return {
         "is_released": True,
-        # Data Rapor
         "average": avg_score,
         "total": total_score,
         "status": status_text,
@@ -170,7 +217,6 @@ def get_stats(username: str, db: Session = Depends(get_db)):
         "details": subtest_details,
         "choice1": f"{c1.university} - {c1.name} (PG: {c1.passing_grade})" if c1 else "-",
         "choice2": f"{c2.university} - {c2.name} (PG: {c2.passing_grade})" if c2 else "-",
-        # Data Analisis (Restore)
         "leaderboard": leaderboard,
         "radar": radar_data
     }
