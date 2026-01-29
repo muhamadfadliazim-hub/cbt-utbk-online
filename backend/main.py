@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, desc, distinct
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
-import models, database
+import models
+import database
 import pandas as pd
 import io
 import os
@@ -21,11 +22,12 @@ from database import engine
 
 # --- SETUP ---
 UPLOAD_DIR = "uploads"
-if not os.path.exists(UPLOAD_DIR): os.makedirs(UPLOAD_DIR)
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
 
 app = FastAPI()
 
-# --- MIDDLEWARE CORS (WAJIB PALING ATAS) ---
+# --- MIDDLEWARE CORS ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,23 +36,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- STARTUP EVENT (Mencegah Error 500/502 Saat Koneksi Database Berat) ---
+# --- STARTUP EVENT (UNTUK MEMBUAT TABEL OTOMATIS) ---
 @app.on_event("startup")
 def startup_event():
     try:
         models.Base.metadata.create_all(bind=database.engine)
-        print("DATABASE SUCCESS: Struktur tabel telah disinkronkan.")
+        print("DATABASE CONNECTED: Semua tabel berhasil dibuat.")
     except Exception as e:
-        print(f"DATABASE FAIL: Gagal membuat tabel. Cek DATABASE_URL di Railway! Error: {e}")
+        print(f"DATABASE STARTUP ERROR: {str(e)}")
 
-# --- GLOBAL ERROR HANDLER (Biar Errornya Muncul di Layar Anda) ---
+# --- GLOBAL ERROR HANDLER ---
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    error_trace = traceback.format_exc()
-    print(error_trace)
+    err_trace = traceback.format_exc()
+    print(err_trace)
     return JSONResponse(
         status_code=500,
-        content={"message": "Internal Server Error", "detail": str(exc), "traceback": error_trace}
+        content={
+            "message": "Internal Server Error",
+            "detail": str(exc),
+            "traceback": err_trace
+        }
     )
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
@@ -61,8 +67,10 @@ def read_root():
 
 def get_db():
     db = database.SessionLocal()
-    try: yield db
-    finally: db.close()
+    try:
+        yield db
+    finally:
+        db.close()
 
 # --- SCHEMAS ---
 class LoginSchema(BaseModel):
@@ -121,16 +129,26 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
         c1 = db.query(models.Major).filter_by(id=user.choice1_id).first()
         c2 = db.query(models.Major).filter_by(id=user.choice2_id).first()
         return {
-            "message": "OK", "username": user.username, "name": user.full_name, "role": user.role, "school": user.school,
-            "choice1_id":user.choice1_id, "choice2_id":user.choice2_id,
-            "display1": f"{c1.university} - {c1.name}" if c1 else "", "pg1": c1.passing_grade if c1 else 0,
-            "display2": f"{c2.university} - {c2.name}" if c2 else "", "pg2": c2.passing_grade if c2 else 0
+            "message": "OK",
+            "username": user.username,
+            "name": user.full_name,
+            "role": user.role,
+            "school": user.school,
+            "choice1_id": user.choice1_id,
+            "choice2_id": user.choice2_id,
+            "display1": f"{c1.university} - {c1.name}" if c1 else "",
+            "pg1": c1.passing_grade if c1 else 0,
+            "display2": f"{c2.university} - {c2.name}" if c2 else "",
+            "pg2": c2.passing_grade if c2 else 0
         }
     raise HTTPException(400, "Login Gagal.")
 
 @app.get("/admin/schools-list")
 def get_schools_list(db: Session = Depends(get_db)):
-    schools = db.query(distinct(models.User.school)).filter(models.User.school != None, models.User.school != "").all()
+    schools = db.query(distinct(models.User.school)).filter(
+        models.User.school != None, 
+        models.User.school != ""
+    ).all()
     return [s[0] for s in schools]
 
 @app.delete("/admin/results/reset")
@@ -138,7 +156,10 @@ def reset_student_result(user_id: int, period_id: int, db: Session = Depends(get
     exams = db.query(models.Exam).filter_by(period_id=period_id).all()
     exam_ids = [e.id for e in exams]
     if exam_ids:
-        db.query(models.ExamResult).filter(models.ExamResult.user_id == user_id, models.ExamResult.exam_id.in_(exam_ids)).delete(synchronize_session=False)
+        db.query(models.ExamResult).filter(
+            models.ExamResult.user_id == user_id, 
+            models.ExamResult.exam_id.in_(exam_ids)
+        ).delete(synchronize_session=False)
         db.commit()
     return {"message": "Hasil ujian siswa berhasil direset."}
 
@@ -148,20 +169,21 @@ def reset_exam_questions(eid: str, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Soal berhasil direset."}
 
-# --- UPDATE: DASHBOARD STATS ---
 @app.get("/student/dashboard-stats")
 def get_stats(username: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=username).first()
-    if not user: raise HTTPException(404)
+    if not user:
+        raise HTTPException(404)
     
     config_release = db.query(models.SystemConfig).filter_by(key="release_announcement").first()
     is_released = (config_release.value == "true") if config_release else False
     
-    if not is_released: return {"is_released": False}
+    if not is_released:
+        return {"is_released": False}
 
     total_score = 0
     subtest_details = []
-    subtest_scores_map = {} 
+    subtest_scores_map = {}
     
     results = db.query(models.ExamResult).filter_by(user_id=user.id).all()
     
@@ -179,7 +201,8 @@ def get_stats(username: str, db: Session = Depends(get_db)):
             "score": r.irt_score
         })
         
-        if code not in subtest_scores_map: subtest_scores_map[code] = []
+        if code not in subtest_scores_map:
+            subtest_scores_map[code] = []
         subtest_scores_map[code].append(r.irt_score)
         total_score += r.irt_score
 
@@ -198,15 +221,29 @@ def get_stats(username: str, db: Session = Depends(get_db)):
         status_text = f"LULUS PILIHAN 2: {c2.university} - {c2.name}"
         status_color = "blue"
 
-    all_results = db.query(models.User.full_name, func.sum(models.ExamResult.irt_score).label('total_score')).join(models.ExamResult).filter(models.User.role == 'student').group_by(models.User.id).order_by(desc('total_score')).limit(10).all()
-    leaderboard = [{"rank": i+1, "name": r[0], "score": int(r[1])} for i, r in enumerate(all_results)]
+    all_results = db.query(
+        models.User.full_name, 
+        func.sum(models.ExamResult.irt_score).label('total_score')
+    ).join(models.ExamResult).filter(models.User.role == 'student').group_by(models.User.id).order_by(desc('total_score')).limit(10).all()
+    
+    leaderboard = []
+    for i, r in enumerate(all_results):
+        leaderboard.append({
+            "rank": i + 1,
+            "name": r[0],
+            "score": int(r[1])
+        })
 
     std_codes = ["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"]
     radar_data = []
     for c in std_codes:
         scores = subtest_scores_map.get(c, [])
         s_avg = sum(scores) / len(scores) if scores else 0
-        radar_data.append({"subject": c, "score": int(s_avg), "fullMark": 1000})
+        radar_data.append({
+            "subject": c, 
+            "score": int(s_avg), 
+            "fullMark": 1000
+        })
         
     return {
         "is_released": True,
@@ -224,7 +261,8 @@ def get_stats(username: str, db: Session = Depends(get_db)):
 @app.get("/student/review/{exam_id}")
 def get_exam_review(exam_id: str, db: Session = Depends(get_db)):
     exam = db.query(models.Exam).filter_by(id=exam_id).first()
-    if not exam: raise HTTPException(404, "Ujian tidak ditemukan")
+    if not exam:
+        raise HTTPException(404, "Ujian tidak ditemukan")
     
     qs = []
     for q in exam.questions:
@@ -250,157 +288,286 @@ def get_student_periods(username: str, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=username).first()
     res = []
     for p in periods:
-        if p.allowed_usernames and username.lower() not in p.allowed_usernames.lower(): continue
+        if p.allowed_usernames and username.lower() not in p.allowed_usernames.lower():
+            continue
         exams_data = []
         for e in p.exams:
             is_done = db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=e.id).first() is not None
-            exams_data.append({"id": e.id, "title": e.title, "code": e.code, "duration": e.duration, "is_done": is_done, "q_count": len(e.questions)})
-        res.append({"id": p.id, "name": p.name, "type": p.exam_type, "mode": p.target_schools if p.target_schools in ['full', 'standard'] else 'standard', "exams": exams_data})
+            exams_data.append({
+                "id": e.id, 
+                "title": e.title, 
+                "code": e.code, 
+                "duration": e.duration, 
+                "is_done": is_done, 
+                "q_count": len(e.questions)
+            })
+        res.append({
+            "id": p.id, 
+            "name": p.name, 
+            "type": p.exam_type, 
+            "mode": p.target_schools if p.target_schools in ['full', 'standard'] else 'standard', 
+            "exams": exams_data
+        })
     return res
 
 @app.post("/exams/{exam_id}/submit")
 def submit_exam(exam_id: str, data: AnswerSchema, db: Session = Depends(get_db)):
     user = db.query(models.User).filter_by(username=data.username).first()
-    if not user: raise HTTPException(404)
-    if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first(): return {"message": "Already Submitted", "score": 0}
+    if not user:
+        raise HTTPException(404)
+    if db.query(models.ExamResult).filter_by(user_id=user.id, exam_id=exam_id).first():
+        return {"message": "Already Submitted", "score": 0}
+    
     questions = db.query(models.Question).filter_by(exam_id=exam_id).all()
-    correct_count = 0; total_diff_earned = 0.0; total_diff_possible = 0.0
+    correct_count = 0
+    total_diff_earned = 0.0
+    total_diff_possible = 0.0
+    
     for q in questions:
         total_diff_possible += q.difficulty
         user_ans = data.answers.get(str(q.id))
         is_correct = False
-        if not user_ans: is_correct = False
+        
+        if not user_ans:
+            is_correct = False
         elif q.type == 'table_boolean' and isinstance(user_ans, dict):
             all_match = True
             for opt in q.options:
                 ua = user_ans.get(str(opt.option_index)) 
                 key = "B" if opt.is_correct else "S"
-                if ua != key: all_match = False
+                if ua != key:
+                    all_match = False
             is_correct = all_match
         elif q.type == 'short_answer':
             key_opt = next((o for o in q.options if o.is_correct), None)
-            if key_opt and str(user_ans).strip().lower() == key_opt.label.strip().lower(): is_correct = True
+            if key_opt and str(user_ans).strip().lower() == key_opt.label.strip().lower():
+                is_correct = True
         elif q.type == 'complex':
             correct_ids = {o.option_index for o in q.options if o.is_correct}
             user_ids = set(user_ans) if isinstance(user_ans, list) else {user_ans}
-            if correct_ids == user_ids: is_correct = True
+            if correct_ids == user_ids:
+                is_correct = True
         else: 
             key_opt = next((o for o in q.options if o.is_correct), None)
-            if key_opt and str(user_ans) == str(key_opt.option_index): is_correct = True
+            if key_opt and str(user_ans) == str(key_opt.option_index):
+                is_correct = True
+        
         q.stats_total += 1
         if is_correct:
-            correct_count += 1; total_diff_earned += q.difficulty; q.stats_correct += 1
+            correct_count += 1
+            total_diff_earned += q.difficulty
+            q.stats_correct += 1
+            
     ratio = total_diff_earned / total_diff_possible if total_diff_possible > 0 else 0
     final_score = 200 + (ratio * 800)
-    result = models.ExamResult(user_id=user.id, exam_id=exam_id, correct_count=correct_count, wrong_count=len(questions)-correct_count, irt_score=final_score)
-    db.add(result); db.commit()
+    
+    result = models.ExamResult(
+        user_id=user.id, 
+        exam_id=exam_id, 
+        correct_count=correct_count, 
+        wrong_count=len(questions)-correct_count, 
+        irt_score=final_score
+    )
+    db.add(result)
+    db.commit()
     return {"message": "Saved", "correct": correct_count, "wrong": len(questions)-correct_count, "score": final_score}
 
 @app.get("/majors")
-def get_majors(db: Session = Depends(get_db)): return db.query(models.Major).all()
+def get_majors(db: Session = Depends(get_db)):
+    return db.query(models.Major).all()
+
 @app.post("/users/select-major")
 def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
     u = db.query(models.User).filter_by(username=d.username).first()
-    u.choice1_id = d.choice1_id; u.choice2_id = d.choice2_id
+    u.choice1_id = d.choice1_id
+    u.choice2_id = d.choice2_id
     db.commit()
     return {"message":"OK"}
 
 @app.get("/admin/periods")
 def get_periods(db: Session = Depends(get_db)):
-    periods = db.query(models.ExamPeriod).order_by(models.ExamPeriod.id.desc()).options(joinedload(models.ExamPeriod.exams).joinedload(models.Exam.questions)).all()
-    return [{"id": p.id, "name": p.name, "target_schools": p.target_schools, "is_active": p.is_active, "type": p.exam_type, "exams": [{"id": e.id, "title": e.title, "code": e.code, "duration": e.duration, "q_count": len(e.questions)} for e in p.exams]} for p in periods]
+    periods = db.query(models.ExamPeriod).order_by(models.ExamPeriod.id.desc()).options(
+        joinedload(models.ExamPeriod.exams).joinedload(models.Exam.questions)
+    ).all()
+    
+    res = []
+    for p in periods:
+        exams_info = []
+        for e in p.exams:
+            exams_info.append({
+                "id": e.id,
+                "title": e.title,
+                "code": e.code,
+                "duration": e.duration,
+                "q_count": len(e.questions)
+            })
+        res.append({
+            "id": p.id,
+            "name": p.name,
+            "target_schools": p.target_schools,
+            "is_active": p.is_active,
+            "type": p.exam_type,
+            "exams": exams_info
+        })
+    return res
 
 @app.post("/admin/periods")
 def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
     final_type = f"{d.exam_type}_{d.mode.upper()}" 
     p = models.ExamPeriod(name=d.name, exam_type=final_type, target_schools=d.target_schools)
-    db.add(p); db.commit(); db.refresh(p)
-    codes = [("PU", 30), ("PPU", 15), ("PBM", 25), ("PK", 20), ("LBI", 42.5), ("LBE", 20), ("PM", 42.5)]
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    
+    codes = [
+        ("PU", 30), ("PPU", 15), ("PBM", 25), ("PK", 20), 
+        ("LBI", 42.5), ("LBE", 20), ("PM", 42.5)
+    ]
     for c, dur in codes:
-        db.add(models.Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=dur))
+        db.add(models.Exam(
+            id=f"P{p.id}_{c}", 
+            period_id=p.id, 
+            code=c, 
+            title=f"Tes {c}", 
+            duration=dur
+        ))
     db.commit()
     return {"message": "OK"}
 
 @app.delete("/admin/periods/{pid}")
 def delete_period(pid: int, db: Session = Depends(get_db)):
-    db.query(models.ExamPeriod).filter_by(id=pid).delete(); db.commit()
+    db.query(models.ExamPeriod).filter_by(id=pid).delete()
+    db.commit()
     return {"message": "Deleted"}
 
 @app.post("/admin/periods/{pid}/toggle")
 def toggle_period(pid: int, d: Dict[str, bool], db: Session = Depends(get_db)):
     p = db.query(models.ExamPeriod).filter_by(id=pid).first()
-    if p: p.is_active = d['is_active']; db.commit()
+    if p:
+        p.is_active = d['is_active']
+        db.commit()
     return {"message": "OK"}
 
 @app.get("/admin/users")
-def get_users(db: Session = Depends(get_db)): return db.query(models.User).all()
+def get_users(db: Session = Depends(get_db)):
+    return db.query(models.User).all()
 
 @app.post("/admin/users")
 def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
-    db.add(models.User(username=u.username, password=u.password, full_name=u.full_name, role=u.role, school=u.school))
+    db.add(models.User(
+        username=u.username, 
+        password=u.password, 
+        full_name=u.full_name, 
+        role=u.role, 
+        school=u.school
+    ))
     db.commit()
     return {"message":"OK"}
 
 @app.post("/admin/users/delete-bulk")
-def del_users(d:BulkDeleteSchema, db:Session=Depends(get_db)):
-    db.query(models.User).filter(models.User.id.in_(d.user_ids)).delete(synchronize_session=False); db.commit()
+def del_users(d: BulkDeleteSchema, db: Session = Depends(get_db)):
+    db.query(models.User).filter(models.User.id.in_(d.user_ids)).delete(synchronize_session=False)
+    db.commit()
     return {"message":"OK"}
 
 @app.get("/admin/exams/{eid}/preview") 
-def admin_preview_exam(eid: str, db: Session = Depends(get_db)): return get_exam_detail(eid, db)
+def admin_preview_exam(eid: str, db: Session = Depends(get_db)):
+    return get_exam_detail(eid, db)
 
 @app.get("/exams/{eid}") 
 def get_exam_detail(eid: str, db: Session = Depends(get_db)):
     exam = db.query(models.Exam).filter_by(id=eid).first()
-    if not exam: raise HTTPException(404)
+    if not exam:
+        raise HTTPException(404)
+    
     qs = []
     for q in exam.questions:
+        options_list = []
+        for o in q.options:
+            options_list.append({
+                "id": o.option_index, 
+                "label": o.label, 
+                "is_correct": o.is_correct
+            })
+            
         qs.append({
-            "id":q.id, "type":q.type, "text":q.text, "reading_material":q.reading_material, 
-            "explanation":q.explanation, "image_url":q.image_url, "difficulty": q.difficulty, 
-            "label1": q.label1, "label2": q.label2, "stats": {"correct": q.stats_correct, "total": q.stats_total},
-            "options":[{"id":o.option_index, "label":o.label, "is_correct":o.is_correct} for o in q.options] 
+            "id": q.id, 
+            "type": q.type, 
+            "text": q.text, 
+            "reading_material": q.reading_material, 
+            "explanation": q.explanation, 
+            "image_url": q.image_url, 
+            "difficulty": q.difficulty, 
+            "label1": q.label1, 
+            "label2": q.label2, 
+            "stats": {"correct": q.stats_correct, "total": q.stats_total},
+            "options": options_list
         })
     return {"id": exam.id, "title": exam.title, "duration": exam.duration, "questions": qs}
 
 @app.put("/admin/questions/{qid}")
 def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get_db)):
     q = db.query(models.Question).filter_by(id=qid).first()
-    if not q: raise HTTPException(404, "Soal tidak ditemukan")
-    q.text = d.text; q.explanation = d.explanation; q.reading_material = d.reading_material
-    q.label1 = d.label1; q.label2 = d.label2 
+    if not q:
+        raise HTTPException(404, "Soal tidak ditemukan")
+    
+    q.text = d.text
+    q.explanation = d.explanation
+    q.reading_material = d.reading_material
+    q.label1 = d.label1
+    q.label2 = d.label2 
+    
     if q.type == 'multiple_choice':
         options = db.query(models.Option).filter_by(question_id=qid).all()
         for opt in options:
-            if opt.option_index == d.key: opt.is_correct = True
-            else: opt.is_correct = False
+            if opt.option_index == d.key:
+                opt.is_correct = True
+            else:
+                opt.is_correct = False
     db.commit()
     return {"message": "Soal Berhasil Diupdate"}
 
 @app.post("/admin/upload-questions/{eid}")
-async def upload_questions(eid:str, file: UploadFile=File(...), db:Session=Depends(get_db)):
+async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         content = await file.read()
-        df = pd.read_csv(io.BytesIO(content)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(content))
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            df = pd.read_excel(io.BytesIO(content))
+            
         df.columns = df.columns.str.strip().str.lower()
-        db.query(models.Question).filter_by(exam_id=eid).delete(); db.commit()
+        db.query(models.Question).filter_by(exam_id=eid).delete()
+        db.commit()
+        
         count = 0
         for _, r in df.iterrows():
             raw_type = str(r.get('tipe', 'PG')).upper()
             q_type = 'multiple_choice'
-            if 'ISIAN' in raw_type: q_type = 'short_answer'
-            elif 'KOMPLEKS' in raw_type: q_type = 'complex'
-            elif 'TABEL' in raw_type: q_type = 'table_boolean'
+            if 'ISIAN' in raw_type:
+                q_type = 'short_answer'
+            elif 'KOMPLEKS' in raw_type:
+                q_type = 'complex'
+            elif 'TABEL' in raw_type:
+                q_type = 'table_boolean'
+                
             l1 = str(r['label1']) if 'label1' in r and pd.notna(r['label1']) else "Benar"
             l2 = str(r['label2']) if 'label2' in r and pd.notna(r['label2']) else "Salah"
+            
             q = models.Question(
-                exam_id=eid, text=str(r.get('soal', '-')), type=q_type, difficulty=float(r.get('kesulitan', 1)),
+                exam_id=eid, 
+                text=str(r.get('soal', '-')), 
+                type=q_type, 
+                difficulty=float(r.get('kesulitan', 1)),
                 reading_material=str(r['bacaan']) if 'bacaan' in r and pd.notna(r['bacaan']) else None,
                 explanation=str(r['pembahasan']) if 'pembahasan' in r and pd.notna(r['pembahasan']) else None,
                 image_url=str(r['gambar']) if 'gambar' in r and pd.notna(r['gambar']) else None,
-                label1=l1, label2=l2
+                label1=l1, 
+                label2=l2
             )
-            db.add(q); db.commit() 
+            db.add(q)
+            db.commit() 
+            
             k = str(r.get('kunci','')).strip().upper()
             if q_type == 'table_boolean':
                 keys = [x.strip() for x in k.split(',')]
@@ -425,49 +592,84 @@ async def upload_questions(eid:str, file: UploadFile=File(...), db:Session=Depen
             count += 1
         db.commit()
         return {"message": f"Berhasil upload {count} soal"}
-    except Exception as e: return {"message": f"Error Upload: {str(e)}"}
+    except Exception as e:
+        return {"message": f"Error Upload: {str(e)}"}
 
 @app.post("/admin/users/bulk")
 async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         content = await file.read()
-        df = pd.read_csv(io.BytesIO(content)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(content))
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            df = pd.read_excel(io.BytesIO(content))
+            
         df.columns = df.columns.str.strip().str.lower()
         added = 0
         for _, r in df.iterrows():
             uname = str(r['username']).strip()
-            if db.query(models.User).filter_by(username=uname).first(): continue 
+            if db.query(models.User).filter_by(username=uname).first():
+                continue 
             sch = None
             for key in ['sekolah', 'cabang', 'unit', 'school']:
-                if key in r and pd.notna(r[key]): sch = str(r[key]).strip(); break
-            u = models.User(username=uname, password=str(r['password']).strip(), full_name=str(r['full_name']).strip(), role=str(r.get('role', 'student')).strip(), school=sch)
-            db.add(u); added += 1
+                if key in r and pd.notna(r[key]):
+                    sch = str(r[key]).strip()
+                    break
+            u = models.User(
+                username=uname, 
+                password=str(r['password']).strip(), 
+                full_name=str(r['full_name']).strip(), 
+                role=str(r.get('role', 'student')).strip(), 
+                school=sch
+            )
+            db.add(u)
+            added += 1
         db.commit()
         return {"message": f"Sukses import {added} siswa baru."}
-    except Exception as e: return {"message": f"Gagal import user: {str(e)}"}
+    except Exception as e:
+        return {"message": f"Gagal import user: {str(e)}"}
 
 @app.post("/admin/upload-majors")
 async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         content = await file.read()
-        df = pd.read_csv(io.BytesIO(content)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(content))
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            df = pd.read_excel(io.BytesIO(content))
+            
         df.columns = df.columns.str.strip().str.lower()
-        db.query(models.Major).delete(); db.commit()
+        db.query(models.Major).delete()
+        db.commit()
+        
         count = 0
         for _, r in df.iterrows():
-            univ = str(r.get('universitas', '')).strip(); prodi = str(r.get('prodi', '')).strip(); pg = float(r.get('passing_grade', 0))
-            if univ and prodi: db.add(models.Major(university=univ, name=prodi, passing_grade=pg)); count += 1
+            univ = str(r.get('universitas', '')).strip()
+            prodi = str(r.get('prodi', '')).strip()
+            pg = float(r.get('passing_grade', 0))
+            if univ and prodi:
+                db.add(models.Major(university=univ, name=prodi, passing_grade=pg))
+                count += 1
         db.commit()
         return {"message": f"Sukses! {count} Jurusan berhasil diimport."}
-    except Exception as e: return {"message": f"Gagal Import: {str(e)}"}
+    except Exception as e:
+        return {"message": f"Gagal Import: {str(e)}"}
 
 @app.post("/admin/config/institute")
 def save_institute_config(d: InstituteConfigSchema, db: Session = Depends(get_db)):
-    configs = {"institute_name": d.name, "institute_city": d.city, "signer_name": d.signer_name, "signer_jabatan": d.signer_jabatan, "signer_nip": d.signer_nip}
+    configs = {
+        "institute_name": d.name, 
+        "institute_city": d.city, 
+        "signer_name": d.signer_name, 
+        "signer_jabatan": d.signer_jabatan, 
+        "signer_nip": d.signer_nip
+    }
     for key, val in configs.items():
         c = db.query(models.SystemConfig).filter_by(key=key).first()
-        if c: c.value = val
-        else: db.add(models.SystemConfig(key=key, value=val))
+        if c:
+            c.value = val
+        else:
+            db.add(models.SystemConfig(key=key, value=val))
     db.commit()
     return {"message": "Pengaturan Tersimpan"}
 
@@ -482,13 +684,23 @@ def get_institute_config(db: Session = Depends(get_db)):
 
 def get_recap_data_internal(period_id, db):
     query = db.query(models.ExamResult).join(models.User).filter(models.User.role == 'student')
-    if period_id: query = query.filter(models.ExamResult.exam_id.like(f"P{period_id}_%"))
+    if period_id:
+        query = query.filter(models.ExamResult.exam_id.like(f"P{period_id}_%"))
     results = query.all()
     user_map = {}
     
     for r in results:
         if r.user_id not in user_map:
-            user_map[r.user_id] = {"id": r.user.id, "full_name": r.user.full_name, "username": r.user.username, "school": r.user.school, "choice1": r.user.choice1_id, "choice2": r.user.choice2_id, "scores": {}, "stats": {}}
+            user_map[r.user_id] = {
+                "id": r.user.id, 
+                "full_name": r.user.full_name, 
+                "username": r.user.username, 
+                "school": r.user.school, 
+                "choice1": r.user.choice1_id, 
+                "choice2": r.user.choice2_id, 
+                "scores": {}, 
+                "stats": {}
+            }
         code = r.exam_id.split('_')[-1]
         user_map[r.user_id]["scores"][code] = r.irt_score
         user_map[r.user_id]["stats"][code] = {"correct": r.correct_count, "wrong": r.wrong_count}
@@ -496,7 +708,12 @@ def get_recap_data_internal(period_id, db):
     final_data = []
     std_codes = ["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"]
     for uid, data in user_map.items():
-        row = {"id": data["id"], "full_name": data["full_name"], "username": data["username"], "school": data["school"] or "-"}
+        row = {
+            "id": data["id"], 
+            "full_name": data["full_name"], 
+            "username": data["username"], 
+            "school": data["school"] or "-"
+        }
         
         mj1 = db.query(models.Major).filter_by(id=data["choice1"]).first()
         mj2 = db.query(models.Major).filter_by(id=data["choice2"]).first()
@@ -512,11 +729,14 @@ def get_recap_data_internal(period_id, db):
             row[f"{c}_Salah"] = st["wrong"]
             total += sc
             
-        avg = int(total / 7); row["average"] = avg
+        avg = int(total / 7)
+        row["average"] = avg
         
         status_text = "TIDAK LULUS"
-        if mj1 and avg >= mj1.passing_grade: status_text = f"LULUS - {mj1.university}"
-        elif mj2 and avg >= mj2.passing_grade: status_text = f"LULUS - {mj2.university}"
+        if mj1 and avg >= mj1.passing_grade:
+            status_text = f"LULUS - {mj1.university}"
+        elif mj2 and avg >= mj2.passing_grade:
+            status_text = f"LULUS - {mj2.university}"
             
         row["status"] = status_text
         final_data.append(row)
@@ -529,15 +749,37 @@ def download_pdf_recap(period_id: Optional[str] = None, db: Session = Depends(ge
     conf = get_institute_config(db)
     
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=20, leftMargin=20, topMargin=30, bottomMargin=30)
+    doc = SimpleDocTemplate(
+        buffer, 
+        pagesize=landscape(A4), 
+        rightMargin=20, 
+        leftMargin=20, 
+        topMargin=30, 
+        bottomMargin=30
+    )
     elements = []
     styles = getSampleStyleSheet()
 
     inst_name = conf.get("institute_name", "LEMBAGA PENDIDIKAN")
-    elements.append(Paragraph(inst_name, ParagraphStyle(name='Title', parent=styles['Heading1'], alignment=TA_CENTER, fontSize=16, spaceAfter=2)))
-    elements.append(Paragraph("LAPORAN HASIL TRYOUT UTBK - SNBT", ParagraphStyle(name='Subtitle', parent=styles['Normal'], alignment=TA_CENTER, fontSize=12, spaceAfter=20)))
+    elements.append(Paragraph(inst_name, ParagraphStyle(
+        name='Title', 
+        parent=styles['Heading1'], 
+        alignment=TA_CENTER, 
+        fontSize=16, 
+        spaceAfter=2
+    )))
+    elements.append(Paragraph("LAPORAN HASIL TRYOUT UTBK - SNBT", ParagraphStyle(
+        name='Subtitle', 
+        parent=styles['Normal'], 
+        alignment=TA_CENTER, 
+        fontSize=12, 
+        spaceAfter=20
+    )))
     
-    headers = ["No", "Nama Siswa", "Sekolah", "PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM", "Rata2", "Status Kelulusan"]
+    headers = [
+        "No", "Nama Siswa", "Sekolah", "PU", "PPU", "PBM", "PK", 
+        "LBI", "LBE", "PM", "Rata2", "Status Kelulusan"
+    ]
     table_data = [headers]
     
     for i, row in enumerate(data):
@@ -551,7 +793,7 @@ def download_pdf_recap(period_id: Optional[str] = None, db: Session = Depends(ge
         ]
         table_data.append(r)
     
-    col_widths = [25, 130, 90, 35,35,35,35,35,35,35, 45, 140] 
+    col_widths = [25, 130, 90, 35, 35, 35, 35, 35, 35, 35, 45, 140] 
     t = Table(table_data, colWidths=col_widths)
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1e293b")),
@@ -600,19 +842,24 @@ def download_pdf_recap(period_id: Optional[str] = None, db: Session = Depends(ge
     
     doc.build(elements)
     buffer.seek(0)
-    return StreamingResponse(buffer, media_type='application/pdf', headers={'Content-Disposition': f'attachment; filename="Rekap_Nilai.pdf"'})
+    return StreamingResponse(
+        buffer, 
+        media_type='application/pdf', 
+        headers={'Content-Disposition': f'attachment; filename="Rekap_Nilai.pdf"'}
+    )
 
 @app.get("/admin/recap")
-def get_recap(period_id: Optional[str] = None, db: Session = Depends(get_db)): return get_recap_data_internal(period_id, db)
+def get_recap(period_id: Optional[str] = None, db: Session = Depends(get_db)):
+    return get_recap_data_internal(period_id, db)
 
 @app.get("/admin/recap/download")
 def download_recap_excel(period_id: Optional[str] = None, db: Session = Depends(get_db)):
     data = get_recap_data_internal(period_id, db)
     df = pd.DataFrame(data if data else [{"Info": "Belum ada data"}])
-    if "id" in df.columns: del df["id"]
-    if "choice1" in df.columns: del df["choice1"]
-    if "choice2" in df.columns: del df["choice2"]
-    if "scores" in df.columns: del df["scores"]
+    
+    for k in ["id", "choice1", "choice2", "scores"]:
+        if k in df.columns:
+            del df[k]
     
     out = io.BytesIO()
     with pd.ExcelWriter(out, engine='xlsxwriter') as writer: 
@@ -621,33 +868,58 @@ def download_recap_excel(period_id: Optional[str] = None, db: Session = Depends(
         worksheet.set_column(0, 15, 20) 
     
     out.seek(0)
-    return StreamingResponse(out, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="Rekap_Nilai_Lengkap.xlsx"'})
+    return StreamingResponse(
+        out, 
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+        headers={'Content-Disposition': 'attachment; filename="Rekap_Nilai_Lengkap.xlsx"'}
+    )
 
 @app.get("/admin/download-template")
 def download_template():
-    data = [{"Tipe":"PG", "Soal":"Contoh Soal", "OpsiA":"A", "OpsiB":"B", "OpsiC":"C", "OpsiD":"D", "OpsiE":"E", "Kunci":"A", "Kesulitan":1, "Bacaan":"", "Gambar":"", "Pembahasan":"", "Label1":"Benar", "Label2":"Salah"}]
-    df = pd.DataFrame(data); out = io.BytesIO()
-    with pd.ExcelWriter(out, engine='xlsxwriter') as writer: df.to_excel(writer, index=False, sheet_name='Template')
+    data = [{
+        "Tipe":"PG", "Soal":"Contoh Soal", "OpsiA":"A", "OpsiB":"B", "OpsiC":"C", 
+        "OpsiD":"D", "OpsiE":"E", "Kunci":"A", "Kesulitan":1, "Bacaan":"", 
+        "Gambar":"", "Pembahasan":"", "Label1":"Benar", "Label2":"Salah"
+    }]
+    df = pd.DataFrame(data)
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Template')
     out.seek(0)
-    return StreamingResponse(out, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="Template_Soal_CBT.xlsx"'})
+    return StreamingResponse(
+        out, 
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+        headers={'Content-Disposition': 'attachment; filename="Template_Soal_CBT.xlsx"'}
+    )
 
 @app.get("/admin/download-user-template")
 def download_user_template():
-    data = [{"username": "siswa001", "password": "123", "full_name": "Ahmad", "role": "student", "sekolah": "Darul Iman"}]
-    df = pd.DataFrame(data); out = io.BytesIO()
-    with pd.ExcelWriter(out, engine='xlsxwriter') as writer: df.to_excel(writer, index=False, sheet_name='Data Siswa')
+    data = [{
+        "username": "siswa001", "password": "123", "full_name": "Ahmad", 
+        "role": "student", "sekolah": "Darul Iman"
+    }]
+    df = pd.DataFrame(data)
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Data Siswa')
     out.seek(0)
-    return StreamingResponse(out, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="Template_Peserta.xlsx"'})
+    return StreamingResponse(
+        out, 
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+        headers={'Content-Disposition': 'attachment; filename="Template_Peserta.xlsx"'}
+    )
 
 @app.get("/config/release")
-def get_conf(db:Session=Depends(get_db)):
+def get_conf(db: Session = Depends(get_db)):
     c = db.query(models.SystemConfig).filter_by(key="release_announcement").first()
     return {"is_released": (c.value == "true") if c else False}
 
 @app.post("/config/release")
-def set_conf(d:ConfigSchema, db:Session=Depends(get_db)):
+def set_conf(d: ConfigSchema, db: Session = Depends(get_db)):
     c = db.query(models.SystemConfig).filter_by(key="release_announcement").first()
-    if c: c.value = d.value
-    else: db.add(models.SystemConfig(key="release_announcement", value=d.value))
+    if c:
+        c.value = d.value
+    else:
+        db.add(models.SystemConfig(key="release_announcement", value=d.value))
     db.commit()
-    return {"message":"OK", "is_released": d.value=="true"}
+    return {"message":"OK", "is_released": d.value == "true"}
