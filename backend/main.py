@@ -27,7 +27,7 @@ if not os.path.exists(UPLOAD_DIR):
 
 app = FastAPI()
 
-# --- MIDDLEWARE CORS ---
+# --- MIDDLEWARE CORS (WAJIB PALING ATAS) ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,12 +36,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- STARTUP EVENT (UNTUK MEMBUAT TABEL OTOMATIS) ---
+# --- STARTUP EVENT (UNTUK AUTO-CREATE TABLE) ---
 @app.on_event("startup")
 def startup_event():
     try:
         models.Base.metadata.create_all(bind=database.engine)
-        print("DATABASE CONNECTED: Semua tabel berhasil dibuat.")
+        print("DATABASE CONNECTED: Semua tabel berhasil disinkronkan.")
     except Exception as e:
         print(f"DATABASE STARTUP ERROR: {str(e)}")
 
