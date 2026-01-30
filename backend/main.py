@@ -354,7 +354,26 @@ def get_conf(db: Session=Depends(get_db)):
     return {"is_released": (c.value=="true") if c else False}
 @app.post("/admin/users")
 def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
-    db.add(User(username=u.username, password=u.password, full_name=u.full_name, role=u.role, school=u.school)); db.commit(); return {"message":"OK"}
+    # 1. CEK DATA KOSONG
+    if not u.username or not u.password or not u.full_name:
+        raise HTTPException(status_code=400, detail="Username, Password, dan Nama wajib diisi!")
+    
+    # 2. CEK DUPLIKAT (PENTING!)
+    existing_user = db.query(User).filter(User.username == u.username).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail=f"Username '{u.username}' sudah dipakai siswa lain!")
+
+    # 3. SIMPAN
+    new_user = User(
+        username=u.username, 
+        password=u.password, 
+        full_name=u.full_name, 
+        role="student",  # Paksa jadi student
+        school=u.school
+    )
+    db.add(new_user)
+    db.commit()
+    return {"message": "Berhasil menambah siswa baru!"}
 @app.post("/admin/users/bulk")
 async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
