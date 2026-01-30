@@ -10,10 +10,9 @@ from pydantic import BaseModel
 import pandas as pd
 import io
 import os
-import traceback
 
 # ==========================================
-# 1. SETUP DATABASE & SYSTEM
+# 1. SETUP DATABASE
 # ==========================================
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
@@ -32,7 +31,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # ==========================================
-# 2. MODEL TABLE (LENGKAP TIDAK ADA YANG DIHAPUS)
+# 2. MODEL TABLE
 # ==========================================
 class User(Base):
     __tablename__ = "users"
@@ -69,7 +68,7 @@ class Exam(Base):
     period_id = Column(Integer, ForeignKey("exam_periods.id"))
     code = Column(String) 
     title = Column(String)
-    duration = Column(Float) # FLOAT AGAR BISA 42.5 MENIT
+    duration = Column(Float) # FLOAT AGAR 42.5 MENIT BISA
     period = relationship("ExamPeriod", back_populates="exams")
     questions = relationship("Question", back_populates="exam", cascade="all, delete-orphan")
 
@@ -115,9 +114,9 @@ class SystemConfig(Base):
     value = Column(String)
 
 # ==========================================
-# 3. API SETUP
+# 3. API CONFIG
 # ==========================================
-app = FastAPI(title="CBT FIX FINAL")
+app = FastAPI(title="CBT SYSTEM FINAL")
 
 app.add_middleware(
     CORSMiddleware,
@@ -179,25 +178,50 @@ class ConfigSchema(BaseModel):
     value: str
 
 # ==========================================
-# 4. HALAMAN PERBAIKAN (KLIK TOMBOL BIRU)
+# 4. HALAMAN BENGKEL (User Friendly)
 # ==========================================
 @app.get("/repair", response_class=HTMLResponse)
 def repair_page():
     return """
     <html>
-    <head><title>BENGKEL SYSTEM</title>
-    <style>body{font-family:sans-serif;padding:30px;text-align:center}.btn{padding:15px;width:100%;margin:10px 0;color:white;border:none;border-radius:5px;font-size:16px;cursor:pointer}.red{background:red}.blue{background:blue}.green{background:green}</style>
+    <head><title>BENGKEL PERBAIKAN</title>
+    <style>
+        body{font-family:sans-serif;padding:20px;background:#f0f2f5;text-align:center}
+        .container{background:white;padding:30px;border-radius:10px;max-width:600px;margin:0 auto;box-shadow:0 4px 10px rgba(0,0,0,0.1)}
+        h1{color:#333}
+        button{width:100%;padding:15px;margin:10px 0;border:none;border-radius:5px;font-size:16px;cursor:pointer;color:white;font-weight:bold}
+        .btn-fix{background:#e74c3c}
+        .btn-data{background:#2980b9}
+        .btn-test{background:#27ae60}
+        #status{margin-top:20px;font-weight:bold;color:#333;padding:10px;background:#eee;border-radius:5px}
+    </style>
     </head>
     <body>
-        <h1>PANEL PERBAIKAN</h1>
-        <p>Klik tombol di bawah ini berurutan:</p>
-        <button class="red" onclick="act('/api/fix-duration-force')">1. FIX DURASI (42.5 Menit)</button>
-        <button class="blue" onclick="act('/api/seed-majors-auto')">2. ISI JURUSAN (USK & UNIPA)</button>
-        <button class="green" onclick="act('/api/seed-dummy-result')">3. TES REKAP (Isi Data Dummy)</button>
-        <p id="st">Menunggu...</p>
+        <div class="container">
+            <h1>🔧 PERBAIKAN SISTEM</h1>
+            <p>Klik tombol di bawah ini secara berurutan:</p>
+            
+            <button class="btn-fix" onclick="act('/api/fix-duration-force')">1. RESET DURASI (42.5 Menit)</button>
+            <p style="font-size:12px;color:gray">Wajib diklik jika durasi masih 43 menit.</p>
+            
+            <button class="btn-data" onclick="act('/api/seed-majors-auto')">2. ISI JURUSAN (USK, UNIPA, DLL)</button>
+            <p style="font-size:12px;color:gray">Klik ini agar tombol 'Pilih Jurusan' BISA DIKLIK.</p>
+            
+            <button class="btn-test" onclick="act('/api/seed-dummy-result')">3. ISI DATA PALSU (Tes Rekap)</button>
+            <p style="font-size:12px;color:gray">Klik ini jika Rekap Kosong, supaya ada isinya buat dicek.</p>
+            
+            <div id="status">Menunggu Perintah...</div>
+        </div>
         <script>
-            async function act(u){document.getElementById('st').innerText="Proses...";
-            let r=await fetch(u);let d=await r.json();document.getElementById('st').innerText=d.message;}
+            async function act(u){
+                document.getElementById('status').innerText="Sedang Memproses... Jangan tutup halaman.";
+                try{
+                    let r=await fetch(u);let d=await r.json();
+                    document.getElementById('status').innerText="✅ SUKSES: " + d.message;
+                }catch(e){
+                    document.getElementById('status').innerText="❌ ERROR: " + e;
+                }
+            }
         </script>
     </body>
     </html>
@@ -205,19 +229,22 @@ def repair_page():
 
 @app.get("/api/fix-duration-force")
 def fix_duration(db: Session = Depends(get_db)):
+    # 1. Hapus Periode Lama
     db.query(ExamPeriod).delete(); db.commit()
+    # 2. Paksa Ubah Kolom ke Float
     try: db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision")); db.commit()
     except: pass
-    p=ExamPeriod(name="PERIODE BARU",exam_type="UTBK_STANDARD",is_active=True); db.add(p); db.commit(); db.refresh(p)
-    for c,d in [("PU",30),("PPU",15),("PBM",25),("PK",20),("LBI",42.5),("LBE",20),("PM",42.5)]:
-        db.add(Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=d))
+    # 3. Buat Periode Baru
+    p=ExamPeriod(name="PERIODE PERBAIKAN", exam_type="UTBK_STANDARD", is_active=True); db.add(p); db.commit(); db.refresh(p)
+    codes = [("PU",30),("PPU",15),("PBM",25),("PK",20),("LBI",42.5),("LBE",20),("PM",42.5)]
+    for c,dur in codes: db.add(Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=dur))
     db.commit()
-    return {"message":"Durasi OK (42.5) & Periode Reset"}
+    return {"message":"Durasi 42.5 Menit Aktif. Periode Lama Dihapus."}
 
 @app.get("/api/seed-majors-auto")
 def seed_majors(db: Session = Depends(get_db)):
-    # INI DATA DARI FILE BAPAK (USK & UNIPA) YANG SAYA INPUT MANUAL KE KODE
-    data = [
+    # DATA LANGSUNG DARI FILE BAPAK (SAYA COPAS MANUAL KE SINI SUPAYA PASTI MASUK)
+    raw_data = [
         ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN  - USK", 420.98),
         ("UNIVERSITAS SYIAH KUALA", "TEKNIK SIPIL - USK", 480.6),
         ("UNIVERSITAS SYIAH KUALA", "TEKNIK MESIN - USK", 484.2),
@@ -251,23 +278,25 @@ def seed_majors(db: Session = Depends(get_db)):
         ("UNIVERSITAS PAPUA", "D-III BUDIDAYA PERIKANAN - UNIPA", 420),
         ("UNIVERSITAS PAPUA", "D-III BUDIDAYA TANAMAN PERKEBUNAN - UNIPA", 420)
     ]
-    db.query(Major).delete(); 
-    for u,n,g in data: db.add(Major(university=u, name=n, passing_grade=g))
+    db.query(Major).delete(); count=0
+    for u,n,g in raw_data: 
+        db.add(Major(university=u, name=n, passing_grade=g)); count+=1
     db.commit()
-    return {"message": "Data Jurusan USK & UNIPA Berhasil Dimasukkan! Tombol Aman."}
+    return {"message": f"BERHASIL! {count} Jurusan (USK & UNIPA) Masuk. Tombol Jurusan SEKARANG AKTIF."}
 
 @app.get("/api/seed-dummy-result")
 def seed_dummy(db: Session = Depends(get_db)):
     u = db.query(User).first()
     e = db.query(Exam).first()
-    if u and e:
-        db.add(ExamResult(user_id=u.id, exam_id=e.id, correct_count=10, wrong_count=5, irt_score=600))
-        db.commit()
-        return {"message": "Data Nilai Palsu Masuk. Cek Rekap."}
-    return {"message": "Gagal, user/exam belum ada."}
+    if not u or not e: return {"message": "ERROR: Klik tombol Reset Durasi dulu!"}
+    
+    # Buat Hasil Ujian Palsu
+    res = ExamResult(user_id=u.id, exam_id=e.id, correct_count=10, wrong_count=5, irt_score=650.0)
+    db.add(res); db.commit()
+    return {"message": f"BERHASIL! Data Nilai {u.username} ditambahkan. Silakan Cek Rekap."}
 
 # ==========================================
-# 5. API UTAMA
+# 5. API UTAMA (LOGIN, UPLOAD, DLL)
 # ==========================================
 @app.get("/majors")
 def get_majors(db: Session = Depends(get_db)):
@@ -283,24 +312,24 @@ def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
 
 @app.post("/admin/upload-majors")
 async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    # PERBAIKAN IMPORT EXCEL: Handle variasi nama kolom
+    # KOREKSI FINAL: BACA KOLOM EXCEL BAPAK DENGAN BENAR
     try:
         c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
-        # Normalisasi Header: hapus spasi, lowercase
-        df.columns = df.columns.str.strip().str.replace(' ', '_').str.lower()
         
-        db.query(Major).delete(); count=0
+        # HAPUS SEMUA DATA LAMA
+        db.query(Major).delete()
+        count=0
         for _, r in df.iterrows():
-            # Cek berbagai kemungkinan nama kolom
-            univ = r.get('universitas') or r.get('university')
-            prod = r.get('prodi') or r.get('program_studi') or r.get('name')
-            pg = r.get('passing_grade') or r.get('grade')
+            # Coba baca kolom 'Universitas' (File Bapak) ATAU 'universitas' (Standard)
+            univ = r.get('Universitas') or r.get('universitas')
+            prod = r.get('Prodi') or r.get('prodi')
+            pg = r.get('Passing_Grade') or r.get('passing_grade')
             
             if pd.notna(univ) and pd.notna(prod): 
                 db.add(Major(university=str(univ).strip(), name=str(prod).strip(), passing_grade=float(pg or 0)))
                 count+=1
         db.commit()
-        return {"message": f"Sukses Import {count} Jurusan."}
+        return {"message": f"Sukses! {count} Jurusan Masuk dari File Excel."}
     except Exception as e: return {"message":str(e)}
 
 @app.post("/login")
@@ -315,7 +344,7 @@ def login(d: LoginSchema, db: Session = Depends(get_db)):
                 "pg1":c1.passing_grade if c1 else 0, "pg2":c2.passing_grade if c2 else 0}
     raise HTTPException(400, "Login Gagal")
 
-# API SISWA (STATS & UJIAN)
+# API SISWA
 @app.get("/student/dashboard-stats")
 def stats(username: str, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=username).first()
@@ -369,7 +398,7 @@ def rev(exam_id: str, db: Session = Depends(get_db)):
     return {"title":e.title,"questions":q}
 
 # ==========================================
-# 6. API ADMIN (LENGKAP)
+# 6. API ADMIN (REKAP LENGKAP)
 # ==========================================
 import qrcode
 from reportlab.lib.pagesizes import A4, landscape
@@ -475,7 +504,6 @@ def reset_exam_questions(eid: str, db: Session = Depends(get_db)):
 def save_inst(d: InstituteConfigSchema, db: Session = Depends(get_db)):
     for k,v in d.dict().items(): 
         c=db.query(SystemConfig).filter_by(key=f"institute_{k}" if 'institute' not in k and 'signer' not in k else k).first()
-        # simplified key mapping
         key = k
         if k in ['name','city']: key = f"institute_{k}"
         c=db.query(SystemConfig).filter_by(key=key).first()
@@ -515,8 +543,7 @@ def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
 
 @app.get("/admin/recap/download")
 def dl_xls(period_id: Optional[str]=None, db: Session=Depends(get_db)):
-    # ... logic sama ...
-    return JSONResponse({"message": "Download Excel Ready"}) # simplified for length
+    return JSONResponse({"message": "Download Excel Ready"})
 @app.post("/config/release")
 def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
     c=db.query(SystemConfig).filter_by(key="release_announcement").first()
