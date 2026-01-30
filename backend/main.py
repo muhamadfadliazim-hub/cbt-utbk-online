@@ -11,8 +11,9 @@ from pydantic import BaseModel
 import pandas as pd
 import io
 import os
+import random
 
-# --- SAFE PDF IMPORT ---
+# --- LIBRARY PDF ---
 try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
@@ -42,7 +43,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # ==========================================
-# 2. MODEL DATABASE
+# 2. MODEL TABLE
 # ==========================================
 class User(Base):
     __tablename__ = "users"
@@ -51,7 +52,7 @@ class User(Base):
     password = Column(String)
     full_name = Column(String)
     role = Column(String, default="student") 
-    school = Column(String, nullable=True) 
+    school = Column(String, nullable=True)
     choice1_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
     choice2_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
     results = relationship("ExamResult", back_populates="user")
@@ -125,9 +126,9 @@ class SystemConfig(Base):
     value = Column(String)
 
 # ==========================================
-# 3. AUTO-SEEDING (PASTI ADA DATA)
+# 3. AUTO-SEEDING (DATA DEFAULT)
 # ==========================================
-app = FastAPI(title="CBT ANTI CRASH")
+app = FastAPI(title="CBT SYSTEM FINAL FIX")
 
 app.add_middleware(
     CORSMiddleware,
@@ -142,23 +143,28 @@ def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        # ISI JURUSAN JIKA KOSONG (Agar frontend tidak error Map)
+        # 1. ISI JURUSAN (USK/UNIPA)
         if db.query(Major).count() == 0:
             majors_data = [
                 ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN - USK", 420.98),
                 ("UNIVERSITAS SYIAH KUALA", "TEKNIK SIPIL - USK", 480.6),
+                ("UNIVERSITAS SYIAH KUALA", "TEKNIK MESIN - USK", 484.2),
+                ("UNIVERSITAS SYIAH KUALA", "TEKNIK KIMIA - USK", 477.0),
                 ("UNIVERSITAS PAPUA", "MANAJEMEN - UNIPA", 387.2),
                 ("UNIVERSITAS PAPUA", "AKUNTANSI - UNIPA", 391.23)
             ]
             for u, n, g in majors_data: db.add(Major(university=u, name=n, passing_grade=g))
             db.commit()
 
-        # ISI CABANG JIKA KOSONG
+        # 2. ISI SEKOLAH (CABANG)
         if db.query(User).filter(User.school != None).count() == 0:
-            db.add(User(username="admin_cabang", password="123", full_name="Admin Cabang", role="student", school="CABANG PUSAT"))
+            branches = ["PUSAT", "CABANG BANDA ACEH", "CABANG MEDAN", "CABANG PAPUA", "ONLINE"]
+            for i, b in enumerate(branches):
+                if not db.query(User).filter_by(username=f"branch_{i}").first():
+                    db.add(User(username=f"branch_{i}", password="123", full_name=f"Admin {b}", role="student", school=b))
             db.commit()
-            
-        # FIX DURASI
+
+        # 3. FIX DURASI
         try: db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision")); db.commit()
         except: pass
 
@@ -213,60 +219,42 @@ class ConfigSchema(BaseModel):
     value: str
 
 # ==========================================
-# 4. API UTAMA (SAFETY WRAPPERS)
+# 4. API UTAMA
 # ==========================================
 
-# FIX JURUSAN: Selalu return LIST (Array), jangan Error Object
 @app.get("/majors")
 def get_majors(db: Session = Depends(get_db)):
-    try:
-        majors = db.query(Major).all()
-        if not majors: return [] # Return array kosong, bukan null
-        return majors
-    except:
-        return [] # Safety return array
+    majors = db.query(Major).all()
+    if not majors: return [{"id":0, "university":"LOADING", "name":"DATA...", "passing_grade":0}]
+    return majors
 
-# FIX CABANG: Selalu return LIST
 @app.get("/admin/schools-list")
 def get_schools_list(db: Session = Depends(get_db)):
-    try:
-        schools = [s[0] for s in db.query(distinct(User.school)).filter(User.school != None, User.school != "").all()]
-        return schools if schools else ["PUSAT"]
-    except:
-        return ["PUSAT"]
+    schools = [s[0] for s in db.query(distinct(User.school)).filter(User.school != None, User.school != "").all()]
+    if not schools: return ["PUSAT", "CABANG CONTOH"]
+    return schools
 
-# FIX PERIODS: Mencegah 'D.map is not a function' di Dashboard Admin
-@app.get("/admin/periods")
-def get_periods(db: Session = Depends(get_db)):
-    try:
-        ps = db.query(ExamPeriod).order_by(ExamPeriod.id.desc()).options(joinedload(ExamPeriod.exams).joinedload(Exam.questions)).all()
-        res = []
-        for p in ps:
-            exs = [{"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"q_count":len(e.questions)} for e in p.exams]
-            res.append({"id":p.id,"name":p.name,"target_schools":p.target_schools,"is_active":p.is_active,"type":p.exam_type,"exams":exs})
-        return res
-    except:
-        return [] # JANGAN return error message, return [] agar frontend tidak crash
-
-# FIX USERS: Mencegah 'D.map' di List Siswa
-@app.get("/admin/users")
-def get_users(db: Session = Depends(get_db)): 
-    try:
-        return db.query(User).all()
-    except:
-        return []
-
-# FIX SIMPAN JURUSAN
+# --- FIX TOMBOL SIMPAN MACET (JANGAN KIRIM NULL KE DB) ---
 @app.post("/users/select-major")
 def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
     u = db.query(User).filter_by(username=d.username).first()
-    if not u: raise HTTPException(404)
-    u.choice1_id = d.choice1_id
-    u.choice2_id = d.choice2_id
+    if not u: raise HTTPException(404, "User not found")
+    
+    # KUNCI: Validasi ID sebelum simpan
+    c1 = d.choice1_id if d.choice1_id and d.choice1_id > 0 else None
+    c2 = d.choice2_id if d.choice2_id and d.choice2_id > 0 else None
+    
+    u.choice1_id = c1
+    u.choice2_id = c2
     db.commit()
-    return {"message": "OK"}
+    
+    # WAJIB RETURN JSON INI AGAR FRONTEND PAHAM SUKSES
+    return {
+        "status": "success",
+        "message": "Jurusan Berhasil Disimpan",
+        "data": {"choice1": c1, "choice2": c2}
+    }
 
-# FIX UPLOAD
 @app.post("/admin/upload-majors")
 async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
@@ -320,15 +308,13 @@ def stats(username: str, db: Session = Depends(get_db)):
 
 @app.get("/student/periods")
 def get_pers(username: str, db: Session = Depends(get_db)):
-    try:
-        ps=db.query(ExamPeriod).filter_by(is_active=True).order_by(ExamPeriod.id.desc()).all(); u=db.query(User).filter_by(username=username).first(); ret=[]
-        for p in ps:
-            if p.allowed_usernames and username.lower() not in p.allowed_usernames.lower(): continue
-            exs=[]; 
-            for e in p.exams: exs.append({"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"is_done":db.query(ExamResult).filter_by(user_id=u.id,exam_id=e.id).first() is not None,"q_count":len(e.questions)})
-            ret.append({"id":p.id,"name":p.name,"type":p.exam_type,"mode":p.target_schools or "standard","exams":exs})
-        return ret
-    except: return [] # SAFETY RETURN
+    ps=db.query(ExamPeriod).filter_by(is_active=True).order_by(ExamPeriod.id.desc()).all(); u=db.query(User).filter_by(username=username).first(); ret=[]
+    for p in ps:
+        if p.allowed_usernames and username.lower() not in p.allowed_usernames.lower(): continue
+        exs=[]; 
+        for e in p.exams: exs.append({"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"is_done":db.query(ExamResult).filter_by(user_id=u.id,exam_id=e.id).first() is not None,"q_count":len(e.questions)})
+        ret.append({"id":p.id,"name":p.name,"type":p.exam_type,"mode":p.target_schools or "standard","exams":exs})
+    return ret
 
 @app.post("/exams/{exam_id}/submit")
 def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
@@ -356,6 +342,8 @@ def rev(exam_id: str, db: Session = Depends(get_db)):
 # ==========================================
 # 6. API ADMIN 
 # ==========================================
+@app.get("/admin/users")
+def get_users(db: Session = Depends(get_db)): return db.query(User).all()
 @app.post("/admin/users")
 def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
     db.add(User(username=u.username, password=u.password, full_name=u.full_name, role=u.role, school=u.school)); db.commit(); return {"message":"OK"}
@@ -372,6 +360,13 @@ async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(g
             db.add(User(username=str(r['username']).strip(), password=str(r['password']).strip(), full_name=str(r['full_name']).strip(), role=str(r.get('role','student')).strip(), school=str(r.get('sekolah','')))); add+=1
         db.commit(); return {"message": f"Sukses {add} user"}
     except Exception as e: return {"message":str(e)}
+@app.get("/admin/periods")
+def get_periods(db: Session = Depends(get_db)):
+    ps=db.query(ExamPeriod).order_by(ExamPeriod.id.desc()).options(joinedload(ExamPeriod.exams).joinedload(Exam.questions)).all(); res=[]
+    for p in ps:
+        exs=[{"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"q_count":len(e.questions)} for e in p.exams]
+        res.append({"id":p.id,"name":p.name,"target_schools":p.target_schools,"is_active":p.is_active,"type":p.exam_type,"exams":exs})
+    return res
 @app.post("/admin/periods")
 def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
     p=ExamPeriod(name=d.name, exam_type=f"{d.exam_type}_{d.mode.upper()}", target_schools=d.target_schools); db.add(p); db.commit(); db.refresh(p)
@@ -438,11 +433,9 @@ def get_inst(db: Session = Depends(get_db)):
         c=db.query(SystemConfig).filter_by(key=k).first(); r[k]=c.value if c else ""
     return r
 
-# FIX REKAP (ANTI BLANK)
 @app.get("/admin/recap/download-pdf")
 def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
-    if not HAS_PDF: return JSONResponse({"message": "Server error: PDF Library Missing. Download Excel saja."})
-    
+    if not HAS_PDF: return JSONResponse({"message": "Server error (PDF lib missing). Gunakan Excel."})
     try:
         q=db.query(ExamResult).join(User).filter(User.role=='student')
         if period_id: q=q.filter(ExamResult.exam_id.like(f"P{period_id}_%"))
@@ -463,7 +456,6 @@ def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
             elif c2 and avg>=c2.passing_grade: st="LULUS P2"
             row.append(st); d.append(row)
         
-        # PENCEGAH BLANK: Kalau data kosong, isi dummy row
         if not d: d = [["-", "BELUM ADA DATA", "-", 0,0,0,0,0,0,0,0, "-"]]
 
         buf=io.BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4)); el=[]
@@ -510,8 +502,8 @@ def repair_page():
     <body>
         <h1>PANEL BENGKEL</h1>
         <button class="red" onclick="act('/api/fix-duration-force')">1. RESET DURASI (42.5 Menit)</button>
-        <button class="blue" onclick="act('/api/seed-majors-auto')">2. PAKSA ISI JURUSAN</button>
-        <button class="green" onclick="act('/api/seed-dummy-result')">3. ISI DATA PALSU (Tes Rekap)</button>
+        <button class="blue" onclick="act('/api/seed-majors-auto')">2. PAKSA ISI JURUSAN (Biar Tombol Klik)</button>
+        <button class="green" onclick="act('/api/seed-dummy-result')">3. ISI NILAI PALSU (Tes Rekap)</button>
         <p id="st">Menunggu...</p>
         <script>
             async function act(u){document.getElementById('st').innerText="Proses...";
@@ -532,10 +524,17 @@ def fix_duration(db: Session = Depends(get_db)):
     return {"message":"Durasi OK (42.5) & Periode Reset"}
 @app.get("/api/seed-majors-auto")
 def seed_majors_manual(db: Session = Depends(get_db)):
-    # Manual trigger if auto fails
-    return {"message": "Data sudah di-load otomatis di startup"}
+    db.query(Major).delete()
+    for u, n, g in [("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN", 420.98), ("UNIVERSITAS PAPUA", "MANAJEMEN", 387.2)]:
+        db.add(Major(university=u, name=n, passing_grade=g))
+    db.commit()
+    return {"message": "Data Jurusan Manual Dimasukkan."}
 @app.get("/api/seed-dummy-result")
 def seed_dummy(db: Session = Depends(get_db)):
     u=db.query(User).first(); e=db.query(Exam).first()
-    if u and e: db.add(ExamResult(user_id=u.id, exam_id=e.id, correct_count=10, wrong_count=5, irt_score=600)); db.commit(); return {"message": "Data Dummy OK"}
-    return {"message": "Fail"}
+    if u and e: 
+        # Buat nilai beneran
+        db.add(ExamResult(user_id=u.id, exam_id=e.id, correct_count=10, wrong_count=5, irt_score=600))
+        db.commit()
+        return {"message": "Data Nilai Dummy Berhasil Disuntikkan. Silakan Cek Rekap!"}
+    return {"message": "Gagal. Pastikan ada User dan Reset Durasi dulu."}
