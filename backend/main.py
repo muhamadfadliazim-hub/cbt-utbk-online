@@ -41,7 +41,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # ==========================================
-# 2. MODEL DATABASE (LENGKAP)
+# 2. MODEL DATABASE (FITUR LENGKAP)
 # ==========================================
 class User(Base):
     __tablename__ = "users"
@@ -66,7 +66,7 @@ class ExamPeriod(Base):
     __tablename__ = "exam_periods"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
-    exam_type = Column(String) # UTBK / MANDIRI
+    exam_type = Column(String)
     is_active = Column(Boolean, default=False)
     allowed_usernames = Column(Text, nullable=True) 
     target_schools = Column(Text, nullable=True)
@@ -74,9 +74,9 @@ class ExamPeriod(Base):
 
 class Exam(Base):
     __tablename__ = "exams"
-    id = Column(String, primary_key=True) # ID Unik misal P1_PU
+    id = Column(String, primary_key=True)
     period_id = Column(Integer, ForeignKey("exam_periods.id"))
-    code = Column(String) # PU, PPU, PBM
+    code = Column(String)
     title = Column(String)
     duration = Column(Float)
     period = relationship("ExamPeriod", back_populates="exams")
@@ -88,7 +88,7 @@ class Question(Base):
     exam_id = Column(String, ForeignKey("exams.id"))
     text = Column(Text) 
     type = Column(String, default="multiple_choice") 
-    difficulty = Column(Float, default=1.0) # BOBOT IRT
+    difficulty = Column(Float, default=1.0) # FITUR IRT
     image_url = Column(String, nullable=True)
     reading_material = Column(Text, nullable=True) 
     explanation = Column(Text, nullable=True)     
@@ -108,10 +108,10 @@ class ExamResult(Base):
     __tablename__ = "exam_results"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    exam_id = Column(String) # P1_PU
+    exam_id = Column(String)
     correct_count = Column(Integer)
     wrong_count = Column(Integer)
-    irt_score = Column(Float) # NILAI AKHIR IRT
+    irt_score = Column(Float) 
     user = relationship("User", back_populates="results")
 
 class SystemConfig(Base):
@@ -120,22 +120,15 @@ class SystemConfig(Base):
     value = Column(String)
 
 # ==========================================
-# 3. LOGIKA IRT (ITEM RESPONSE THEORY)
+# 3. LOGIKA IRT (BOBOT SOAL)
 # ==========================================
 def calculate_irt_score(correct_questions, total_questions):
-    """
-    Menghitung nilai berdasarkan bobot kesulitan.
-    """
     if not total_questions: return 0
-    
     base_score = 200
     max_add_score = 800
-    
     total_weight = sum([q.difficulty for q in total_questions])
     if total_weight == 0: return base_score
-    
     earned_weight = sum([q.difficulty for q in correct_questions])
-    
     final_score = base_score + (earned_weight / total_weight) * max_add_score
     return round(final_score)
 
@@ -157,11 +150,12 @@ def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     
-    # AUTO SEEDING JURUSAN
+    # AUTO SEEDING JURUSAN (SUPAYA TIDAK BLANK SAAT PILIH)
     if db.query(Major).count() == 0:
         data = [
             ("UNIVERSITAS INDONESIA", "PENDIDIKAN DOKTER", 680.0),
             ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN", 420.98),
+            ("UNIVERSITAS SYIAH KUALA", "TEKNIK SIPIL", 480.6),
             ("UNIVERSITAS PAPUA", "MANAJEMEN", 387.2)
         ]
         for u, n, g in data: db.add(Major(university=u, name=n, passing_grade=g))
@@ -172,21 +166,21 @@ def startup_event():
         db.add(User(username="admin_cabang", password="123", full_name="Admin", role="student", school="PUSAT"))
         db.commit()
 
-    # FIX DURASI
+    # FIX DURASI AGAR BISA DESIMAL (42.5 Menit)
     try: db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision")); db.commit()
     except: pass
     db.close()
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
-# === INI PERBAIKAN SYNTAX ERROR ===
+# === PERBAIKAN FATAL: SYNTAX ERROR ===
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-# ==================================
+# ======================================
 
 # SCHEMAS
 class LoginSchema(BaseModel):
@@ -216,7 +210,7 @@ class ConfigSchema(BaseModel):
     value: str
 
 # ==========================================
-# 5. API UTAMA (LENGKAP)
+# 5. API UTAMA
 # ==========================================
 
 @app.post("/login")
@@ -243,11 +237,11 @@ def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "success"}
 
-# --- MANAJEMEN UJIAN (UPLOAD SOAL & MARATON) ---
+# --- MANAJEMEN UJIAN ---
 @app.post("/admin/periods")
 def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
     p=ExamPeriod(name=d.name, exam_type=d.exam_type, is_active=True); db.add(p); db.commit(); db.refresh(p)
-    # BUAT SUB-TEST STANDAR UTBK (7 SUBTEST)
+    # SUBTEST STANDAR UTBK
     subtests = [("PU",30), ("PPU",15), ("PBM",25), ("PK",20), ("LBI",40), ("LBE",20), ("PM",40)]
     for code, dur in subtests:
         db.add(Exam(id=f"P{p.id}_{code}", period_id=p.id, code=code, title=f"Tes {code}", duration=dur))
@@ -288,7 +282,7 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
         return {"message": f"Sukses Upload {cnt} Soal"}
     except Exception as e: return {"message": f"Error: {str(e)}"}
 
-# --- SUBMIT & PERHITUNGAN IRT ---
+# --- SUBMIT & IRT ---
 @app.post("/exams/{exam_id}/submit")
 def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=d.username).first()
@@ -303,7 +297,6 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
         if correct_opt and str(ans) == correct_opt.option_index:
             correct_qs.append(q)
             
-    # HITUNG PAKE RUMUS IRT
     score = calculate_irt_score(correct_qs, questions)
     
     db.add(ExamResult(
@@ -315,7 +308,7 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
     db.commit()
     return {"message":"Saved", "score": score}
 
-# --- REKAP DATA (KOMPLIT PER SUBTES) ---
+# --- REKAP & DASHBOARD ---
 @app.get("/student/dashboard-stats")
 def stats(username: str, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=username).first()
@@ -351,11 +344,11 @@ def stats(username: str, db: Session = Depends(get_db)):
     
     return {"is_released":True, "average": avg, "details": details, "radar": details, "status": status}
 
-@app.get("/admin/users") # Untuk Rekap Admin
+@app.get("/admin/users") 
 def get_users(db: Session = Depends(get_db)): 
     return db.query(User).options(joinedload(User.results)).all()
 
-# --- DOWNLOAD PDF REKAP ---
+# --- DOWNLOAD PDF ---
 @app.get("/admin/recap/download-pdf")
 def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
     if not HAS_PDF: return JSONResponse({"message": "Server PDF Error"})
