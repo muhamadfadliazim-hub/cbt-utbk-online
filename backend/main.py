@@ -12,7 +12,7 @@ import pandas as pd
 import io
 import os
 
-# --- CEK LIBRARY PDF ---
+# --- LIBRARY PDF CHECK ---
 try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
@@ -22,28 +22,20 @@ try:
 except ImportError:
     HAS_PDF = False
 
-# ==========================================
-# 1. SETUP DATABASE
-# ==========================================
+# SETUP DATABASE
 UPLOAD_DIR = "uploads"
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR)
+if not os.path.exists(UPLOAD_DIR): os.makedirs(UPLOAD_DIR)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./local_cbt.db")
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+if DATABASE_URL.startswith("postgres://"): DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-if "sqlite" in DATABASE_URL:
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-else:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
+if "sqlite" in DATABASE_URL: engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else: engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# ==========================================
-# 2. MODEL TABLE
-# ==========================================
+# MODEL TABLE
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -124,30 +116,19 @@ class SystemConfig(Base):
     key = Column(String, primary_key=True)
     value = Column(String)
 
-# ==========================================
-# 3. APP SETUP
-# ==========================================
-app = FastAPI(title="CBT SYSTEM SELF-HEALING")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+# API SETUP
+app = FastAPI(title="CBT SYSTEM FINAL FIX")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 @app.on_event("startup")
 def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
-    # FIX DB DURASI OTOMATIS
+    # AUTO FIX DB
     try: db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision")); db.commit()
     except: pass
     db.close()
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
-
 def get_db():
     db = SessionLocal()
     try: yield db
@@ -162,7 +143,7 @@ class AnswerSchema(BaseModel):
     username: str
 class MajorSelectionSchema(BaseModel):
     username: str
-    choice1_id: int
+    choice1_id: Optional[int] = None
     choice2_id: Optional[int] = None
 class PeriodCreateSchema(BaseModel): 
     name: str
@@ -193,80 +174,26 @@ class InstituteConfigSchema(BaseModel):
 class ConfigSchema(BaseModel):
     value: str
 
-# ==========================================
-# 4. API UTAMA (SELF-HEALING)
-# ==========================================
+# --- API UTAMA ---
 
-# 1. API JURUSAN (AUTO-FIX)
 @app.get("/majors")
 def get_majors(db: Session = Depends(get_db)):
-    # CEK: APAKAH KOSONG?
-    if db.query(Major).count() == 0:
-        # JIKA KOSONG, ISI DULU BARU KIRIM (SUPAYA FRONTEND DAPAT DATA)
-        print(">>> DB JURUSAN KOSONG -> MENGISI OTOMATIS AGAR TOMBOL MUNCUL...")
-        data = [
-            ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN - USK", 420.98),
-            ("UNIVERSITAS SYIAH KUALA", "TEKNIK SIPIL - USK", 480.6),
-            ("UNIVERSITAS SYIAH KUALA", "TEKNIK MESIN - USK", 484.2),
-            ("UNIVERSITAS SYIAH KUALA", "TEKNIK KIMIA - USK", 477.0),
-            ("UNIVERSITAS SYIAH KUALA", "ARSITEKTUR - USK", 466.54),
-            ("UNIVERSITAS SYIAH KUALA", "TEKNIK ELEKTRO - USK", 495.23),
-            ("UNIVERSITAS SYIAH KUALA", "AGROTEKNOLOGI - USK", 420.6),
-            ("UNIVERSITAS SYIAH KUALA", "AGRIBISNIS - USK", 458.1),
-            ("UNIVERSITAS SYIAH KUALA", "PETERNAKAN - USK", 423.6),
-            ("UNIVERSITAS SYIAH KUALA", "TEKNOLOGI HASIL PERTANIAN - USK", 435.6),
-            ("UNIVERSITAS SYIAH KUALA", "TEKNIK PERTANIAN - USK", 436.16),
-            ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN BIOLOGI - USK", 432.6),
-            ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN MATEMATIKA - USK", 459.0),
-            ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN FISIKA - USK", 431.1),
-            ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN KIMIA - USK", 434.48),
-            ("UNIVERSITAS PAPUA", "MANAJEMEN - UNIPA", 387.2),
-            ("UNIVERSITAS PAPUA", "AKUNTANSI - UNIPA", 391.23),
-            ("UNIVERSITAS PAPUA", "SASTRA INDONESIA - UNIPA", 354.93),
-            ("UNIVERSITAS PAPUA", "PENDIDIKAN BAHASA INGGRIS - UNIPA", 363.0),
-            ("UNIVERSITAS PAPUA", "D-III TEKNIK PERMINYAKAN DAN GAS BUMI - UNIPA", 420.0),
-            ("UNIVERSITAS PAPUA", "D-III KESEHATAN HEWAN - UNIPA", 420.0),
-            ("UNIVERSITAS PAPUA", "D-III TEKNIK KOMPUTER - UNIPA", 420.0),
-            ("UNIVERSITAS PAPUA", "D-III EKOWISATA - UNIPA", 420.0),
-            ("UNIVERSITAS PAPUA", "D-III MANAJEMEN HUTAN ALAM PRODUKSI - UNIPA", 420.0),
-            ("UNIVERSITAS PAPUA", "D-III TEKNIK LISTRIK - UNIPA", 420.0),
-            ("UNIVERSITAS PAPUA", "D-III TEKNIK GEOLOGI TERAPAN - UNIPA", 420.0),
-            ("UNIVERSITAS PAPUA", "D-III BUDIDAYA TANAMAN PANGAN - UNIPA", 420.0),
-            ("UNIVERSITAS PAPUA", "D-III BUDIDAYA HUTAN - UNIPA", 420.0),
-            ("UNIVERSITAS PAPUA", "D-III KONSERVASI SUMBERDAYA HUTAN - UNIPA", 420.0),
-            ("UNIVERSITAS PAPUA", "D-III TEKNIK PERTAMBANGAN - UNIPA", 420.0),
-            ("UNIVERSITAS PAPUA", "D-III BUDIDAYA PERIKANAN - UNIPA", 420.0),
-            ("UNIVERSITAS PAPUA", "D-III BUDIDAYA TANAMAN PERKEBUNAN - UNIPA", 420.0)
-        ]
-        for u, n, g in data: db.add(Major(university=u, name=n, passing_grade=g))
-        db.commit()
-    
-    # SEKARANG PASTI ADA DATA
     return db.query(Major).order_by(Major.university, Major.name).all()
 
-# 2. API CABANG (AUTO-FIX)
 @app.get("/admin/schools-list")
 def get_schools_list(db: Session = Depends(get_db)):
     schools = [s[0] for s in db.query(distinct(User.school)).filter(User.school != None, User.school != "").all()]
-    # JIKA KOSONG, KEMBALIKAN DEFAULT (SUPAYA TOMBOL TETAP MUNCUL)
-    if not schools:
-        return ["CABANG PUSAT", "CABANG ACEH", "CABANG PAPUA", "CABANG LAINNYA"]
+    if not schools: return ["PUSAT"]
     return schools
 
-# 3. API SIMPAN JURUSAN (FIX MACET)
 @app.post("/users/select-major")
 def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
     u = db.query(User).filter_by(username=d.username).first()
     if not u: raise HTTPException(404, "User not found")
-    
-    # PASTIKAN ID BUKAN 0 (Supaya DB tidak menolak)
-    c1 = d.choice1_id if d.choice1_id and d.choice1_id > 0 else None
-    c2 = d.choice2_id if d.choice2_id and d.choice2_id > 0 else None
-    
-    u.choice1_id = c1
-    u.choice2_id = c2
+    u.choice1_id = d.choice1_id if d.choice1_id and d.choice1_id > 0 else None
+    u.choice2_id = d.choice2_id if d.choice2_id and d.choice2_id > 0 else None
     db.commit()
-    return {"message": "Berhasil Disimpan", "status": "success"}
+    return {"message": "Tersimpan"}
 
 @app.post("/admin/upload-majors")
 async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_db)):
@@ -291,15 +218,116 @@ async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_
 def login(d: LoginSchema, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=d.username).first()
     if u and u.password==d.password:
-        c1=db.query(Major).filter_by(id=u.choice1_id).first(); c2=db.query(Major).filter_by(id=u.choice2_id).first()
-        return {"message":"OK", "username":u.username, "role":u.role, "school":u.school, 
-                "choice1_id":u.choice1_id, "choice2_id":u.choice2_id,
-                "display1":f"{c1.university} - {c1.name}" if c1 else "",
-                "display2":f"{c2.university} - {c2.name}" if c2 else "",
-                "pg1":c1.passing_grade if c1 else 0, "pg2":c2.passing_grade if c2 else 0}
+        return {"message":"OK", "username":u.username, "role":u.role, "school":u.school, "choice1_id":u.choice1_id}
     raise HTTPException(400, "Login Gagal")
 
-# API SISWA
+# --- API ADMIN COMPLETE ---
+
+# PENTING: Include 'results' agar rekap di frontend bisa baca nilai!
+@app.get("/admin/users")
+def get_users(db: Session = Depends(get_db)): 
+    return db.query(User).options(joinedload(User.results)).all()
+
+@app.post("/admin/users")
+def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
+    if db.query(User).filter_by(username=u.username).first(): raise HTTPException(400, "Username ada")
+    db.add(User(username=u.username, password=u.password, full_name=u.full_name, role=u.role, school=u.school))
+    db.commit()
+    return {"message":"OK"}
+
+@app.post("/admin/users/delete-bulk")
+def del_users(d: BulkDeleteSchema, db: Session = Depends(get_db)):
+    db.query(User).filter(User.id.in_(d.user_ids)).delete(synchronize_session=False); db.commit(); return {"message":"OK"}
+
+@app.post("/admin/users/bulk")
+async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    try:
+        c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
+        df.columns=df.columns.str.strip().str.lower(); add=0
+        for _, r in df.iterrows():
+            if db.query(User).filter_by(username=str(r['username']).strip()).first(): continue
+            db.add(User(username=str(r['username']).strip(), password=str(r['password']).strip(), full_name=str(r['full_name']).strip(), role=str(r.get('role','student')).strip(), school=str(r.get('sekolah','')))); add+=1
+        db.commit(); return {"message": f"Sukses {add} user"}
+    except Exception as e: return {"message":str(e)}
+
+@app.get("/admin/periods")
+def get_periods(db: Session = Depends(get_db)):
+    ps=db.query(ExamPeriod).order_by(ExamPeriod.id.desc()).options(joinedload(ExamPeriod.exams).joinedload(Exam.questions)).all(); res=[]
+    for p in ps:
+        exs=[{"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"q_count":len(e.questions)} for e in p.exams]
+        res.append({"id":p.id,"name":p.name,"target_schools":p.target_schools,"is_active":p.is_active,"type":p.exam_type,"exams":exs})
+    return res
+
+@app.post("/admin/periods")
+def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
+    p=ExamPeriod(name=d.name, exam_type=f"{d.exam_type}_{d.mode.upper()}", target_schools=d.target_schools); db.add(p); db.commit(); db.refresh(p)
+    # BUATKAN SUB-TEST SESUAI FORMAT LENGKAP
+    for c,dur in [("PU",30),("PPU",15),("PBM",25),("PK",20),("LBI",42.5),("LBE",20),("PM",42.5)]:
+        db.add(Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=dur))
+    db.commit(); return {"message":"OK"}
+
+@app.delete("/admin/periods/{pid}")
+def delete_period(pid: int, db: Session = Depends(get_db)):
+    p=db.query(ExamPeriod).filter_by(id=pid).first()
+    if p: db.delete(p); db.commit()
+    return {"message":"Deleted"}
+
+@app.post("/admin/upload-questions/{eid}")
+async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    try:
+        c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c)); df.columns=df.columns.str.strip().str.lower()
+        db.query(Question).filter_by(exam_id=eid).delete(); db.commit(); cnt=0
+        for _,r in df.iterrows():
+            q=Question(exam_id=eid,text=str(r.get('soal','-')),type='multiple_choice',difficulty=1,reading_material=str(r.get('bacaan')),explanation=str(r.get('pembahasan')),label1=str(r.get('label1','Benar')),label2=str(r.get('label2','Salah'))); db.add(q); db.commit()
+            k=str(r.get('kunci','')).strip().upper()
+            for c in ['a','b','c','d','e']: 
+                if f"opsi{c}" in r and pd.notna(r[f"opsi{c}"]): db.add(Option(question_id=q.id,option_index=c.upper(),label=str(r[f"opsi{c}"]),is_correct=(c.upper()==k)))
+            cnt+=1
+        db.commit(); return {"message":f"Uploaded {cnt}"}
+    except Exception as e: return {"message":str(e)}
+
+@app.post("/admin/config/institute")
+def save_inst(d: InstituteConfigSchema, db: Session = Depends(get_db)):
+    for k,v in d.dict().items(): 
+        key = k if 'institute' in k or 'signer' in k else f"institute_{k}"
+        c=db.query(SystemConfig).filter_by(key=key).first()
+        if c: c.value=v 
+        else: db.add(SystemConfig(key=key, value=v))
+    db.commit(); return {"message":"Saved"}
+
+@app.get("/admin/recap/download-pdf")
+def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
+    if not HAS_PDF: return JSONResponse({"message": "Server error (PDF lib missing). Gunakan Excel."})
+    try:
+        q=db.query(ExamResult).join(User).filter(User.role=='student')
+        if period_id: q=q.filter(ExamResult.exam_id.like(f"P{period_id}_%"))
+        umap={}
+        for r in q.all():
+            if r.user_id not in umap: umap[r.user_id]={"name":r.user.full_name,"school":r.user.school,"c1":r.user.choice1_id,"c2":r.user.choice2_id,"s":{}}
+            umap[r.user_id]["s"][r.exam_id.split('_')[-1]]=r.irt_score
+        d=[]
+        for uid,u in umap.items():
+            row=[u['name'][:20], (u['school'] or "-")[:15]] 
+            tot=0
+            for c in ["PU","PPU","PBM","PK","LBI","LBE","PM"]: sc=int(u["s"].get(c,0)); row.append(sc); tot+=sc
+            avg=int(tot/7); row.append(avg)
+            st="TIDAK"; 
+            c1=db.query(Major).filter_by(id=u["c1"]).first() if u["c1"] else None
+            c2=db.query(Major).filter_by(id=u["c2"]).first() if u["c2"] else None
+            if c1 and avg>=c1.passing_grade: st="LULUS P1"
+            elif c2 and avg>=c2.passing_grade: st="LULUS P2"
+            row.append(st); d.append(row)
+        
+        if not d: d = [["-", "BELUM ADA DATA", "-", 0,0,0,0,0,0,0,0, "-"]]
+        buf=io.BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4)); el=[]
+        el.append(Paragraph("REKAPITULASI NILAI UJIAN", getSampleStyleSheet()['Heading1']))
+        el.append(Spacer(1, 20))
+        t=Table([["Nama","Sekolah","PU","PPU","PBM","PK","LBI","LBE","PM","Avg","Status"]]+d)
+        t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,colors.black)])); el.append(t); doc.build(el); buf.seek(0)
+        return StreamingResponse(buf,media_type='application/pdf',headers={'Content-Disposition':'attachment;filename="Rekap.pdf"'})
+    except Exception as e: return JSONResponse({"message": f"Error PDF: {str(e)}"})
+
+# API SISWA LENGKAP
 @app.get("/student/dashboard-stats")
 def stats(username: str, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=username).first()
@@ -351,153 +379,6 @@ def rev(exam_id: str, db: Session = Depends(get_db)):
     e=db.query(Exam).filter_by(id=exam_id).first(); q=[]
     for x in e.questions: q.append({"id":x.id,"text":x.text,"image_url":x.image_url,"reading_material":x.reading_material,"explanation":x.explanation,"correct_answer":next((o.label for o in x.options if o.is_correct),"")})
     return {"title":e.title,"questions":q}
-
-# ==========================================
-# 6. API ADMIN 
-# ==========================================
-@app.get("/admin/users")
-def get_users(db: Session = Depends(get_db)): return db.query(User).all()
-@app.post("/admin/users")
-def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
-    db.add(User(username=u.username, password=u.password, full_name=u.full_name, role=u.role, school=u.school)); db.commit(); return {"message":"OK"}
-@app.post("/admin/users/delete-bulk")
-def del_users(d: BulkDeleteSchema, db: Session = Depends(get_db)):
-    db.query(User).filter(User.id.in_(d.user_ids)).delete(synchronize_session=False); db.commit(); return {"message":"OK"}
-@app.post("/admin/users/bulk")
-async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    try:
-        c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
-        df.columns=df.columns.str.strip().str.lower(); add=0
-        for _, r in df.iterrows():
-            if db.query(User).filter_by(username=str(r['username']).strip()).first(): continue
-            db.add(User(username=str(r['username']).strip(), password=str(r['password']).strip(), full_name=str(r['full_name']).strip(), role=str(r.get('role','student')).strip(), school=str(r.get('sekolah','')))); add+=1
-        db.commit(); return {"message": f"Sukses {add} user"}
-    except Exception as e: return {"message":str(e)}
-@app.get("/admin/periods")
-def get_periods(db: Session = Depends(get_db)):
-    ps=db.query(ExamPeriod).order_by(ExamPeriod.id.desc()).options(joinedload(ExamPeriod.exams).joinedload(Exam.questions)).all(); res=[]
-    for p in ps:
-        exs=[{"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"q_count":len(e.questions)} for e in p.exams]
-        res.append({"id":p.id,"name":p.name,"target_schools":p.target_schools,"is_active":p.is_active,"type":p.exam_type,"exams":exs})
-    return res
-@app.post("/admin/periods")
-def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
-    p=ExamPeriod(name=d.name, exam_type=f"{d.exam_type}_{d.mode.upper()}", target_schools=d.target_schools); db.add(p); db.commit(); db.refresh(p)
-    for c,dur in [("PU",30),("PPU",15),("PBM",25),("PK",20),("LBI",42.5),("LBE",20),("PM",42.5)]: db.add(Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=dur))
-    db.commit(); return {"message":"OK"}
-@app.delete("/admin/periods/{pid}")
-def delete_period(pid: int, db: Session = Depends(get_db)):
-    p=db.query(ExamPeriod).filter_by(id=pid).first()
-    if p: db.delete(p); db.commit()
-    return {"message":"Deleted"}
-@app.post("/admin/periods/{pid}/toggle")
-def toggle_period(pid: int, d: Dict[str, bool], db: Session = Depends(get_db)):
-    p=db.query(ExamPeriod).filter_by(id=pid).first()
-    if p: p.is_active=d['is_active']; db.commit()
-    return {"message":"OK"}
-@app.get("/admin/exams/{eid}/preview") 
-def admin_preview_exam(eid: str, db: Session = Depends(get_db)): return rev(eid, db)
-@app.get("/exams/{eid}") 
-def get_exam_detail(eid: str, db: Session = Depends(get_db)):
-    e=db.query(Exam).filter_by(id=eid).first(); 
-    if not e: raise HTTPException(404)
-    qs=[]
-    for q in e.questions:
-        qs.append({"id":q.id,"type":q.type,"text":q.text,"image_url":q.image_url,"difficulty":q.difficulty,"label1":q.label1,"label2":q.label2,"options":[{"id":o.option_index,"label":o.label,"is_correct":o.is_correct} for o in q.options]})
-    return {"id":e.id,"title":e.title,"duration":e.duration,"questions":qs}
-@app.put("/admin/questions/{qid}")
-def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get_db)):
-    q=db.query(Question).filter_by(id=qid).first()
-    if q: q.text=d.text; q.explanation=d.explanation; q.reading_material=d.reading_material; q.label1=d.label1; q.label2=d.label2; db.commit()
-    return {"message":"Updated"}
-@app.post("/admin/upload-questions/{eid}")
-async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    try:
-        c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c)); df.columns=df.columns.str.strip().str.lower()
-        db.query(Question).filter_by(exam_id=eid).delete(); db.commit(); cnt=0
-        for _,r in df.iterrows():
-            q=Question(exam_id=eid,text=str(r.get('soal','-')),type='multiple_choice',difficulty=1,reading_material=str(r.get('bacaan')),explanation=str(r.get('pembahasan')),label1=str(r.get('label1','Benar')),label2=str(r.get('label2','Salah'))); db.add(q); db.commit()
-            k=str(r.get('kunci','')).strip().upper()
-            for c in ['a','b','c','d','e']: 
-                if f"opsi{c}" in r and pd.notna(r[f"opsi{c}"]): db.add(Option(question_id=q.id,option_index=c.upper(),label=str(r[f"opsi{c}"]),is_correct=(c.upper()==k)))
-            cnt+=1
-        db.commit(); return {"message":f"Uploaded {cnt}"}
-    except Exception as e: return {"message":str(e)}
-@app.delete("/admin/results/reset")
-def reset_student_result(user_id: int, period_id: int, db: Session = Depends(get_db)):
-    es=db.query(Exam).filter_by(period_id=period_id).all(); eids=[e.id for e in es]
-    if eids: db.query(ExamResult).filter(ExamResult.user_id==user_id, ExamResult.exam_id.in_(eids)).delete(synchronize_session=False); db.commit()
-    return {"message":"Reset OK"}
-@app.delete("/admin/exams/{eid}/reset")
-def reset_exam_questions(eid: str, db: Session = Depends(get_db)):
-    db.query(Question).filter_by(exam_id=eid).delete(); db.commit(); return {"message":"Reset OK"}
-@app.post("/admin/config/institute")
-def save_inst(d: InstituteConfigSchema, db: Session = Depends(get_db)):
-    for k,v in d.dict().items(): 
-        key = k if 'institute' in k or 'signer' in k else f"institute_{k}"
-        c=db.query(SystemConfig).filter_by(key=key).first()
-        if c: c.value=v 
-        else: db.add(SystemConfig(key=key, value=v))
-    db.commit(); return {"message":"Saved"}
-@app.get("/admin/config/institute")
-def get_inst(db: Session = Depends(get_db)):
-    r={}; 
-    for k in ["institute_name","institute_city","signer_name","signer_jabatan","signer_nip"]:
-        c=db.query(SystemConfig).filter_by(key=k).first(); r[k]=c.value if c else ""
-    return r
-
-# --- FIX REKAP (ANTI BLANK) ---
-@app.get("/admin/recap/download-pdf")
-def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
-    # JIKA LIBRARY PDF ERROR, JANGAN CRASH
-    if not HAS_PDF: return JSONResponse({"message": "Server error: PDF Library Missing. Download Excel saja."})
-    
-    try:
-        q=db.query(ExamResult).join(User).filter(User.role=='student')
-        if period_id: q=q.filter(ExamResult.exam_id.like(f"P{period_id}_%"))
-        
-        umap={}
-        for r in q.all():
-            if r.user_id not in umap: umap[r.user_id]={"name":r.user.full_name,"school":r.user.school,"c1":r.user.choice1_id,"c2":r.user.choice2_id,"s":{}}
-            umap[r.user_id]["s"][r.exam_id.split('_')[-1]]=r.irt_score
-        
-        d=[]
-        for uid,u in umap.items():
-            row=[u['name'][:20], (u['school'] or "-")[:15]] 
-            tot=0
-            for c in ["PU","PPU","PBM","PK","LBI","LBE","PM"]: sc=int(u["s"].get(c,0)); row.append(sc); tot+=sc
-            avg=int(tot/7); row.append(avg)
-            st="TIDAK"; 
-            c1=db.query(Major).filter_by(id=u["c1"]).first() if u["c1"] else None
-            c2=db.query(Major).filter_by(id=u["c2"]).first() if u["c2"] else None
-            if c1 and avg>=c1.passing_grade: st="LULUS P1"
-            elif c2 and avg>=c2.passing_grade: st="LULUS P2"
-            row.append(st); d.append(row)
-        
-        # KUNCI REKAP: JIKA KOSONG, BUAT PLACEHOLDER BIAR GAK BLANK
-        if not d: d = [["-", "BELUM ADA DATA", "-", 0,0,0,0,0,0,0,0, "-"]]
-
-        buf=io.BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4)); el=[]
-        el.append(Paragraph("REKAPITULASI NILAI UJIAN", getSampleStyleSheet()['Heading1']))
-        el.append(Spacer(1, 20))
-        t=Table([["Nama","Sekolah","PU","PPU","PBM","PK","LBI","LBE","PM","Avg","Status"]]+d)
-        t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,colors.black), ('FONTSIZE',(0,0),(-1,-1),8)]))
-        el.append(t); doc.build(el); buf.seek(0)
-        return StreamingResponse(buf,media_type='application/pdf',headers={'Content-Disposition':'attachment;filename="Rekap.pdf"'})
-    except Exception as e:
-        return JSONResponse({"message": f"PDF ERROR: {str(e)}. Silakan Download Excel."})
-
-@app.get("/admin/recap/download")
-def dl_xls(period_id: Optional[str]=None, db: Session=Depends(get_db)):
-    q=db.query(ExamResult).join(User).filter(User.role=='student')
-    if period_id: q=q.filter(ExamResult.exam_id.like(f"P{period_id}_%"))
-    data = []
-    for r in q.all():
-        data.append({"Nama":r.user.full_name, "Nilai": r.irt_score, "Mapel": r.exam_id})
-    df = pd.DataFrame(data if data else [{"Info":"Data Kosong"}])
-    out = io.BytesIO(); 
-    with pd.ExcelWriter(out, engine='xlsxwriter') as w: df.to_excel(w, index=False)
-    out.seek(0); return StreamingResponse(out, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="Rekap.xlsx"'})
 
 @app.post("/config/release")
 def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
