@@ -13,7 +13,7 @@ import io
 import os
 import math
 
-# --- LIBRARY PDF (WAJIB ADA) ---
+# --- LIBRARY PDF ---
 try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
@@ -41,7 +41,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # ==========================================
-# 2. MODEL DATABASE (FITUR LENGKAP)
+# 2. MODEL DATABASE (CASCADE FIX)
 # ==========================================
 class User(Base):
     __tablename__ = "users"
@@ -53,7 +53,8 @@ class User(Base):
     school = Column(String, nullable=True)
     choice1_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
     choice2_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
-    results = relationship("ExamResult", back_populates="user")
+    # Cascade delete results jika user dihapus
+    results = relationship("ExamResult", back_populates="user", cascade="all, delete-orphan")
 
 class Major(Base):
     __tablename__ = "majors"
@@ -88,10 +89,11 @@ class Question(Base):
     exam_id = Column(String, ForeignKey("exams.id"))
     text = Column(Text) 
     type = Column(String, default="multiple_choice") 
-    difficulty = Column(Float, default=1.0) # FITUR IRT
+    difficulty = Column(Float, default=1.0)
     image_url = Column(String, nullable=True)
     reading_material = Column(Text, nullable=True) 
     explanation = Column(Text, nullable=True)     
+    # KUNCI: Cascade Delete Orphan (Hapus opsi jika soal dihapus)
     options = relationship("Option", back_populates="question", cascade="all, delete-orphan")
     exam = relationship("Exam", back_populates="questions")
 
@@ -120,7 +122,7 @@ class SystemConfig(Base):
     value = Column(String)
 
 # ==========================================
-# 3. LOGIKA IRT (BOBOT SOAL)
+# 3. LOGIKA IRT
 # ==========================================
 def calculate_irt_score(correct_questions, total_questions):
     if not total_questions: return 0
@@ -133,7 +135,7 @@ def calculate_irt_score(correct_questions, total_questions):
     return round(final_score)
 
 # ==========================================
-# 4. API SETUP & STARTUP
+# 4. APP STARTUP
 # ==========================================
 app = FastAPI(title="CBT SYSTEM PRO MAX")
 
@@ -150,37 +152,34 @@ def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     
-    # AUTO SEEDING JURUSAN (SUPAYA TIDAK BLANK SAAT PILIH)
+    # SEEDING JURUSAN
     if db.query(Major).count() == 0:
         data = [
             ("UNIVERSITAS INDONESIA", "PENDIDIKAN DOKTER", 680.0),
             ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN", 420.98),
-            ("UNIVERSITAS SYIAH KUALA", "TEKNIK SIPIL", 480.6),
             ("UNIVERSITAS PAPUA", "MANAJEMEN", 387.2)
         ]
         for u, n, g in data: db.add(Major(university=u, name=n, passing_grade=g))
         db.commit()
     
-    # AUTO SEEDING SEKOLAH/CABANG
+    # SEEDING CABANG
     if db.query(User).filter(User.school != None).count() == 0:
         db.add(User(username="admin_cabang", password="123", full_name="Admin", role="student", school="PUSAT"))
         db.commit()
 
-    # FIX DURASI AGAR BISA DESIMAL (42.5 Menit)
+    # FIX DURASI
     try: db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision")); db.commit()
     except: pass
     db.close()
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
-# === PERBAIKAN FATAL: SYNTAX ERROR ===
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-# ======================================
 
 # SCHEMAS
 class LoginSchema(BaseModel):
@@ -241,7 +240,7 @@ def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
 @app.post("/admin/periods")
 def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
     p=ExamPeriod(name=d.name, exam_type=d.exam_type, is_active=True); db.add(p); db.commit(); db.refresh(p)
-    # SUBTEST STANDAR UTBK
+    # BUAT SUB-TEST
     subtests = [("PU",30), ("PPU",15), ("PBM",25), ("PK",20), ("LBI",40), ("LBE",20), ("PM",40)]
     for code, dur in subtests:
         db.add(Exam(id=f"P{p.id}_{code}", period_id=p.id, code=code, title=f"Tes {code}", duration=dur))
@@ -257,11 +256,24 @@ def get_periods(db: Session = Depends(get_db)):
         res.append({"id":p.id,"name":p.name,"is_active":p.is_active,"exams":exs})
     return res
 
+# === FIX FOREIGN KEY VIOLATION (UPLOAD SOAL) ===
 @app.post("/admin/upload-questions/{eid}")
 async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
-        db.query(Question).filter_by(exam_id=eid).delete(); db.commit(); cnt=0
+        
+        # 1. HAPUS MANUAL (SAFETY FIRST)
+        # Ambil semua question lama
+        old_questions = db.query(Question).filter_by(exam_id=eid).all()
+        for q in old_questions:
+            # Hapus opsinya dulu (ANAK)
+            db.query(Option).filter_by(question_id=q.id).delete(synchronize_session=False)
+            # Hapus soalnya (INDUK)
+            db.delete(q)
+        db.commit() # Commit penghapusan
+
+        # 2. INSERT BARU
+        cnt=0
         for _, r in df.iterrows():
             txt = r.get('Soal') or r.get('soal') or r.get('text')
             if pd.isna(txt): continue
@@ -270,7 +282,7 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
             q = Question(exam_id=eid, text=str(txt), difficulty=float(diff), 
                          reading_material=str(r.get('Bacaan') or r.get('bacaan') or ''), 
                          image_url=str(r.get('Gambar') or r.get('gambar') or ''))
-            db.add(q); db.commit()
+            db.add(q); db.commit() # Commit per soal untuk dapat ID
             
             kunci = str(r.get('Kunci') or r.get('kunci') or '').strip().upper()
             for idx, col in [('A','OpsiA'), ('B','OpsiB'), ('C','OpsiC'), ('D','OpsiD'), ('E','OpsiE')]:
@@ -308,7 +320,7 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
     db.commit()
     return {"message":"Saved", "score": score}
 
-# --- REKAP & DASHBOARD ---
+# --- REKAP DATA ---
 @app.get("/student/dashboard-stats")
 def stats(username: str, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=username).first()
