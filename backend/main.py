@@ -47,7 +47,7 @@ class User(Base):
     school = Column(String, nullable=True)
     choice1_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
     choice2_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
-    results = relationship("ExamResult", back_populates="user")
+    results = relationship("ExamResult", back_populates="user", cascade="all, delete-orphan")
 
 class Major(Base):
     __tablename__ = "majors"
@@ -62,7 +62,7 @@ class ExamPeriod(Base):
     name = Column(String)
     exam_type = Column(String)
     is_active = Column(Boolean, default=False)
-    target_schools = Column(Text, nullable=True)
+    target_schools = Column(Text, nullable=True) # KUNCI FITUR PER CABANG
     exams = relationship("Exam", back_populates="period", cascade="all, delete-orphan")
 
 class Exam(Base):
@@ -112,7 +112,7 @@ class SystemConfig(Base):
     key = Column(String, primary_key=True)
     value = Column(String)
 
-# LOGIKA IRT
+# IRT LOGIC
 def calculate_irt_score(correct_questions, total_questions):
     if not total_questions: return 0
     base_score = 200
@@ -123,8 +123,8 @@ def calculate_irt_score(correct_questions, total_questions):
     final_score = base_score + (earned_weight / total_weight) * max_add_score
     return round(final_score)
 
-# APP
-app = FastAPI(title="CBT SYSTEM PRO MAX")
+# APP SETUP
+app = FastAPI(title="CBT PRO TUNTAS")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("startup")
@@ -153,12 +153,12 @@ def get_db():
 class LoginSchema(BaseModel): username: str; password: str
 class AnswerSchema(BaseModel): answers: Dict[str, Any]; username: str
 class MajorSelectionSchema(BaseModel): username: str; choice1_id: Optional[int]; choice2_id: Optional[int]
-class PeriodCreateSchema(BaseModel): name: str; target_schools: Optional[str] = None; exam_type: str = "UTBK"; mode: str = "standard"
+class PeriodCreateSchema(BaseModel): name: str; target_schools: Optional[str] = "Semua"; exam_type: str = "UTBK"; mode: str = "standard"
 class BulkDeleteSchema(BaseModel): user_ids: List[int]
 class UserCreateSchema(BaseModel): username: str; full_name: str; password: str; role: str; school: Optional[str]
 class ConfigSchema(BaseModel): value: str
 
-# API
+# API UTAMA
 @app.post("/login")
 def login(d: LoginSchema, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=d.username).first()
@@ -170,7 +170,8 @@ def get_majors(db: Session = Depends(get_db)): return db.query(Major).all()
 
 @app.get("/admin/schools-list")
 def get_schools_list(db: Session = Depends(get_db)):
-    return [s[0] for s in db.query(distinct(User.school)).filter(User.school != None).all()] or ["PUSAT"]
+    # Ambil list sekolah unik dari user + default PUSAT
+    return ["Semua"] + ([s[0] for s in db.query(distinct(User.school)).filter(User.school != None).all()] or [])
 
 @app.post("/users/select-major")
 def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
@@ -180,43 +181,51 @@ def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
     u.choice2_id = d.choice2_id if d.choice2_id and d.choice2_id > 0 else None
     db.commit(); return {"status": "success"}
 
+# --- MANAJEMEN UJIAN (CRUD LENGKAP) ---
 @app.post("/admin/periods")
 def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
-    p=ExamPeriod(name=d.name, exam_type=d.exam_type, is_active=True); db.add(p); db.commit(); db.refresh(p)
+    # DEFAULT IS_ACTIVE = FALSE (Biar admin rilis manual)
+    p=ExamPeriod(name=d.name, exam_type=d.exam_type, is_active=False, target_schools=d.target_schools); db.add(p); db.commit(); db.refresh(p)
     for code, dur in [("PU",30), ("PPU",15), ("PBM",25), ("PK",20), ("LBI",40), ("LBE",20), ("PM",40)]:
         db.add(Exam(id=f"P{p.id}_{code}", period_id=p.id, code=code, title=f"Tes {code}", duration=dur))
-    db.commit(); return {"message": "Periode & Subtes Berhasil Dibuat"}
+    db.commit(); return {"message": "Periode Berhasil Dibuat"}
 
 @app.get("/admin/periods")
 def get_periods(db: Session = Depends(get_db)):
-    ps=db.query(ExamPeriod).order_by(ExamPeriod.id.desc()).options(joinedload(ExamPeriod.exams).joinedload(Exam.questions)).all(); res=[]
+    ps=db.query(ExamPeriod).order_by(ExamPeriod.id.desc()).options(joinedload(ExamPeriod.exams).joinedload(Exam.questions)).all()
+    res=[]
     for p in ps:
         exs=[{"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"q_count":len(e.questions)} for e in p.exams]
-        res.append({"id":p.id,"name":p.name,"is_active":p.is_active,"exams":exs})
+        res.append({"id":p.id,"name":p.name,"target_schools":p.target_schools,"is_active":p.is_active,"exams":exs})
     return res
 
-@app.post("/admin/upload-questions/{eid}")
-async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    try:
-        c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
-        old_questions = db.query(Question).filter_by(exam_id=eid).all()
-        for q in old_questions:
-            db.query(Option).filter_by(question_id=q.id).delete(synchronize_session=False)
-            db.delete(q)
-        db.commit(); cnt=0
-        for _, r in df.iterrows():
-            txt = r.get('Soal') or r.get('soal') or r.get('text')
-            if pd.isna(txt): continue
-            diff = r.get('Kesulitan') or r.get('difficulty') or 1.0
-            q = Question(exam_id=eid, text=str(txt), difficulty=float(diff), reading_material=str(r.get('Bacaan') or r.get('bacaan') or ''), image_url=str(r.get('Gambar') or r.get('gambar') or ''))
-            db.add(q); db.commit()
-            kunci = str(r.get('Kunci') or r.get('kunci') or '').strip().upper()
-            for idx, col in [('A','OpsiA'), ('B','OpsiB'), ('C','OpsiC'), ('D','OpsiD'), ('E','OpsiE')]:
-                val = r.get(col) or r.get(col.lower())
-                if pd.notna(val): db.add(Option(question_id=q.id, option_index=idx, label=str(val), is_correct=(idx == kunci)))
-            cnt+=1
-        db.commit(); return {"message": f"Sukses Upload {cnt} Soal"}
-    except Exception as e: return {"message": f"Error: {str(e)}"}
+@app.delete("/admin/periods/{pid}") # FITUR HAPUS TO
+def delete_period(pid: int, db: Session = Depends(get_db)):
+    p = db.query(ExamPeriod).filter_by(id=pid).first()
+    if p: db.delete(p); db.commit()
+    return {"message":"Terhapus"}
+
+@app.post("/admin/periods/{pid}/toggle") # FITUR RILIS/SEMBUNYIKAN
+def toggle_period(pid: int, db: Session = Depends(get_db)):
+    p = db.query(ExamPeriod).filter_by(id=pid).first()
+    if p: p.is_active = not p.is_active; db.commit()
+    return {"message":"OK"}
+
+# --- LOGIKA FILTER SISWA (KUNCI FITUR PER CABANG) ---
+@app.get("/student/periods")
+def get_pers(username: str, db: Session = Depends(get_db)):
+    u=db.query(User).filter_by(username=username).first()
+    all_ps=db.query(ExamPeriod).filter_by(is_active=True).order_by(ExamPeriod.id.desc()).all()
+    ret=[]
+    for p in all_ps:
+        # HANYA TAMPILKAN JIKA TARGET SEKOLAH COCOK ATAU 'SEMUA'
+        if p.target_schools and p.target_schools != "Semua" and p.target_schools != u.school: continue
+        exs=[]
+        for e in p.exams:
+            done = db.query(ExamResult).filter_by(user_id=u.id,exam_id=e.id).first() is not None
+            exs.append({"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"is_done":done,"q_count":len(e.questions)})
+        ret.append({"id":p.id,"name":p.name,"exams":exs})
+    return ret
 
 @app.post("/exams/{exam_id}/submit")
 def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
@@ -235,66 +244,81 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
 def stats(username: str, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=username).first()
     conf=db.query(SystemConfig).filter_by(key="release_announcement").first()
-    if not (conf and conf.value=="true"): return {"is_released":False}
+    
+    # CEK STATUS RILIS GLOBAL
+    is_released = (conf and conf.value == "true")
+    
     results=db.query(ExamResult).filter_by(user_id=u.id).all(); map_score={}
-    for r in results:
-        code = r.exam_id.split('_')[-1]
-        map_score[code] = {"score": r.irt_score, "correct": r.correct_count, "wrong": r.wrong_count, "id": r.exam_id}
+    for r in results: map_score[r.exam_id.split('_')[-1]] = {"score": r.irt_score, "correct": r.correct_count, "wrong": r.wrong_count, "id": r.exam_id}
     details = []; total_score = 0; subtests = ["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"]
     for code in subtests:
         data = map_score.get(code, {"score":0, "correct":0, "wrong":0, "id": None})
         details.append({"subject": code, "score": int(data["score"]), "correct": data["correct"], "wrong": data["wrong"], "id": data["id"]})
         total_score += data["score"]
     avg = int(total_score / len(subtests))
-    c1 = db.query(Major).filter_by(id=u.choice1_id).first(); c2 = db.query(Major).filter_by(id=u.choice2_id).first()
-    status = "TIDAK LULUS"
-    if c1 and avg >= c1.passing_grade: status = f"LULUS P1: {c1.university}"
-    elif c2 and avg >= c2.passing_grade: status = f"LULUS P2: {c2.university}"
-    return {"is_released":True, "average": avg, "details": details, "radar": details, "status": status}
+    
+    status = "MENUNGGU PENGUMUMAN"
+    if is_released:
+        c1 = db.query(Major).filter_by(id=u.choice1_id).first(); c2 = db.query(Major).filter_by(id=u.choice2_id).first()
+        status = "TIDAK LULUS"
+        if c1 and avg >= c1.passing_grade: status = f"LULUS P1: {c1.university} - {c1.name}"
+        elif c2 and avg >= c2.passing_grade: status = f"LULUS P2: {c2.university} - {c2.name}"
+
+    return {"is_released": is_released, "average": avg, "details": details, "radar": details, "status": status}
 
 @app.get("/admin/users") 
 def get_users(db: Session = Depends(get_db)): return db.query(User).options(joinedload(User.results)).all()
 
-# DOWNLOAD FILTERED BY SCHOOL
+# PDF REKAP KOMPLIT
 @app.get("/admin/recap/download-pdf")
 def dl_pdf(school: Optional[str]=None, db: Session=Depends(get_db)):
     if not HAS_PDF: return JSONResponse({"message": "Server PDF Error"})
     try:
         q=db.query(ExamResult).join(User).filter(User.role=='student')
         if school and school != "Semua": q=q.filter(User.school == school)
-        
         user_map = {}
         for r in q.all():
-            if r.user_id not in user_map: 
-                user_map[r.user_id] = {"name": r.user.full_name, "school": r.user.school, "c1": r.user.choice1_id, "c2": r.user.choice2_id, "scores": {"PU":0,"PPU":0,"PBM":0,"PK":0,"LBI":0,"LBE":0,"PM":0}}
-            code = r.exam_id.split('_')[-1]
-            if code in user_map[r.user_id]["scores"]: user_map[r.user_id]["scores"][code] = int(r.irt_score)
-        
+            if r.user_id not in user_map: user_map[r.user_id] = {"name": r.user.full_name, "school": r.user.school, "c1": r.user.choice1_id, "c2": r.user.choice2_id, "scores": {}}
+            user_map[r.user_id]["scores"][r.exam_id.split('_')[-1]] = int(r.irt_score)
         table_data = []
         for uid, data in user_map.items():
-            row = [data['name'][:20], data['school']]
-            total = 0
+            row = [data['name'][:20], data['school']]; total = 0
             for code in ["PU","PPU","PBM","PK","LBI","LBE","PM"]:
-                val = data['scores'][code]; row.append(val); total += val
+                val = data['scores'].get(code, 0); row.append(val); total += val
             avg = int(total/7); row.append(avg)
-            
             c1 = db.query(Major).filter_by(id=data["c1"]).first() if data["c1"] else None
             c2 = db.query(Major).filter_by(id=data["c2"]).first() if data["c2"] else None
-            status = "GAGAL"
-            if c1 and avg >= c1.passing_grade: status = "LULUS P1"
-            elif c2 and avg >= c2.passing_grade: status = "LULUS P2"
-            row.append(status)
-            table_data.append(row)
-            
-        if not table_data: table_data = [["BELUM ADA DATA", "-", 0,0,0,0,0,0,0, 0, "-"]]
+            st = "GAGAL"
+            if c1 and avg >= c1.passing_grade: st = "LULUS P1"
+            elif c2 and avg >= c2.passing_grade: st = "LULUS P2"
+            row.append(st); table_data.append(row)
+        if not table_data: table_data = [["DATA KOSONG", "-", 0,0,0,0,0,0,0, 0, "-"]]
         buf=io.BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4)); el=[]
-        el.append(Paragraph(f"REKAP HASIL TRYOUT UTBK - {school if school else 'SEMUA CABANG'}", getSampleStyleSheet()['Heading1'])); el.append(Spacer(1, 20))
-        headers = ["Nama", "Sekolah", "PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM", "AVG", "STATUS"]
-        t=Table([headers] + table_data)
-        t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,colors.black), ('BACKGROUND',(0,0),(-1,0), colors.lightgrey), ('FONTSIZE',(0,0),(-1,-1), 8)]))
-        el.append(t); doc.build(el); buf.seek(0)
+        el.append(Paragraph(f"REKAP NILAI - {school or 'SEMUA'}", getSampleStyleSheet()['Heading1'])); el.append(Spacer(1,20))
+        t=Table([["Nama", "Sekolah", "PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM", "AVG", "STATUS"]] + table_data)
+        t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,colors.black),('FONTSIZE',(0,0),(-1,-1),8)])); el.append(t); doc.build(el); buf.seek(0)
         return StreamingResponse(buf,media_type='application/pdf',headers={'Content-Disposition':'attachment;filename="Rekap.pdf"'})
-    except Exception as e: return JSONResponse({"message": f"Error: {str(e)}"})
+    except Exception as e: return JSONResponse({"message": str(e)})
+
+@app.post("/admin/upload-questions/{eid}")
+async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    try:
+        c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
+        old_q = db.query(Question).filter_by(exam_id=eid).all()
+        for q in old_q: db.query(Option).filter_by(question_id=q.id).delete(); db.delete(q)
+        db.commit(); cnt=0
+        for _, r in df.iterrows():
+            txt = r.get('Soal') or r.get('soal')
+            if pd.isna(txt): continue
+            q = Question(exam_id=eid, text=str(txt), difficulty=float(r.get('Kesulitan') or 1.0), reading_material=str(r.get('Bacaan') or ''), image_url=str(r.get('Gambar') or ''))
+            db.add(q); db.commit()
+            kunci = str(r.get('Kunci') or '').strip().upper()
+            for idx, col in [('A','OpsiA'), ('B','OpsiB'), ('C','OpsiC'), ('D','OpsiD'), ('E','OpsiE')]:
+                val = r.get(col)
+                if pd.notna(val): db.add(Option(question_id=q.id, option_index=idx, label=str(val), is_correct=(idx == kunci)))
+            cnt+=1
+        db.commit(); return {"message": f"Sukses {cnt} Soal"}
+    except Exception as e: return {"message": str(e)}
 
 @app.post("/config/release")
 def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
@@ -333,3 +357,8 @@ async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_
             if pd.notna(univ) and pd.notna(prod): db.add(Major(university=str(univ).strip(), name=str(prod).strip(), passing_grade=float(pg or 0))); count+=1
         db.commit(); return {"message": f"Sukses! {count} Jurusan."}
     except Exception as e: return {"message":str(e)}
+@app.get("/student/review/{exam_id}")
+def rev(exam_id: str, db: Session = Depends(get_db)):
+    e=db.query(Exam).filter_by(id=exam_id).first(); q=[]
+    for x in e.questions: q.append({"id":x.id,"text":x.text,"image_url":x.image_url,"reading_material":x.reading_material,"explanation":x.explanation,"correct_answer":next((o.label for o in x.options if o.is_correct),"")})
+    return {"title":e.title,"questions":q}
