@@ -124,25 +124,18 @@ class SystemConfig(Base):
 # ==========================================
 def calculate_irt_score(correct_questions, total_questions):
     """
-    Menghitung nilai berdasarkan bobot kesulitan (IRT Sederhana).
-    - Soal Sulit (Difficulty tinggi) = Poin Besar
-    - Soal Mudah (Difficulty rendah) = Poin Kecil
-    - Base Score = 200 (Nilai mati UTBK)
-    - Max Score = 1000
+    Menghitung nilai berdasarkan bobot kesulitan.
     """
     if not total_questions: return 0
     
     base_score = 200
     max_add_score = 800
     
-    # Hitung Total Bobot Seluruh Soal
     total_weight = sum([q.difficulty for q in total_questions])
     if total_weight == 0: return base_score
     
-    # Hitung Bobot Jawaban Benar
     earned_weight = sum([q.difficulty for q in correct_questions])
     
-    # Rumus: 200 + (Bobot Benar / Total Bobot) * 800
     final_score = base_score + (earned_weight / total_weight) * max_add_score
     return round(final_score)
 
@@ -164,46 +157,68 @@ def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     
-    # AUTO SEEDING JURUSAN & SEKOLAH (SUPAYA TIDAK BLANK)
+    # AUTO SEEDING JURUSAN
     if db.query(Major).count() == 0:
         data = [
             ("UNIVERSITAS INDONESIA", "PENDIDIKAN DOKTER", 680.0),
             ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN", 420.98),
-            ("UNIVERSITAS SYIAH KUALA", "TEKNIK SIPIL", 480.6),
-            ("UNIVERSITAS PAPUA", "MANAJEMEN", 387.2),
-            ("INSTITUT TEKNOLOGI BANDUNG", "STEI - KOMPUTASI", 690.5)
+            ("UNIVERSITAS PAPUA", "MANAJEMEN", 387.2)
         ]
         for u, n, g in data: db.add(Major(university=u, name=n, passing_grade=g))
         db.commit()
     
-    # AUTO SEEDING SEKOLAH
+    # AUTO SEEDING SEKOLAH/CABANG
     if db.query(User).filter(User.school != None).count() == 0:
         db.add(User(username="admin_cabang", password="123", full_name="Admin", role="student", school="PUSAT"))
         db.commit()
 
-    # FIX DURASI KOLOM
+    # FIX DURASI
     try: db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision")); db.commit()
     except: pass
     db.close()
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
+
+# === INI PERBAIKAN SYNTAX ERROR ===
 def get_db():
-    db = SessionLocal(); try: yield db; finally: db.close()
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+# ==================================
 
 # SCHEMAS
-class LoginSchema(BaseModel): username: str; password: str
-class AnswerSchema(BaseModel): answers: Dict[str, Any]; username: str
-class MajorSelectionSchema(BaseModel): username: str; choice1_id: Optional[int]; choice2_id: Optional[int]
-class PeriodCreateSchema(BaseModel): name: str; target_schools: Optional[str] = None; exam_type: str = "UTBK"; mode: str = "standard"
-class BulkDeleteSchema(BaseModel): user_ids: List[int]
-class UserCreateSchema(BaseModel): username: str; full_name: str; password: str; role: str; school: Optional[str]
-class ConfigSchema(BaseModel): value: str
+class LoginSchema(BaseModel):
+    username: str
+    password: str
+class AnswerSchema(BaseModel):
+    answers: Dict[str, Any]
+    username: str
+class MajorSelectionSchema(BaseModel):
+    username: str
+    choice1_id: Optional[int]
+    choice2_id: Optional[int]
+class PeriodCreateSchema(BaseModel): 
+    name: str
+    target_schools: Optional[str] = None
+    exam_type: str = "UTBK"
+    mode: str = "standard"
+class BulkDeleteSchema(BaseModel):
+    user_ids: List[int]
+class UserCreateSchema(BaseModel):
+    username: str
+    full_name: str
+    password: str
+    role: str = "student"
+    school: Optional[str]
+class ConfigSchema(BaseModel):
+    value: str
 
 # ==========================================
 # 5. API UTAMA (LENGKAP)
 # ==========================================
 
-# LOGIN & DATA DASAR
 @app.post("/login")
 def login(d: LoginSchema, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=d.username).first()
@@ -252,22 +267,17 @@ def get_periods(db: Session = Depends(get_db)):
 async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
-        # LOGIKA MAPPING KOLOM (Agar File Bapak Terbaca)
         db.query(Question).filter_by(exam_id=eid).delete(); db.commit(); cnt=0
         for _, r in df.iterrows():
-            # Cari kolom soal dengan berbagai variasi nama
             txt = r.get('Soal') or r.get('soal') or r.get('text')
             if pd.isna(txt): continue
             
-            # Bobot Kesulitan (Default 1.0 jika tidak ada di excel)
             diff = r.get('Kesulitan') or r.get('difficulty') or 1.0
-            
             q = Question(exam_id=eid, text=str(txt), difficulty=float(diff), 
                          reading_material=str(r.get('Bacaan') or r.get('bacaan') or ''), 
                          image_url=str(r.get('Gambar') or r.get('gambar') or ''))
             db.add(q); db.commit()
             
-            # Opsi & Kunci
             kunci = str(r.get('Kunci') or r.get('kunci') or '').strip().upper()
             for idx, col in [('A','OpsiA'), ('B','OpsiB'), ('C','OpsiC'), ('D','OpsiD'), ('E','OpsiE')]:
                 val = r.get(col) or r.get(col.lower())
@@ -315,9 +325,8 @@ def stats(username: str, db: Session = Depends(get_db)):
     results=db.query(ExamResult).filter_by(user_id=u.id).all()
     map_score={}
     
-    # Mapping Nilai per Kode (PU, PK, dll)
     for r in results:
-        code = r.exam_id.split('_')[-1] # Ambil suffix (PU, PK)
+        code = r.exam_id.split('_')[-1]
         map_score[code] = {"score": r.irt_score, "correct": r.correct_count, "wrong": r.wrong_count, "id": r.exam_id}
         
     details = []
@@ -336,8 +345,6 @@ def stats(username: str, db: Session = Depends(get_db)):
         total_score += data["score"]
         
     avg = int(total_score / len(subtests))
-    
-    # Cek Kelulusan
     choice1 = db.query(Major).filter_by(id=u.choice1_id).first()
     status = "TIDAK LULUS"
     if choice1 and avg >= choice1.passing_grade: status = f"LULUS PILIHAN 1: {choice1.university}"
@@ -348,15 +355,13 @@ def stats(username: str, db: Session = Depends(get_db)):
 def get_users(db: Session = Depends(get_db)): 
     return db.query(User).options(joinedload(User.results)).all()
 
-# --- DOWNLOAD PDF REKAP (MEWAH) ---
+# --- DOWNLOAD PDF REKAP ---
 @app.get("/admin/recap/download-pdf")
 def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
     if not HAS_PDF: return JSONResponse({"message": "Server PDF Error"})
     try:
         q=db.query(ExamResult).join(User).filter(User.role=='student')
         if period_id: q=q.filter(ExamResult.exam_id.like(f"P{period_id}_%"))
-        
-        # OLAH DATA AGAR GAK BLANK
         user_map = {}
         for r in q.all():
             if r.user_id not in user_map: 
@@ -367,7 +372,7 @@ def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
             code = r.exam_id.split('_')[-1]
             if code in user_map[r.user_id]["scores"]:
                 user_map[r.user_id]["scores"][code] = int(r.irt_score)
-                
+        
         table_data = []
         for uid, data in user_map.items():
             row = [data['name'][:20], data['school']]
@@ -381,11 +386,9 @@ def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
             
         if not table_data: table_data = [["BELUM ADA DATA", "-", 0,0,0,0,0,0,0, 0]]
 
-        # Bikin PDF
         buf=io.BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4)); el=[]
         el.append(Paragraph("REKAP HASIL TRYOUT UTBK", getSampleStyleSheet()['Heading1']))
         el.append(Spacer(1, 20))
-        
         headers = ["Nama", "Sekolah", "PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM", "AVG"]
         t=Table([headers] + table_data)
         t.setStyle(TableStyle([
@@ -424,3 +427,19 @@ async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(g
 @app.post("/admin/users/delete-bulk")
 def del_users(d: BulkDeleteSchema, db: Session = Depends(get_db)):
     db.query(User).filter(User.id.in_(d.user_ids)).delete(synchronize_session=False); db.commit(); return {"message":"OK"}
+@app.post("/admin/upload-majors")
+async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    try:
+        c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
+        df.columns = df.columns.str.strip().str.replace(' ', '_').str.lower()
+        db.query(Major).delete(); count=0
+        for _, r in df.iterrows():
+            univ = r.get('universitas') or r.get('university')
+            prod = r.get('prodi') or r.get('program_studi')
+            pg = r.get('passing_grade') or r.get('grade')
+            if pd.notna(univ) and pd.notna(prod): 
+                db.add(Major(university=str(univ).strip(), name=str(prod).strip(), passing_grade=float(pg or 0)))
+                count+=1
+        db.commit()
+        return {"message": f"Sukses! {count} Jurusan."}
+    except Exception as e: return {"message":str(e)}
