@@ -11,9 +11,8 @@ from pydantic import BaseModel
 import pandas as pd
 import io
 import os
-import random
 
-# --- LIBRARY PDF ---
+# --- CEK LIBRARY PDF ---
 try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
@@ -126,9 +125,9 @@ class SystemConfig(Base):
     value = Column(String)
 
 # ==========================================
-# 3. AUTO-SEEDING (DATA DEFAULT)
+# 3. APP SETUP
 # ==========================================
-app = FastAPI(title="CBT SYSTEM FINAL FIX")
+app = FastAPI(title="CBT SYSTEM SELF-HEALING")
 
 app.add_middleware(
     CORSMiddleware,
@@ -142,34 +141,10 @@ app.add_middleware(
 def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
-    try:
-        # 1. ISI JURUSAN (USK/UNIPA)
-        if db.query(Major).count() == 0:
-            majors_data = [
-                ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN - USK", 420.98),
-                ("UNIVERSITAS SYIAH KUALA", "TEKNIK SIPIL - USK", 480.6),
-                ("UNIVERSITAS SYIAH KUALA", "TEKNIK MESIN - USK", 484.2),
-                ("UNIVERSITAS SYIAH KUALA", "TEKNIK KIMIA - USK", 477.0),
-                ("UNIVERSITAS PAPUA", "MANAJEMEN - UNIPA", 387.2),
-                ("UNIVERSITAS PAPUA", "AKUNTANSI - UNIPA", 391.23)
-            ]
-            for u, n, g in majors_data: db.add(Major(university=u, name=n, passing_grade=g))
-            db.commit()
-
-        # 2. ISI SEKOLAH (CABANG)
-        if db.query(User).filter(User.school != None).count() == 0:
-            branches = ["PUSAT", "CABANG BANDA ACEH", "CABANG MEDAN", "CABANG PAPUA", "ONLINE"]
-            for i, b in enumerate(branches):
-                if not db.query(User).filter_by(username=f"branch_{i}").first():
-                    db.add(User(username=f"branch_{i}", password="123", full_name=f"Admin {b}", role="student", school=b))
-            db.commit()
-
-        # 3. FIX DURASI
-        try: db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision")); db.commit()
-        except: pass
-
+    # FIX DB DURASI OTOMATIS
+    try: db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision")); db.commit()
     except: pass
-    finally: db.close()
+    db.close()
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
@@ -219,41 +194,79 @@ class ConfigSchema(BaseModel):
     value: str
 
 # ==========================================
-# 4. API UTAMA
+# 4. API UTAMA (SELF-HEALING)
 # ==========================================
 
+# 1. API JURUSAN (AUTO-FIX)
 @app.get("/majors")
 def get_majors(db: Session = Depends(get_db)):
-    majors = db.query(Major).all()
-    if not majors: return [{"id":0, "university":"LOADING", "name":"DATA...", "passing_grade":0}]
-    return majors
+    # CEK: APAKAH KOSONG?
+    if db.query(Major).count() == 0:
+        # JIKA KOSONG, ISI DULU BARU KIRIM (SUPAYA FRONTEND DAPAT DATA)
+        print(">>> DB JURUSAN KOSONG -> MENGISI OTOMATIS AGAR TOMBOL MUNCUL...")
+        data = [
+            ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN - USK", 420.98),
+            ("UNIVERSITAS SYIAH KUALA", "TEKNIK SIPIL - USK", 480.6),
+            ("UNIVERSITAS SYIAH KUALA", "TEKNIK MESIN - USK", 484.2),
+            ("UNIVERSITAS SYIAH KUALA", "TEKNIK KIMIA - USK", 477.0),
+            ("UNIVERSITAS SYIAH KUALA", "ARSITEKTUR - USK", 466.54),
+            ("UNIVERSITAS SYIAH KUALA", "TEKNIK ELEKTRO - USK", 495.23),
+            ("UNIVERSITAS SYIAH KUALA", "AGROTEKNOLOGI - USK", 420.6),
+            ("UNIVERSITAS SYIAH KUALA", "AGRIBISNIS - USK", 458.1),
+            ("UNIVERSITAS SYIAH KUALA", "PETERNAKAN - USK", 423.6),
+            ("UNIVERSITAS SYIAH KUALA", "TEKNOLOGI HASIL PERTANIAN - USK", 435.6),
+            ("UNIVERSITAS SYIAH KUALA", "TEKNIK PERTANIAN - USK", 436.16),
+            ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN BIOLOGI - USK", 432.6),
+            ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN MATEMATIKA - USK", 459.0),
+            ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN FISIKA - USK", 431.1),
+            ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN KIMIA - USK", 434.48),
+            ("UNIVERSITAS PAPUA", "MANAJEMEN - UNIPA", 387.2),
+            ("UNIVERSITAS PAPUA", "AKUNTANSI - UNIPA", 391.23),
+            ("UNIVERSITAS PAPUA", "SASTRA INDONESIA - UNIPA", 354.93),
+            ("UNIVERSITAS PAPUA", "PENDIDIKAN BAHASA INGGRIS - UNIPA", 363.0),
+            ("UNIVERSITAS PAPUA", "D-III TEKNIK PERMINYAKAN DAN GAS BUMI - UNIPA", 420.0),
+            ("UNIVERSITAS PAPUA", "D-III KESEHATAN HEWAN - UNIPA", 420.0),
+            ("UNIVERSITAS PAPUA", "D-III TEKNIK KOMPUTER - UNIPA", 420.0),
+            ("UNIVERSITAS PAPUA", "D-III EKOWISATA - UNIPA", 420.0),
+            ("UNIVERSITAS PAPUA", "D-III MANAJEMEN HUTAN ALAM PRODUKSI - UNIPA", 420.0),
+            ("UNIVERSITAS PAPUA", "D-III TEKNIK LISTRIK - UNIPA", 420.0),
+            ("UNIVERSITAS PAPUA", "D-III TEKNIK GEOLOGI TERAPAN - UNIPA", 420.0),
+            ("UNIVERSITAS PAPUA", "D-III BUDIDAYA TANAMAN PANGAN - UNIPA", 420.0),
+            ("UNIVERSITAS PAPUA", "D-III BUDIDAYA HUTAN - UNIPA", 420.0),
+            ("UNIVERSITAS PAPUA", "D-III KONSERVASI SUMBERDAYA HUTAN - UNIPA", 420.0),
+            ("UNIVERSITAS PAPUA", "D-III TEKNIK PERTAMBANGAN - UNIPA", 420.0),
+            ("UNIVERSITAS PAPUA", "D-III BUDIDAYA PERIKANAN - UNIPA", 420.0),
+            ("UNIVERSITAS PAPUA", "D-III BUDIDAYA TANAMAN PERKEBUNAN - UNIPA", 420.0)
+        ]
+        for u, n, g in data: db.add(Major(university=u, name=n, passing_grade=g))
+        db.commit()
+    
+    # SEKARANG PASTI ADA DATA
+    return db.query(Major).order_by(Major.university, Major.name).all()
 
+# 2. API CABANG (AUTO-FIX)
 @app.get("/admin/schools-list")
 def get_schools_list(db: Session = Depends(get_db)):
     schools = [s[0] for s in db.query(distinct(User.school)).filter(User.school != None, User.school != "").all()]
-    if not schools: return ["PUSAT", "CABANG CONTOH"]
+    # JIKA KOSONG, KEMBALIKAN DEFAULT (SUPAYA TOMBOL TETAP MUNCUL)
+    if not schools:
+        return ["CABANG PUSAT", "CABANG ACEH", "CABANG PAPUA", "CABANG LAINNYA"]
     return schools
 
-# --- FIX TOMBOL SIMPAN MACET (JANGAN KIRIM NULL KE DB) ---
+# 3. API SIMPAN JURUSAN (FIX MACET)
 @app.post("/users/select-major")
 def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
     u = db.query(User).filter_by(username=d.username).first()
     if not u: raise HTTPException(404, "User not found")
     
-    # KUNCI: Validasi ID sebelum simpan
+    # PASTIKAN ID BUKAN 0 (Supaya DB tidak menolak)
     c1 = d.choice1_id if d.choice1_id and d.choice1_id > 0 else None
     c2 = d.choice2_id if d.choice2_id and d.choice2_id > 0 else None
     
     u.choice1_id = c1
     u.choice2_id = c2
     db.commit()
-    
-    # WAJIB RETURN JSON INI AGAR FRONTEND PAHAM SUKSES
-    return {
-        "status": "success",
-        "message": "Jurusan Berhasil Disimpan",
-        "data": {"choice1": c1, "choice2": c2}
-    }
+    return {"message": "Berhasil Disimpan", "status": "success"}
 
 @app.post("/admin/upload-majors")
 async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_db)):
@@ -433,16 +446,21 @@ def get_inst(db: Session = Depends(get_db)):
         c=db.query(SystemConfig).filter_by(key=k).first(); r[k]=c.value if c else ""
     return r
 
+# --- FIX REKAP (ANTI BLANK) ---
 @app.get("/admin/recap/download-pdf")
 def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
-    if not HAS_PDF: return JSONResponse({"message": "Server error (PDF lib missing). Gunakan Excel."})
+    # JIKA LIBRARY PDF ERROR, JANGAN CRASH
+    if not HAS_PDF: return JSONResponse({"message": "Server error: PDF Library Missing. Download Excel saja."})
+    
     try:
         q=db.query(ExamResult).join(User).filter(User.role=='student')
         if period_id: q=q.filter(ExamResult.exam_id.like(f"P{period_id}_%"))
+        
         umap={}
         for r in q.all():
             if r.user_id not in umap: umap[r.user_id]={"name":r.user.full_name,"school":r.user.school,"c1":r.user.choice1_id,"c2":r.user.choice2_id,"s":{}}
             umap[r.user_id]["s"][r.exam_id.split('_')[-1]]=r.irt_score
+        
         d=[]
         for uid,u in umap.items():
             row=[u['name'][:20], (u['school'] or "-")[:15]] 
@@ -456,6 +474,7 @@ def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
             elif c2 and avg>=c2.passing_grade: st="LULUS P2"
             row.append(st); d.append(row)
         
+        # KUNCI REKAP: JIKA KOSONG, BUAT PLACEHOLDER BIAR GAK BLANK
         if not d: d = [["-", "BELUM ADA DATA", "-", 0,0,0,0,0,0,0,0, "-"]]
 
         buf=io.BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4)); el=[]
@@ -490,51 +509,3 @@ def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
 def get_conf(db: Session=Depends(get_db)):
     c=db.query(SystemConfig).filter_by(key="release_announcement").first()
     return {"is_released": (c.value=="true") if c else False}
-
-# --- HALAMAN BENGKEL (MANUAL) ---
-@app.get("/repair", response_class=HTMLResponse)
-def repair_page():
-    return """
-    <html>
-    <head><title>BENGKEL SYSTEM</title>
-    <style>body{font-family:sans-serif;padding:30px;text-align:center}.btn{padding:15px;width:100%;margin:10px 0;color:white;border:none;border-radius:5px;font-size:16px;cursor:pointer}.red{background:red}.blue{background:blue}.green{background:green}</style>
-    </head>
-    <body>
-        <h1>PANEL BENGKEL</h1>
-        <button class="red" onclick="act('/api/fix-duration-force')">1. RESET DURASI (42.5 Menit)</button>
-        <button class="blue" onclick="act('/api/seed-majors-auto')">2. PAKSA ISI JURUSAN (Biar Tombol Klik)</button>
-        <button class="green" onclick="act('/api/seed-dummy-result')">3. ISI NILAI PALSU (Tes Rekap)</button>
-        <p id="st">Menunggu...</p>
-        <script>
-            async function act(u){document.getElementById('st').innerText="Proses...";
-            let r=await fetch(u);let d=await r.json();document.getElementById('st').innerText=d.message;}
-        </script>
-    </body>
-    </html>
-    """
-@app.get("/api/fix-duration-force")
-def fix_duration(db: Session = Depends(get_db)):
-    db.query(ExamPeriod).delete(); db.commit()
-    try: db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision")); db.commit()
-    except: pass
-    p=ExamPeriod(name="PERIODE BARU",exam_type="UTBK_STANDARD",is_active=True); db.add(p); db.commit(); db.refresh(p)
-    for c,d in [("PU",30),("PPU",15),("PBM",25),("PK",20),("LBI",42.5),("LBE",20),("PM",42.5)]:
-        db.add(Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=d))
-    db.commit()
-    return {"message":"Durasi OK (42.5) & Periode Reset"}
-@app.get("/api/seed-majors-auto")
-def seed_majors_manual(db: Session = Depends(get_db)):
-    db.query(Major).delete()
-    for u, n, g in [("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN", 420.98), ("UNIVERSITAS PAPUA", "MANAJEMEN", 387.2)]:
-        db.add(Major(university=u, name=n, passing_grade=g))
-    db.commit()
-    return {"message": "Data Jurusan Manual Dimasukkan."}
-@app.get("/api/seed-dummy-result")
-def seed_dummy(db: Session = Depends(get_db)):
-    u=db.query(User).first(); e=db.query(Exam).first()
-    if u and e: 
-        # Buat nilai beneran
-        db.add(ExamResult(user_id=u.id, exam_id=e.id, correct_count=10, wrong_count=5, irt_score=600))
-        db.commit()
-        return {"message": "Data Nilai Dummy Berhasil Disuntikkan. Silakan Cek Rekap!"}
-    return {"message": "Gagal. Pastikan ada User dan Reset Durasi dulu."}
