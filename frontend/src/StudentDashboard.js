@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, BookOpen, BarChart3, Trophy, Eye, X } from 'lucide-react';
+// SAYA SUDAH TAMBAHKAN 'Clock' DI SINI
+import { LogOut, BookOpen, BarChart3, Trophy, Eye, X, Clock } from 'lucide-react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 
 const StudentDashboard = ({ user, onLogout, onSelectExam, apiUrl }) => {
