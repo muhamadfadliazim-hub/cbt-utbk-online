@@ -1,15 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target } from 'lucide-react';
+import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter } from 'lucide-react';
 
 const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [tab, setTab] = useState('periods');
   const [periods, setPeriods] = useState([]);
   const [newPeriodName, setNewPeriodName] = useState('');
   const [expandedPeriod, setExpandedPeriod] = useState(null);
+  
   const [users, setUsers] = useState([]);
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', school: '' });
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [searchUser, setSearchUser] = useState('');
+  const [selectedSchool, setSelectedSchool] = useState('Semua'); // FILTER CABANG
+  const [schoolList, setSchoolList] = useState(['Semua']); // LIST CABANG
+
   const [isReleased, setIsReleased] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -18,18 +22,24 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
     Promise.all([
         fetch(`${apiUrl}/admin/periods`).then(r => r.json()),
         fetch(`${apiUrl}/admin/users`).then(r => r.json()),
-        fetch(`${apiUrl}/config/release`).then(r => r.json())
-    ]).then(([p, u, c]) => {
+        fetch(`${apiUrl}/config/release`).then(r => r.json()),
+        fetch(`${apiUrl}/admin/schools-list`).then(r => r.json())
+    ]).then(([p, u, c, s]) => {
         setPeriods(Array.isArray(p) ? p : []);
         setUsers(Array.isArray(u) ? u : []);
         setIsReleased(c.is_released);
+        setSchoolList(['Semua', ...s]);
         setLoading(false);
     }).catch(() => setLoading(false));
   }, [apiUrl]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // HANDLERS
+  const filteredUsers = users.filter(u => 
+    u.full_name.toLowerCase().includes(searchUser.toLowerCase()) && 
+    (selectedSchool === 'Semua' || u.school === selectedSchool)
+  );
+
   const handleCreatePeriod = async () => {
     if (!newPeriodName) return;
     await fetch(`${apiUrl}/admin/periods`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newPeriodName }) });
@@ -78,10 +88,9 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
     alert(d.message);
   };
 
-  // --- REKAP KOMPLIT PER SUBTES ---
   const renderRecap = () => {
-    const studentWithResults = users.filter(u => u.results && u.results.length > 0);
-    if (studentWithResults.length === 0) return <div className="p-8 text-center text-slate-400 border-2 border-dashed rounded-xl">Belum ada data nilai masuk.</div>;
+    const studentWithResults = filteredUsers.filter(u => u.results && u.results.length > 0);
+    if (studentWithResults.length === 0) return <div className="p-8 text-center text-slate-400 border-2 border-dashed rounded-xl">Belum ada data nilai masuk untuk filter ini.</div>;
 
     const subtests = ["PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM"];
 
@@ -106,16 +115,11 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                     });
                     const total = Object.values(scores).reduce((a,b)=>a+b,0);
                     const avg = subtests.length > 0 ? Math.round(total / subtests.length) : 0;
-                    
                     return (
                     <tr key={u.id} className="hover:bg-slate-50 transition">
                         <td className="p-4 font-bold text-slate-700">{u.full_name}</td>
                         <td className="p-4 text-slate-500 text-xs">{u.school}</td>
-                        {subtests.map(k => (
-                            <td key={k} className={`p-4 text-center border-l ${scores[k] ? 'font-bold text-slate-700' : 'text-slate-300'}`}>
-                                {scores[k] || "-"}
-                            </td>
-                        ))}
+                        {subtests.map(k => (<td key={k} className={`p-4 text-center border-l ${scores[k] ? 'font-bold text-slate-700' : 'text-slate-300'}`}>{scores[k] || "-"}</td>))}
                         <td className="p-4 text-center font-black text-indigo-600 bg-indigo-50/30 border-l border-indigo-100">{avg}</td>
                     </tr>
                     );
@@ -129,7 +133,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
 
   return (
     <div className="min-h-screen bg-slate-100 flex font-sans text-slate-800">
-      {/* SIDEBAR */}
       <aside className="w-64 bg-white border-r flex flex-col fixed h-full z-10 shadow-lg">
         <div className="p-6 border-b"><h1 className="text-2xl font-black text-indigo-600 flex items-center gap-2"><LayoutDashboard/> CBT PRO</h1></div>
         <nav className="flex-1 p-4 space-y-2">
@@ -140,7 +143,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
         <div className="p-4 border-t"><button onClick={onLogout} className="w-full flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 text-red-600 font-bold hover:bg-red-100"><LogOut size={20}/> Logout</button></div>
       </aside>
 
-      {/* CONTENT */}
       <main className="flex-1 ml-64 p-8">
         <header className="flex justify-between items-center mb-8">
             <h2 className="text-3xl font-bold text-slate-800">{tab==='periods'?'Bank Soal & Periode':tab==='users'?'Data Peserta':tab==='recap'?'Rekapitulasi Skor':'Pengaturan Sistem'}</h2>
@@ -183,6 +185,19 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           </div>
         )}
 
+        {(tab === 'users' || tab === 'recap') && (
+            <div className="mb-6 flex gap-4 items-center bg-white p-4 rounded-xl border shadow-sm">
+                <Filter className="text-slate-400" size={20}/>
+                <span className="font-bold text-slate-700">Filter Cabang:</span>
+                <select value={selectedSchool} onChange={e => setSelectedSchool(e.target.value)} className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 font-medium outline-none focus:ring-2 focus:ring-indigo-500">
+                    {schoolList.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                {tab === 'recap' && (
+                    <a href={`${apiUrl}/admin/recap/download-pdf?school=${selectedSchool}`} target="_blank" rel="noreferrer" className="ml-auto bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow hover:bg-red-700 transition flex items-center gap-2"><FileText size={16}/> Download PDF ({selectedSchool})</a>
+                )}
+            </div>
+        )}
+
         {tab === 'users' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between">
@@ -202,7 +217,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                     <table className="w-full text-sm text-left">
                         <thead className="bg-slate-50 sticky top-0"><tr><th className="p-4 w-10">#</th><th className="p-4">Nama</th><th className="p-4">Username</th><th className="p-4">Sekolah</th></tr></thead>
                         <tbody className="divide-y">
-                            {users.filter(u=>u.full_name.toLowerCase().includes(searchUser.toLowerCase())).map(u=>(
+                            {filteredUsers.map(u=>(
                                 <tr key={u.id} className="hover:bg-slate-50">
                                     <td className="p-4"><input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={e=>{if(e.target.checked)setSelectedUsers([...selectedUsers,u.id]); else setSelectedUsers(selectedUsers.filter(id=>id!==u.id))}}/></td>
                                     <td className="p-4 font-bold text-slate-700">{u.full_name}</td><td className="p-4 text-slate-500">{u.username}</td><td className="p-4"><span className="bg-blue-50 text-blue-600 px-2 py-1 rounded text-xs font-bold">{u.school}</span></td>
@@ -215,18 +230,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           </div>
         )}
 
-        {tab === 'recap' && (
-            <div className="space-y-6 animate-fade-in">
-                <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border">
-                    <div><h3 className="font-bold text-lg text-slate-800">Download Laporan</h3><p className="text-sm text-slate-500">Unduh hasil ujian dalam format Excel atau PDF</p></div>
-                    <div className="flex gap-3">
-                        <a href={`${apiUrl}/admin/recap/download`} target="_blank" className="bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold flex gap-2 shadow-lg hover:bg-green-700 transition"><FileText/> Excel</a>
-                        <a href={`${apiUrl}/admin/recap/download-pdf`} target="_blank" className="bg-red-600 text-white px-5 py-2.5 rounded-xl font-bold flex gap-2 shadow-lg hover:bg-red-700 transition"><FileText/> PDF</a>
-                    </div>
-                </div>
-                {renderRecap()}
-            </div>
-        )}
+        {tab === 'recap' && <div className="space-y-6 animate-fade-in">{renderRecap()}</div>}
 
         {tab === 'config' && (
             <div className="space-y-6 animate-fade-in">
