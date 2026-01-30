@@ -10,10 +10,9 @@ from pydantic import BaseModel
 import pandas as pd
 import io
 import os
-import traceback
 
 # ==========================================
-# 1. SETUP SYSTEM
+# 1. SETUP DATABASE
 # ==========================================
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
@@ -32,7 +31,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # ==========================================
-# 2. MODEL TABLE
+# 2. MODEL TABLE (TIDAK ADA YANG DIUBAH)
 # ==========================================
 class User(Base):
     __tablename__ = "users"
@@ -115,9 +114,9 @@ class SystemConfig(Base):
     value = Column(String)
 
 # ==========================================
-# 3. API SETUP
+# 3. API & AUTO-SEEDER
 # ==========================================
-app = FastAPI(title="CBT FINAL FIX")
+app = FastAPI(title="CBT SYSTEM FINAL")
 
 app.add_middleware(
     CORSMiddleware,
@@ -129,7 +128,67 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup_event():
+    # 1. Buat Tabel
     Base.metadata.create_all(bind=engine)
+    
+    # 2. AUTO-FIX: Cek apakah Jurusan Kosong? Jika ya, ISI OTOMATIS
+    db = SessionLocal()
+    try:
+        count = db.query(Major).count()
+        if count == 0:
+            print(">>> DATA JURUSAN KOSONG. MEMULAI PENGISIAN OTOMATIS (USK & UNIPA)...")
+            data_auto = [
+                ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN  - USK", 420.98),
+                ("UNIVERSITAS SYIAH KUALA", "TEKNIK SIPIL - USK", 480.6),
+                ("UNIVERSITAS SYIAH KUALA", "TEKNIK MESIN - USK", 484.2),
+                ("UNIVERSITAS SYIAH KUALA", "TEKNIK KIMIA - USK", 477),
+                ("UNIVERSITAS SYIAH KUALA", "ARSITEKTUR - USK", 466.54),
+                ("UNIVERSITAS SYIAH KUALA", "TEKNIK ELEKTRO - USK", 495.23),
+                ("UNIVERSITAS SYIAH KUALA", "AGROTEKNOLOGI - USK", 420.6),
+                ("UNIVERSITAS SYIAH KUALA", "AGRIBISNIS - USK", 458.1),
+                ("UNIVERSITAS SYIAH KUALA", "PETERNAKAN - USK", 423.6),
+                ("UNIVERSITAS SYIAH KUALA", "TEKNOLOGI HASIL PERTANIAN - USK", 435.6),
+                ("UNIVERSITAS SYIAH KUALA", "TEKNIK PERTANIAN - USK", 436.16),
+                ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN BIOLOGI - USK", 432.6),
+                ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN MATEMATIKA - USK", 459),
+                ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN FISIKA - USK", 431.1),
+                ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN KIMIA - USK", 434.48),
+                ("UNIVERSITAS PAPUA", "MANAJEMEN - UNIPA", 387.2),
+                ("UNIVERSITAS PAPUA", "AKUNTANSI - UNIPA", 391.23),
+                ("UNIVERSITAS PAPUA", "SASTRA INDONESIA - UNIPA", 354.93),
+                ("UNIVERSITAS PAPUA", "PENDIDIKAN BAHASA INGGRIS - UNIPA", 363),
+                ("UNIVERSITAS PAPUA", "D-III TEKNIK PERMINYAKAN DAN GAS BUMI - UNIPA", 420),
+                ("UNIVERSITAS PAPUA", "D-III KESEHATAN HEWAN - UNIPA", 420),
+                ("UNIVERSITAS PAPUA", "D-III TEKNIK KOMPUTER - UNIPA", 420),
+                ("UNIVERSITAS PAPUA", "D-III EKOWISATA - UNIPA", 420),
+                ("UNIVERSITAS PAPUA", "D-III MANAJEMEN HUTAN ALAM PRODUKSI - UNIPA", 420),
+                ("UNIVERSITAS PAPUA", "D-III TEKNIK LISTRIK - UNIPA", 420),
+                ("UNIVERSITAS PAPUA", "D-III TEKNIK GEOLOGI TERAPAN - UNIPA", 420),
+                ("UNIVERSITAS PAPUA", "D-III BUDIDAYA TANAMAN PANGAN - UNIPA", 420),
+                ("UNIVERSITAS PAPUA", "D-III BUDIDAYA HUTAN - UNIPA", 420),
+                ("UNIVERSITAS PAPUA", "D-III KONSERVASI SUMBERDAYA HUTAN - UNIPA", 420),
+                ("UNIVERSITAS PAPUA", "D-III TEKNIK PERTAMBANGAN - UNIPA", 420),
+                ("UNIVERSITAS PAPUA", "D-III BUDIDAYA PERIKANAN - UNIPA", 420),
+                ("UNIVERSITAS PAPUA", "D-III BUDIDAYA TANAMAN PERKEBUNAN - UNIPA", 420)
+            ]
+            for u, n, g in data_auto:
+                db.add(Major(university=u, name=n, passing_grade=g))
+            db.commit()
+            print(">>> SUKSES! DATA JURUSAN TERISI.")
+        else:
+            print(f">>> DATA JURUSAN AMAN ({count} DATA).")
+            
+        # 3. AUTO-FIX: Pastikan Durasi Desimal
+        try:
+            db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision"))
+            db.commit()
+        except:
+            pass
+            
+    except Exception as e:
+        print(f">>> AUTO SETUP ERROR: {e}")
+    finally:
+        db.close()
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
@@ -179,123 +238,12 @@ class ConfigSchema(BaseModel):
     value: str
 
 # ==========================================
-# 4. HALAMAN BENGKEL (WAJIB DIBUKA)
-# ==========================================
-@app.get("/repair", response_class=HTMLResponse)
-def repair_page():
-    return """
-    <html>
-    <head><title>BENGKEL PERBAIKAN</title>
-    <style>
-        body{font-family:sans-serif;padding:30px;background:#eee;text-align:center}
-        .box{background:white;padding:30px;border-radius:10px;max-width:500px;margin:0 auto;box-shadow:0 5px 15px rgba(0,0,0,0.2)}
-        button{width:100%;padding:20px;margin:10px 0;border:none;border-radius:5px;font-size:18px;cursor:pointer;color:white;font-weight:bold}
-        .red{background:#e74c3c}
-        .blue{background:#2980b9}
-        .green{background:#27ae60}
-        #status{margin-top:20px;font-weight:bold;color:#333;padding:10px;background:#ddd}
-    </style>
-    </head>
-    <body>
-        <div class="box">
-            <h1>🛠️ PERBAIKAN DARURAT</h1>
-            
-            <button class="red" onclick="act('/api/fix-duration-force')">1. RESET DURASI (42.5 MENIT)</button>
-            
-            <button class="blue" onclick="act('/api/seed-majors-auto')">2. PAKSA ISI JURUSAN (USK/UNIPA)</button>
-            <p style="font-size:12px">Klik ini jika Pilih Jurusan masih macet.</p>
-            
-            <button class="green" onclick="act('/api/seed-dummy-result')">3. ISI NILAI PALSU (CEK REKAP)</button>
-            <p style="font-size:12px">Klik ini jika Rekap Nilai masih Blank.</p>
-            
-            <div id="status">Menunggu...</div>
-        </div>
-        <script>
-            async function act(u){
-                document.getElementById('status').innerText="MEMPROSES... JANGAN TUTUP!";
-                try{
-                    let r=await fetch(u);let d=await r.json();
-                    document.getElementById('status').innerText="✅ " + d.message;
-                }catch(e){
-                    document.getElementById('status').innerText="❌ ERROR: " + e;
-                }
-            }
-        </script>
-    </body>
-    </html>
-    """
-
-@app.get("/api/fix-duration-force")
-def fix_duration(db: Session = Depends(get_db)):
-    db.query(ExamPeriod).delete(); db.commit()
-    try: db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision")); db.commit()
-    except: pass
-    p=ExamPeriod(name="PERIODE PERBAIKAN", exam_type="UTBK_STANDARD", is_active=True); db.add(p); db.commit(); db.refresh(p)
-    codes = [("PU",30),("PPU",15),("PBM",25),("PK",20),("LBI",42.5),("LBE",20),("PM",42.5)]
-    for c,dur in codes: db.add(Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=dur))
-    db.commit()
-    return {"message":"Durasi 42.5 Menit Aktif. Periode Lama Dihapus."}
-
-@app.get("/api/seed-majors-auto")
-def seed_majors(db: Session = Depends(get_db)):
-    # DATA LANGSUNG DARI FILE BAPAK
-    raw_data = [
-        ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN  - USK", 420.98),
-        ("UNIVERSITAS SYIAH KUALA", "TEKNIK SIPIL - USK", 480.6),
-        ("UNIVERSITAS SYIAH KUALA", "TEKNIK MESIN - USK", 484.2),
-        ("UNIVERSITAS SYIAH KUALA", "TEKNIK KIMIA - USK", 477),
-        ("UNIVERSITAS SYIAH KUALA", "ARSITEKTUR - USK", 466.54),
-        ("UNIVERSITAS SYIAH KUALA", "TEKNIK ELEKTRO - USK", 495.23),
-        ("UNIVERSITAS SYIAH KUALA", "AGROTEKNOLOGI - USK", 420.6),
-        ("UNIVERSITAS SYIAH KUALA", "AGRIBISNIS - USK", 458.1),
-        ("UNIVERSITAS SYIAH KUALA", "PETERNAKAN - USK", 423.6),
-        ("UNIVERSITAS SYIAH KUALA", "TEKNOLOGI HASIL PERTANIAN - USK", 435.6),
-        ("UNIVERSITAS SYIAH KUALA", "TEKNIK PERTANIAN - USK", 436.16),
-        ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN BIOLOGI - USK", 432.6),
-        ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN MATEMATIKA - USK", 459),
-        ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN FISIKA - USK", 431.1),
-        ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN KIMIA - USK", 434.48),
-        ("UNIVERSITAS PAPUA", "MANAJEMEN - UNIPA", 387.2),
-        ("UNIVERSITAS PAPUA", "AKUNTANSI - UNIPA", 391.23),
-        ("UNIVERSITAS PAPUA", "SASTRA INDONESIA - UNIPA", 354.93),
-        ("UNIVERSITAS PAPUA", "PENDIDIKAN BAHASA INGGRIS - UNIPA", 363),
-        ("UNIVERSITAS PAPUA", "D-III TEKNIK PERMINYAKAN DAN GAS BUMI - UNIPA", 420),
-        ("UNIVERSITAS PAPUA", "D-III KESEHATAN HEWAN - UNIPA", 420),
-        ("UNIVERSITAS PAPUA", "D-III TEKNIK KOMPUTER - UNIPA", 420),
-        ("UNIVERSITAS PAPUA", "D-III EKOWISATA - UNIPA", 420),
-        ("UNIVERSITAS PAPUA", "D-III MANAJEMEN HUTAN ALAM PRODUKSI - UNIPA", 420),
-        ("UNIVERSITAS PAPUA", "D-III TEKNIK LISTRIK - UNIPA", 420),
-        ("UNIVERSITAS PAPUA", "D-III TEKNIK GEOLOGI TERAPAN - UNIPA", 420),
-        ("UNIVERSITAS PAPUA", "D-III BUDIDAYA TANAMAN PANGAN - UNIPA", 420),
-        ("UNIVERSITAS PAPUA", "D-III BUDIDAYA HUTAN - UNIPA", 420),
-        ("UNIVERSITAS PAPUA", "D-III KONSERVASI SUMBERDAYA HUTAN - UNIPA", 420),
-        ("UNIVERSITAS PAPUA", "D-III TEKNIK PERTAMBANGAN - UNIPA", 420),
-        ("UNIVERSITAS PAPUA", "D-III BUDIDAYA PERIKANAN - UNIPA", 420),
-        ("UNIVERSITAS PAPUA", "D-III BUDIDAYA TANAMAN PERKEBUNAN - UNIPA", 420)
-    ]
-    db.query(Major).delete(); count=0
-    for u,n,g in raw_data: 
-        db.add(Major(university=u, name=n, passing_grade=g)); count+=1
-    db.commit()
-    return {"message": f"BERHASIL! {count} Jurusan (USK & UNIPA) Masuk. Tombol Jurusan SEKARANG AKTIF."}
-
-@app.get("/api/seed-dummy-result")
-def seed_dummy(db: Session = Depends(get_db)):
-    u = db.query(User).first()
-    e = db.query(Exam).first()
-    if not u or not e: return {"message": "ERROR: Klik tombol Reset Durasi dulu!"}
-    
-    # Buat Hasil Ujian Palsu untuk tes Rekap
-    res = ExamResult(user_id=u.id, exam_id=e.id, correct_count=10, wrong_count=5, irt_score=650.0)
-    db.add(res); db.commit()
-    return {"message": f"BERHASIL! Data Nilai {u.username} ditambahkan. Silakan Cek Rekap."}
-
-# ==========================================
-# 5. API UTAMA
+# 4. API UTAMA
 # ==========================================
 @app.get("/majors")
 def get_majors(db: Session = Depends(get_db)):
-    return db.query(Major).all()
+    # Sortir A-Z supaya rapi saat diklik
+    return db.query(Major).order_by(Major.university, Major.name).all()
 
 @app.post("/users/select-major")
 def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
@@ -310,13 +258,11 @@ async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_
     # FIX: PEMBERSIH HEADER EXCEL (CASE INSENSITIVE)
     try:
         c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
-        
-        # JURUS JITU: Ubah semua header jadi huruf kecil & hapus spasi
+        # Normalisasi: Universitas -> universitas
         df.columns = df.columns.str.strip().str.replace(' ', '_').str.lower()
         
         db.query(Major).delete(); count=0
         for _, r in df.iterrows():
-            # Handle berbagai kemungkinan nama kolom
             univ = r.get('universitas') or r.get('university')
             prod = r.get('prodi') or r.get('program_studi')
             pg = r.get('passing_grade') or r.get('grade')
@@ -327,7 +273,7 @@ async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_
                 db.add(Major(university=str(univ).strip(), name=str(prod).strip(), passing_grade=pg_val))
                 count+=1
         db.commit()
-        return {"message": f"Sukses! {count} Jurusan Masuk dari File Excel."}
+        return {"message": f"Sukses! {count} Jurusan Masuk. Refresh halaman siswa."}
     except Exception as e: return {"message":str(e)}
 
 @app.post("/login")
@@ -513,7 +459,6 @@ def get_inst(db: Session = Depends(get_db)):
         c=db.query(SystemConfig).filter_by(key=k).first(); r[k]=c.value if c else ""
     return r
 
-# --- REKAP FIX (ANTI BLANK) ---
 @app.get("/admin/recap/download-pdf")
 def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
     try:
@@ -535,12 +480,11 @@ def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
             row.append(st); d.append(row)
         
         buf=io.BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4)); el=[]
-        t=Table([["Nama","Sekolah","PU","PPU","PBM","PK","LBI","LBE","PM","Avg","Status"]]+(d if d else [["-","DATA KOSONG","-",0,0,0,0,0,0,0,0,"-"]]))
+        t=Table([["Nama","Sekolah","PU","PPU","PBM","PK","LBI","LBE","PM","Avg","Status"]]+(d if d else [["-","DATA KOSONG (TES DULU)","-",0,0,0,0,0,0,0,0,"-"]]))
         t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,colors.black)])); el.append(t); doc.build(el); buf.seek(0)
         return StreamingResponse(buf,media_type='application/pdf',headers={'Content-Disposition':'attachment;filename="Rekap.pdf"'})
     except Exception as e:
-        # FALLBACK JIKA PDF GAGAL
-        return JSONResponse({"message": f"Error: {str(e)}. Data mungkin kosong."})
+        return JSONResponse({"message": f"PDF ERROR: {str(e)}. Coba download Excel."})
 
 @app.get("/admin/recap/download")
 def dl_xls(period_id: Optional[str]=None, db: Session=Depends(get_db)):
@@ -564,3 +508,42 @@ def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
 def get_conf(db: Session=Depends(get_db)):
     c=db.query(SystemConfig).filter_by(key="release_announcement").first()
     return {"is_released": (c.value=="true") if c else False}
+
+# --- HALAMAN BENGKEL (MANUAL) ---
+@app.get("/repair", response_class=HTMLResponse)
+def repair_page():
+    return """
+    <html>
+    <head><title>BENGKEL SYSTEM</title>
+    <style>body{font-family:sans-serif;padding:30px;text-align:center}.btn{padding:15px;width:100%;margin:10px 0;color:white;border:none;border-radius:5px;font-size:16px;cursor:pointer}.red{background:red}.blue{background:blue}.green{background:green}</style>
+    </head>
+    <body>
+        <h1>PANEL BENGKEL</h1>
+        <button class="red" onclick="act('/api/fix-duration-force')">1. RESET DURASI (42.5 Menit)</button>
+        <button class="blue" onclick="act('/api/seed-majors-auto')">2. PAKSA ISI JURUSAN</button>
+        <p id="st">Menunggu...</p>
+        <script>
+            async function act(u){document.getElementById('st').innerText="Proses...";
+            let r=await fetch(u);let d=await r.json();document.getElementById('st').innerText=d.message;}
+        </script>
+    </body>
+    </html>
+    """
+@app.get("/api/fix-duration-force")
+def fix_duration(db: Session = Depends(get_db)):
+    db.query(ExamPeriod).delete(); db.commit()
+    try: db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision")); db.commit()
+    except: pass
+    p=ExamPeriod(name="PERIODE BARU",exam_type="UTBK_STANDARD",is_active=True); db.add(p); db.commit(); db.refresh(p)
+    for c,d in [("PU",30),("PPU",15),("PBM",25),("PK",20),("LBI",42.5),("LBE",20),("PM",42.5)]:
+        db.add(Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=d))
+    db.commit()
+    return {"message":"Durasi OK (42.5) & Periode Reset"}
+@app.get("/api/seed-majors-auto")
+def seed_majors_manual(db: Session = Depends(get_db)):
+    # Manual trigger if auto fails
+    data = [("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN", 420.98), ("UNIVERSITAS PAPUA", "MANAJEMEN", 387.2)]
+    db.query(Major).delete(); 
+    for u,n,g in data: db.add(Major(university=u, name=n, passing_grade=g))
+    db.commit()
+    return {"message": "Data Manual Masuk"}
