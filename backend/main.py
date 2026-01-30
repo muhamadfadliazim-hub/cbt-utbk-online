@@ -36,7 +36,7 @@ else: engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- MODEL DATABASE (CASCADE DELETE DIPERKUAT) ---
+# MODELS
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -63,7 +63,6 @@ class ExamPeriod(Base):
     exam_type = Column(String)
     is_active = Column(Boolean, default=False)
     target_schools = Column(Text, nullable=True)
-    # CASCADE DELETE: Hapus Periode -> Hapus Semua Ujian di dalamnya
     exams = relationship("Exam", back_populates="period", cascade="all, delete-orphan")
 
 class Exam(Base):
@@ -74,7 +73,6 @@ class Exam(Base):
     title = Column(String)
     duration = Column(Float)
     period = relationship("ExamPeriod", back_populates="exams")
-    # CASCADE DELETE: Hapus Ujian -> Hapus Semua Soal
     questions = relationship("Question", back_populates="exam", cascade="all, delete-orphan")
 
 class Question(Base):
@@ -87,7 +85,6 @@ class Question(Base):
     image_url = Column(String, nullable=True)
     reading_material = Column(Text, nullable=True) 
     explanation = Column(Text, nullable=True)     
-    # CASCADE DELETE: Hapus Soal -> Hapus Semua Opsi
     options = relationship("Option", back_populates="question", cascade="all, delete-orphan")
     exam = relationship("Exam", back_populates="questions")
 
@@ -118,25 +115,25 @@ class SystemConfig(Base):
 # IRT LOGIC
 def calculate_irt_score(correct_questions, total_questions):
     if not total_questions: return 0
-    base_score = 200; max_add_score = 800
+    base_score = 200
+    max_add_score = 800
     total_weight = sum([q.difficulty for q in total_questions])
     if total_weight == 0: return base_score
     earned_weight = sum([q.difficulty for q in correct_questions])
     final_score = base_score + (earned_weight / total_weight) * max_add_score
     return round(final_score)
 
-# APP
-app = FastAPI(title="CBT PRO FIXED")
+# APP SETUP
+app = FastAPI(title="CBT PRO TUNTAS")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("startup")
 def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
-    # SEEDING
     if db.query(Major).count() == 0:
-        for u, n, g in [("UI", "KEDOKTERAN", 680.0), ("USK", "TEKNIK SIPIL", 480.6), ("UNIPA", "MANAJEMEN", 387.2)]:
-            db.add(Major(university=u, name=n, passing_grade=g))
+        data = [("UNIVERSITAS INDONESIA", "PENDIDIKAN DOKTER", 680.0), ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN", 420.98), ("UNIVERSITAS PAPUA", "MANAJEMEN", 387.2)]
+        for u, n, g in data: db.add(Major(university=u, name=n, passing_grade=g))
         db.commit()
     if db.query(User).filter(User.school != None).count() == 0:
         db.add(User(username="admin_cabang", password="123", full_name="Admin", role="student", school="PUSAT"))
@@ -146,8 +143,15 @@ def startup_event():
     db.close()
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
+
+# === PERBAIKAN FATAL: SYNTAX ERROR DIHILANGKAN ===
 def get_db():
-    db = SessionLocal(); try: yield db; finally: db.close()
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+# =================================================
 
 # SCHEMAS
 class LoginSchema(BaseModel): username: str; password: str
@@ -158,7 +162,7 @@ class BulkDeleteSchema(BaseModel): user_ids: List[int]
 class UserCreateSchema(BaseModel): username: str; full_name: str; password: str; role: str; school: Optional[str]
 class ConfigSchema(BaseModel): value: str
 
-# API
+# API UTAMA
 @app.post("/login")
 def login(d: LoginSchema, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=d.username).first()
@@ -170,7 +174,6 @@ def get_majors(db: Session = Depends(get_db)): return db.query(Major).all()
 
 @app.get("/admin/schools-list")
 def get_schools_list(db: Session = Depends(get_db)):
-    # Ambil list sekolah unik dari user + default PUSAT
     return ["Semua"] + ([s[0] for s in db.query(distinct(User.school)).filter(User.school != None).all()] or [])
 
 @app.post("/users/select-major")
@@ -181,7 +184,7 @@ def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
     u.choice2_id = d.choice2_id if d.choice2_id and d.choice2_id > 0 else None
     db.commit(); return {"status": "success"}
 
-# --- MANAJEMEN UJIAN (CRUD LENGKAP & FIX DELETE) ---
+# --- MANAJEMEN UJIAN ---
 @app.post("/admin/periods")
 def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
     p=ExamPeriod(name=d.name, exam_type=d.exam_type, is_active=False, target_schools=d.target_schools); db.add(p); db.commit(); db.refresh(p)
@@ -202,7 +205,7 @@ def get_periods(db: Session = Depends(get_db)):
 def delete_period(pid: int, db: Session = Depends(get_db)):
     p = db.query(ExamPeriod).filter_by(id=pid).first()
     if p: 
-        # HAPUS MANUAL UNTUK MENGHINDARI FOREIGH KEY ERROR (JIKA CASCADE DI DATABASE GAGAL)
+        # HAPUS MANUAL UNTUK SAFETY
         for e in p.exams:
             for q in e.questions:
                 db.query(Option).filter_by(question_id=q.id).delete()
@@ -218,34 +221,12 @@ def toggle_period(pid: int, db: Session = Depends(get_db)):
     if p: p.is_active = not p.is_active; db.commit()
     return {"message":"OK"}
 
-@app.post("/admin/upload-questions/{eid}")
-async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    try:
-        c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
-        old_q = db.query(Question).filter_by(exam_id=eid).all()
-        for q in old_q: db.query(Option).filter_by(question_id=q.id).delete(); db.delete(q)
-        db.commit(); cnt=0
-        for _, r in df.iterrows():
-            txt = r.get('Soal') or r.get('soal')
-            if pd.isna(txt): continue
-            q = Question(exam_id=eid, text=str(txt), difficulty=float(r.get('Kesulitan') or 1.0), reading_material=str(r.get('Bacaan') or ''), image_url=str(r.get('Gambar') or ''))
-            db.add(q); db.commit()
-            kunci = str(r.get('Kunci') or '').strip().upper()
-            for idx, col in [('A','OpsiA'), ('B','OpsiB'), ('C','OpsiC'), ('D','OpsiD'), ('E','OpsiE')]:
-                val = r.get(col)
-                if pd.notna(val): db.add(Option(question_id=q.id, option_index=idx, label=str(val), is_correct=(idx == kunci)))
-            cnt+=1
-        db.commit(); return {"message": f"Sukses {cnt} Soal"}
-    except Exception as e: return {"message": str(e)}
-
-# --- SISWA & MARATON ---
 @app.get("/student/periods")
 def get_pers(username: str, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=username).first()
     all_ps=db.query(ExamPeriod).filter_by(is_active=True).order_by(ExamPeriod.id.desc()).all()
     ret=[]
     for p in all_ps:
-        # LOGIKA FILTER SEKOLAH
         if p.target_schools and p.target_schools != "Semua" and p.target_schools != u.school: continue
         exs=[]
         for e in p.exams:
@@ -284,25 +265,23 @@ def stats(username: str, db: Session = Depends(get_db)):
     if is_released:
         c1 = db.query(Major).filter_by(id=u.choice1_id).first(); c2 = db.query(Major).filter_by(id=u.choice2_id).first()
         status = "TIDAK LULUS"
-        if c1 and avg >= c1.passing_grade: status = f"LULUS P1: {c1.university}"
-        elif c2 and avg >= c2.passing_grade: status = f"LULUS P2: {c2.university}"
+        if c1 and avg >= c1.passing_grade: status = f"LULUS P1: {c1.university} - {c1.name}"
+        elif c2 and avg >= c2.passing_grade: status = f"LULUS P2: {c2.university} - {c2.name}"
     return {"is_released": is_released, "average": avg, "details": details, "radar": details, "status": status}
 
 @app.get("/admin/users") 
 def get_users(db: Session = Depends(get_db)): return db.query(User).options(joinedload(User.results)).all()
 
-# --- API UJIAN SISWA (FIX GAGAL MUAT SOAL) ---
+# --- API SISWA AMBIL SOAL (PENTING AGAR TIDAK GAGAL MUAT) ---
 @app.get("/exams/{exam_id}")
 def get_exam_student(exam_id: str, db: Session = Depends(get_db)):
     e = db.query(Exam).filter_by(id=exam_id).first()
-    if not e: raise HTTPException(404)
+    if not e: raise HTTPException(404, "Soal tidak ditemukan")
     qs = []
     for q in e.questions:
-        qs.append({"id": q.id, "text": q.text, "image_url": q.image_url, "reading_material": q.reading_material, 
-                   "options": [{"id": o.option_index, "label": o.label} for o in q.options]})
+        qs.append({"id": q.id, "text": q.text, "image_url": q.image_url, "reading_material": q.reading_material, "options": [{"id": o.option_index, "label": o.label} for o in q.options]})
     return {"id": e.id, "title": e.title, "duration": e.duration, "questions": qs}
 
-# --- API PREVIEW ADMIN (FIX BLANK) ---
 @app.get("/admin/exams/{eid}/preview")
 def admin_preview(eid: str, db: Session = Depends(get_db)):
     e=db.query(Exam).filter_by(id=eid).first()
@@ -342,6 +321,26 @@ def dl_pdf(school: Optional[str]=None, db: Session=Depends(get_db)):
         return StreamingResponse(buf,media_type='application/pdf',headers={'Content-Disposition':'attachment;filename="Rekap.pdf"'})
     except Exception as e: return JSONResponse({"message": str(e)})
 
+@app.post("/admin/upload-questions/{eid}")
+async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    try:
+        c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
+        old_q = db.query(Question).filter_by(exam_id=eid).all()
+        for q in old_q: db.query(Option).filter_by(question_id=q.id).delete(); db.delete(q)
+        db.commit(); cnt=0
+        for _, r in df.iterrows():
+            txt = r.get('Soal') or r.get('soal')
+            if pd.isna(txt): continue
+            q = Question(exam_id=eid, text=str(txt), difficulty=float(r.get('Kesulitan') or 1.0), reading_material=str(r.get('Bacaan') or ''), image_url=str(r.get('Gambar') or ''))
+            db.add(q); db.commit()
+            kunci = str(r.get('Kunci') or '').strip().upper()
+            for idx, col in [('A','OpsiA'), ('B','OpsiB'), ('C','OpsiC'), ('D','OpsiD'), ('E','OpsiE')]:
+                val = r.get(col)
+                if pd.notna(val): db.add(Option(question_id=q.id, option_index=idx, label=str(val), is_correct=(idx == kunci)))
+            cnt+=1
+        db.commit(); return {"message": f"Sukses {cnt} Soal"}
+    except Exception as e: return {"message": str(e)}
+
 @app.post("/config/release")
 def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
     c=db.query(SystemConfig).filter_by(key="release_announcement").first()
@@ -352,28 +351,14 @@ def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
 def get_conf(db: Session=Depends(get_db)):
     c=db.query(SystemConfig).filter_by(key="release_announcement").first()
     return {"is_released": (c.value=="true") if c else False}
+
+# === FIX TAMBAH SISWA (CEK DUPLIKAT) ===
 @app.post("/admin/users")
 def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
-    # 1. CEK DATA KOSONG
-    if not u.username or not u.password or not u.full_name:
-        raise HTTPException(status_code=400, detail="Username, Password, dan Nama wajib diisi!")
-    
-    # 2. CEK DUPLIKAT (PENTING!)
-    existing_user = db.query(User).filter(User.username == u.username).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail=f"Username '{u.username}' sudah dipakai siswa lain!")
+    if db.query(User).filter(User.username == u.username).first():
+        raise HTTPException(status_code=400, detail="Username sudah dipakai!")
+    db.add(User(username=u.username, password=u.password, full_name=u.full_name, role=u.role, school=u.school)); db.commit(); return {"message":"Berhasil"}
 
-    # 3. SIMPAN
-    new_user = User(
-        username=u.username, 
-        password=u.password, 
-        full_name=u.full_name, 
-        role="student",  # Paksa jadi student
-        school=u.school
-    )
-    db.add(new_user)
-    db.commit()
-    return {"message": "Berhasil menambah siswa baru!"}
 @app.post("/admin/users/bulk")
 async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
