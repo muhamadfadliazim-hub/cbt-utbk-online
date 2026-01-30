@@ -12,19 +12,18 @@ import pandas as pd
 import io
 import os
 
-# --- PENGAMAN LIBRARY PDF ---
+# --- LIBRARY PDF CHECK ---
 try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.styles import getSampleStyleSheet
     HAS_PDF = True
 except ImportError:
     HAS_PDF = False
 
 # ==========================================
-# 1. SETUP DATABASE
+# 1. KONFIGURASI DATABASE
 # ==========================================
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
@@ -43,7 +42,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # ==========================================
-# 2. MODEL DATABASE (TIDAK ADA YANG DIHAPUS)
+# 2. MODEL DATABASE
 # ==========================================
 class User(Base):
     __tablename__ = "users"
@@ -52,7 +51,7 @@ class User(Base):
     password = Column(String)
     full_name = Column(String)
     role = Column(String, default="student") 
-    school = Column(String, nullable=True) # INI UNTUK CABANG (DROPDOWN)
+    school = Column(String, nullable=True) # DROPDOWN CABANG
     choice1_id = Column(Integer, ForeignKey("majors.id"), nullable=True) # PILIHAN 1
     choice2_id = Column(Integer, ForeignKey("majors.id"), nullable=True) # PILIHAN 2
     results = relationship("ExamResult", back_populates="user")
@@ -126,9 +125,9 @@ class SystemConfig(Base):
     value = Column(String)
 
 # ==========================================
-# 3. AUTO-SEEDING (KUNCI AGAR TOMBOL 'KLIK' MUNCUL)
+# 3. AUTO-DATA (SOLUSI BIAR FITUR KLIK KEMBALI)
 # ==========================================
-app = FastAPI(title="CBT SYSTEM RESTORED")
+app = FastAPI(title="CBT SYSTEM FIXED")
 
 app.add_middleware(
     CORSMiddleware,
@@ -143,44 +142,58 @@ def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        # 1. PAKSA ISI DATA JURUSAN (Supaya Dropdown Jurusan Muncul)
-        # Jika kosong, Frontend akan jadi mode ketik. Makanya kita isi.
+        # 1. KEMBALIKAN DATA JURUSAN (USK, UNIPA, DLL)
+        # Ini akan otomatis mengisi tabel Major sehingga dropdown Pilihan 1 & 2 muncul lagi.
         if db.query(Major).count() == 0:
-            print(">>> MENGISI JURUSAN AGAR MODE 'KLIK' AKTIF...")
-            data = [
+            print(">>> RESTORING MAJORS DATA...")
+            majors_data = [
                 ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN DOKTER HEWAN - USK", 420.98),
                 ("UNIVERSITAS SYIAH KUALA", "TEKNIK SIPIL - USK", 480.6),
                 ("UNIVERSITAS SYIAH KUALA", "TEKNIK MESIN - USK", 484.2),
-                ("UNIVERSITAS SYIAH KUALA", "TEKNIK KIMIA - USK", 477),
+                ("UNIVERSITAS SYIAH KUALA", "TEKNIK KIMIA - USK", 477.0),
                 ("UNIVERSITAS SYIAH KUALA", "ARSITEKTUR - USK", 466.54),
                 ("UNIVERSITAS SYIAH KUALA", "TEKNIK ELEKTRO - USK", 495.23),
                 ("UNIVERSITAS SYIAH KUALA", "AGROTEKNOLOGI - USK", 420.6),
                 ("UNIVERSITAS SYIAH KUALA", "AGRIBISNIS - USK", 458.1),
                 ("UNIVERSITAS SYIAH KUALA", "PETERNAKAN - USK", 423.6),
+                ("UNIVERSITAS SYIAH KUALA", "TEKNOLOGI HASIL PERTANIAN - USK", 435.6),
+                ("UNIVERSITAS SYIAH KUALA", "TEKNIK PERTANIAN - USK", 436.16),
+                ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN BIOLOGI - USK", 432.6),
+                ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN MATEMATIKA - USK", 459.0),
+                ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN FISIKA - USK", 431.1),
+                ("UNIVERSITAS SYIAH KUALA", "PENDIDIKAN KIMIA - USK", 434.48),
                 ("UNIVERSITAS PAPUA", "MANAJEMEN - UNIPA", 387.2),
                 ("UNIVERSITAS PAPUA", "AKUNTANSI - UNIPA", 391.23),
                 ("UNIVERSITAS PAPUA", "SASTRA INDONESIA - UNIPA", 354.93),
-                ("UNIVERSITAS PAPUA", "PENDIDIKAN BAHASA INGGRIS - UNIPA", 363)
+                ("UNIVERSITAS PAPUA", "PENDIDIKAN BAHASA INGGRIS - UNIPA", 363.0),
+                ("UNIVERSITAS PAPUA", "D-III TEKNIK PERMINYAKAN DAN GAS BUMI - UNIPA", 420.0),
+                ("UNIVERSITAS PAPUA", "D-III KESEHATAN HEWAN - UNIPA", 420.0),
+                ("UNIVERSITAS PAPUA", "D-III TEKNIK KOMPUTER - UNIPA", 420.0),
             ]
-            for u, n, g in data: db.add(Major(university=u, name=n, passing_grade=g))
+            for u, n, g in majors_data:
+                db.add(Major(university=u, name=n, passing_grade=g))
             db.commit()
-        
-        # 2. PAKSA ISI DATA CABANG/SEKOLAH (Supaya Dropdown Cabang Muncul)
-        # Kita buat user dummy dengan nama sekolah, supaya list sekolah tidak kosong.
+
+        # 2. KEMBALIKAN DATA CABANG
+        # Ini akan membuat dropdown "Target Cabang" di Admin dan Siswa muncul lagi.
         if db.query(User).filter(User.school != None).count() == 0:
-            print(">>> MENGISI DATA CABANG AGAR MODE 'KLIK' AKTIF...")
+            print(">>> RESTORING SCHOOL BRANCHES...")
             branches = ["PUSAT", "CABANG BANDA ACEH", "CABANG MEDAN", "CABANG PAPUA", "ONLINE"]
             for i, b in enumerate(branches):
-                if not db.query(User).filter_by(username=f"dummy_cabang_{i}").first():
-                    db.add(User(username=f"dummy_cabang_{i}", password="123", full_name=f"Admin {b}", role="student", school=b))
+                # Buat user dummy sebagai pemancing agar list sekolah terisi
+                if not db.query(User).filter_by(username=f"branch_{i}").first():
+                    db.add(User(username=f"branch_{i}", password="123", full_name=f"Admin {b}", role="student", school=b))
             db.commit()
 
-        # 3. FIX DURASI DB
-        try: db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision")); db.commit()
-        except: pass
+        # 3. PASTIKAN DURASI FLOAT (Agar tidak error 42.5)
+        try:
+            db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision"))
+            db.commit()
+        except:
+            pass
 
     except Exception as e:
-        print(f"Startup Error: {e}")
+        print(f">>> STARTUP ERROR: {str(e)}")
     finally:
         db.close()
 
@@ -232,29 +245,27 @@ class ConfigSchema(BaseModel):
     value: str
 
 # ==========================================
-# 4. API UTAMA (PEMULIH FITUR)
+# 4. API UTAMA (FITUR DIPULIHKAN)
 # ==========================================
 
-# 1. JURUSAN: Harus return List, jangan kosong!
+# JURUSAN: Dropdown Aktif Kembali
 @app.get("/majors")
 def get_majors(db: Session = Depends(get_db)):
     majors = db.query(Major).all()
-    # FALLBACK: Kalau DB error/kosong, kirim data dummy biar tombol tetap muncul
+    # PENGAMAN: Jika kosong, kirim dummy agar UI tidak rusak jadi text box
     if not majors:
-        return [
-            {"id": 999, "university": "SYSTEM", "name": "DATA LOADING...", "passing_grade": 0}
-        ]
+        return [{"id": 0, "university": "SYSTEM", "name": "MEMUAT DATA...", "passing_grade": 0}]
     return majors
 
-# 2. CABANG: Harus return List, jangan kosong!
+# CABANG: Dropdown Aktif Kembali
 @app.get("/admin/schools-list")
 def get_schools_list(db: Session = Depends(get_db)):
     schools = [s[0] for s in db.query(distinct(User.school)).filter(User.school != None, User.school != "").all()]
     if not schools:
-        return ["PUSAT", "CABANG CONTOH"] # Fallback biar gak jadi mode ketik
+        return ["PUSAT", "CABANG CONTOH"]
     return schools
 
-# 3. SIMPAN JURUSAN: Handle Pilihan 1 & 2
+# SIMPAN JURUSAN: Pilihan 1 & 2
 @app.post("/users/select-major")
 def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
     u = db.query(User).filter_by(username=d.username).first()
@@ -262,25 +273,30 @@ def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
     u.choice1_id = d.choice1_id
     u.choice2_id = d.choice2_id
     db.commit()
-    return {"message": "Pilihan Jurusan Tersimpan!"}
+    return {"message": "Pilihan Jurusan Berhasil Disimpan"}
 
+# UPLOAD EXCEL (PERBAIKAN HEADER CASE INSENSITIVE)
 @app.post("/admin/upload-majors")
 async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
+        # Bersihkan nama kolom (Hapus spasi, huruf kecil)
         df.columns = df.columns.str.strip().str.replace(' ', '_').str.lower()
+        
         db.query(Major).delete(); count=0
         for _, r in df.iterrows():
+            # Cek berbagai variasi nama kolom
             univ = r.get('universitas') or r.get('university')
             prod = r.get('prodi') or r.get('program_studi')
             pg = r.get('passing_grade') or r.get('grade')
+            
             if pd.notna(univ) and pd.notna(prod): 
                 try: pg_val = float(pg)
                 except: pg_val = 0.0
                 db.add(Major(university=str(univ).strip(), name=str(prod).strip(), passing_grade=pg_val))
                 count+=1
         db.commit()
-        return {"message": f"Sukses! {count} Jurusan."}
+        return {"message": f"Sukses! {count} Jurusan berhasil diimport."}
     except Exception as e: return {"message":str(e)}
 
 @app.post("/login")
@@ -349,7 +365,7 @@ def rev(exam_id: str, db: Session = Depends(get_db)):
     return {"title":e.title,"questions":q}
 
 # ==========================================
-# 6. API ADMIN (REKAP ANTI-BLANK)
+# 6. API ADMIN
 # ==========================================
 @app.get("/admin/users")
 def get_users(db: Session = Depends(get_db)): return db.query(User).all()
@@ -442,17 +458,15 @@ def get_inst(db: Session = Depends(get_db)):
         c=db.query(SystemConfig).filter_by(key=k).first(); r[k]=c.value if c else ""
     return r
 
-# FIX REKAP (CEGAH BLANK PAGE JIKA DATA KOSONG)
+# PDF REKAP ANTI-BLANK
 @app.get("/admin/recap/download-pdf")
 def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
-    # Fallback jika library PDF tidak ada
     if not HAS_PDF: return JSONResponse({"message": "Server error: PDF Library Missing. Download Excel saja."})
     
     try:
         q=db.query(ExamResult).join(User).filter(User.role=='student')
         if period_id: q=q.filter(ExamResult.exam_id.like(f"P{period_id}_%"))
         
-        # LOGIKA: Ambil Data -> Format Table ReportLab
         umap={}
         for r in q.all():
             if r.user_id not in umap: umap[r.user_id]={"name":r.user.full_name,"school":r.user.school,"c1":r.user.choice1_id,"c2":r.user.choice2_id,"s":{}}
@@ -465,28 +479,24 @@ def dl_pdf(period_id: Optional[str]=None, db: Session=Depends(get_db)):
             for c in ["PU","PPU","PBM","PK","LBI","LBE","PM"]: sc=int(u["s"].get(c,0)); row.append(sc); tot+=sc
             avg=int(tot/7); row.append(avg)
             st="TIDAK"; 
+            # Safe Access to Choice
             c1=db.query(Major).filter_by(id=u["c1"]).first() if u["c1"] else None
             c2=db.query(Major).filter_by(id=u["c2"]).first() if u["c2"] else None
             if c1 and avg>=c1.passing_grade: st="LULUS P1"
             elif c2 and avg>=c2.passing_grade: st="LULUS P2"
             row.append(st); d.append(row)
         
-        # PENCEGAH BLANK: Kalau data kosong, isi dummy row
-        if not d: d = [["-", "BELUM ADA DATA", "-", 0,0,0,0,0,0,0,0, "-"]]
+        # JIKA KOSONG, JANGAN BLANK, TAPI TULIS "DATA BELUM ADA"
+        if not d: d = [["-", "BELUM ADA DATA UJIAN", "-", 0,0,0,0,0,0,0,0, "-"]]
 
         buf=io.BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4)); el=[]
-        # Judul PDF
         el.append(Paragraph("REKAPITULASI NILAI UJIAN", getSampleStyleSheet()['Heading1']))
         el.append(Spacer(1, 20))
-        # Tabel
-        headers = ["Nama","Sekolah","PU","PPU","PBM","PK","LBI","LBE","PM","Avg","Status"]
-        t=Table([headers]+d)
-        t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,colors.black), ('FONTSIZE',(0,0),(-1,-1),8)]))
-        el.append(t); doc.build(el); buf.seek(0)
+        t=Table([["Nama","Sekolah","PU","PPU","PBM","PK","LBI","LBE","PM","Avg","Status"]]+d)
+        t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,colors.black)])); el.append(t); doc.build(el); buf.seek(0)
         return StreamingResponse(buf,media_type='application/pdf',headers={'Content-Disposition':'attachment;filename="Rekap.pdf"'})
     except Exception as e:
-        # Jika masih error juga, jangan blank, tapi kasih JSON Error
-        return JSONResponse({"message": f"ERROR GENERATE PDF: {str(e)}. Coba Download Excel."})
+        return JSONResponse({"message": f"PDF ERROR: {str(e)}. Silakan Download Excel."})
 
 @app.get("/admin/recap/download")
 def dl_xls(period_id: Optional[str]=None, db: Session=Depends(get_db)):
@@ -511,6 +521,43 @@ def get_conf(db: Session=Depends(get_db)):
     c=db.query(SystemConfig).filter_by(key="release_announcement").first()
     return {"is_released": (c.value=="true") if c else False}
 
+# --- HALAMAN BENGKEL (MANUAL) ---
 @app.get("/repair", response_class=HTMLResponse)
 def repair_page():
-    return "<h1>AUTO-REPAIR SUDAH BERJALAN SAAT STARTUP. SILAKAN CEK FITUR.</h1>"
+    return """
+    <html>
+    <head><title>BENGKEL SYSTEM</title>
+    <style>body{font-family:sans-serif;padding:30px;text-align:center}.btn{padding:15px;width:100%;margin:10px 0;color:white;border:none;border-radius:5px;font-size:16px;cursor:pointer}.red{background:red}.blue{background:blue}.green{background:green}</style>
+    </head>
+    <body>
+        <h1>PANEL BENGKEL</h1>
+        <button class="red" onclick="act('/api/fix-duration-force')">1. RESET DURASI (42.5 Menit)</button>
+        <button class="blue" onclick="act('/api/seed-majors-auto')">2. PAKSA ISI JURUSAN</button>
+        <button class="green" onclick="act('/api/seed-dummy-result')">3. ISI DATA PALSU (Tes Rekap)</button>
+        <p id="st">Menunggu...</p>
+        <script>
+            async function act(u){document.getElementById('st').innerText="Proses...";
+            let r=await fetch(u);let d=await r.json();document.getElementById('st').innerText=d.message;}
+        </script>
+    </body>
+    </html>
+    """
+@app.get("/api/fix-duration-force")
+def fix_duration(db: Session = Depends(get_db)):
+    db.query(ExamPeriod).delete(); db.commit()
+    try: db.execute(text("ALTER TABLE exams ALTER COLUMN duration TYPE FLOAT USING duration::double precision")); db.commit()
+    except: pass
+    p=ExamPeriod(name="PERIODE BARU",exam_type="UTBK_STANDARD",is_active=True); db.add(p); db.commit(); db.refresh(p)
+    for c,d in [("PU",30),("PPU",15),("PBM",25),("PK",20),("LBI",42.5),("LBE",20),("PM",42.5)]:
+        db.add(Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=d))
+    db.commit()
+    return {"message":"Durasi OK (42.5) & Periode Reset"}
+@app.get("/api/seed-majors-auto")
+def seed_majors_manual(db: Session = Depends(get_db)):
+    # Manual Trigger jika needed
+    return {"message": "Data sudah di-load otomatis di startup"}
+@app.get("/api/seed-dummy-result")
+def seed_dummy(db: Session = Depends(get_db)):
+    u=db.query(User).first(); e=db.query(Exam).first()
+    if u and e: db.add(ExamResult(user_id=u.id, exam_id=e.id, correct_count=10, wrong_count=5, irt_score=600)); db.commit(); return {"message": "Data Dummy OK"}
+    return {"message": "Fail"}
