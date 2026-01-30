@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, XCircle, Download, Clock, Search, X, Filter, LayoutDashboard, BarChart3, Edit3, Save, FileText, School, Target, Settings, RefreshCcw } from 'lucide-react';
+import { 
+  Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, 
+  CheckCircle, XCircle, Download, Clock, Search, X, Filter, 
+  LayoutDashboard, BarChart3, Edit3, Save, FileText, School, 
+  Target, Settings, RefreshCcw 
+} from 'lucide-react';
 
 const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [tab, setTab] = useState('periods');
@@ -13,28 +18,32 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [users, setUsers] = useState([]);
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', school: '' });
   const [selectedUsers, setSelectedUsers] = useState([]);
+  const [searchUser, setSearchUser] = useState('');
   
   // STATE CONFIG
-  const [instituteConfig, setInstituteConfig] = useState({});
   const [isReleased, setIsReleased] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   // --- FETCH DATA ---
   const fetchData = useCallback(() => {
-    // Periods
-    fetch(`${apiUrl}/admin/periods`).then(r => r.json()).then(d => setPeriods(Array.isArray(d) ? d : [])).catch(()=>setPeriods([]));
-    // Users (Include Results)
-    fetch(`${apiUrl}/admin/users`).then(r => r.json()).then(d => setUsers(Array.isArray(d) ? d : [])).catch(()=>setUsers([]));
-    // Config
-    fetch(`${apiUrl}/config/release`).then(r => r.json()).then(d => setIsReleased(d.is_released));
+    setLoading(true);
+    Promise.all([
+        fetch(`${apiUrl}/admin/periods`).then(r => r.json()),
+        fetch(`${apiUrl}/admin/users`).then(r => r.json()),
+        fetch(`${apiUrl}/config/release`).then(r => r.json())
+    ]).then(([periodsData, usersData, configData]) => {
+        setPeriods(Array.isArray(periodsData) ? periodsData : []);
+        setUsers(Array.isArray(usersData) ? usersData : []);
+        setIsReleased(configData.is_released);
+        setLoading(false);
+    }).catch(() => setLoading(false));
   }, [apiUrl]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // --- ACTION HANDLERS ---
-
-  // 1. BUAT PERIODE
+  // --- HANDLERS (FUNGSI TETAP SAMA, TAMPILAN BEDA) ---
   const handleCreatePeriod = async () => {
-    if (!newPeriodName) return alert("Isi nama periode");
+    if (!newPeriodName) return;
     await fetch(`${apiUrl}/admin/periods`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newPeriodName, exam_type: 'UTBK', mode: 'standard' })
@@ -42,7 +51,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
     setNewPeriodName(''); fetchData();
   };
 
-  // 2. UPLOAD SOAL
   const handleUploadQuestion = async (e, examId) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -51,12 +59,10 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
     try {
       const res = await fetch(`${apiUrl}/admin/upload-questions/${examId}`, { method: 'POST', body: formData });
       const data = await res.json();
-      alert(data.message);
-      fetchData();
+      alert(data.message); fetchData();
     } catch { alert("Gagal upload soal"); }
   };
 
-  // 3. TAMBAH SISWA
   const handleAddUser = async () => {
     await fetch(`${apiUrl}/admin/users`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -66,7 +72,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
     fetchData();
   };
 
-  // 4. UPLOAD SISWA (EXCEL)
   const handleUploadUsers = async (e) => {
     const file = e.target.files[0];
     const formData = new FormData();
@@ -76,7 +81,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
     alert(d.message); fetchData();
   };
 
-  // 5. HAPUS SISWA
   const handleDeleteUsers = async () => {
     if (window.confirm(`Hapus ${selectedUsers.length} siswa?`)) {
       await fetch(`${apiUrl}/admin/users/delete-bulk`, {
@@ -87,7 +91,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
     }
   };
 
-  // 6. UPLOAD JURUSAN (YANG HILANG KEMARIN)
   const handleUploadMajors = async (e) => {
     const file = e.target.files[0];
     const formData = new FormData();
@@ -97,100 +100,167 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
     alert(d.message);
   };
 
-  // --- RENDER REKAP DATA (CALCULATED FROM USERS) ---
+  // --- RENDERERS ---
   const renderRecap = () => {
-    // Filter hanya siswa yang punya hasil
     const studentWithResults = users.filter(u => u.results && u.results.length > 0);
-    
-    if (studentWithResults.length === 0) return <div className="p-8 text-center text-slate-400">Belum ada data nilai masuk.</div>;
+    if (studentWithResults.length === 0) return (
+        <div className="flex flex-col items-center justify-center h-64 text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
+            <BarChart3 size={48} className="mb-4 opacity-20"/>
+            <p>Belum ada data nilai ujian masuk.</p>
+        </div>
+    );
 
     return (
-      <table className="w-full text-sm text-left">
-        <thead className="bg-slate-100 font-bold">
-          <tr>
-            <th className="p-3">Nama</th>
-            <th className="p-3">Sekolah</th>
-            <th className="p-3 text-center">PU</th>
-            <th className="p-3 text-center">PPU</th>
-            <th className="p-3 text-center">PBM</th>
-            <th className="p-3 text-center">PK</th>
-            <th className="p-3 text-center">LBI</th>
-            <th className="p-3 text-center">LBE</th>
-            <th className="p-3 text-center">PM</th>
-            <th className="p-3 text-center bg-indigo-50">RATA-RATA</th>
-          </tr>
-        </thead>
-        <tbody>
-          {studentWithResults.map(u => {
-            // Hitung skor dari relasi 'results'
-            const scores = { PU:0, PPU:0, PBM:0, PK:0, LBI:0, LBE:0, PM:0 };
-            let total = 0;
-            u.results.forEach(r => {
-               // Ambil kode dari ID (misal P1_PU -> PU)
-               const code = r.exam_id.split('_').pop();
-               if (scores[code] !== undefined) scores[code] = Math.round(r.irt_score);
-            });
-            const avg = Math.round(Object.values(scores).reduce((a,b)=>a+b,0) / 7);
-            
-            return (
-              <tr key={u.id} className="border-b hover:bg-slate-50">
-                <td className="p-3">{u.full_name}<br/><span className="text-xs text-gray-400">{u.username}</span></td>
-                <td className="p-3">{u.school}</td>
-                {Object.keys(scores).map(k => <td key={k} className="p-3 text-center">{scores[k]}</td>)}
-                <td className="p-3 text-center font-bold text-indigo-600 bg-indigo-50">{avg}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+                <thead className="bg-slate-50 text-slate-600 font-semibold border-b">
+                <tr>
+                    <th className="p-4">Nama Siswa</th>
+                    <th className="p-4">Sekolah</th>
+                    {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=><th key={k} className="p-4 text-center">{k}</th>)}
+                    <th className="p-4 text-center bg-indigo-50 text-indigo-700">RATA-RATA</th>
+                </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                {studentWithResults.map(u => {
+                    const scores = { PU:0, PPU:0, PBM:0, PK:0, LBI:0, LBE:0, PM:0 };
+                    u.results.forEach(r => {
+                        const code = r.exam_id.split('_').pop();
+                        if (scores[code] !== undefined) scores[code] = Math.round(r.irt_score);
+                    });
+                    const avg = Math.round(Object.values(scores).reduce((a,b)=>a+b,0) / 7);
+                    return (
+                    <tr key={u.id} className="hover:bg-slate-50 transition">
+                        <td className="p-4 font-medium text-slate-800">{u.full_name}<br/><span className="text-xs text-slate-400 font-normal">{u.username}</span></td>
+                        <td className="p-4 text-slate-500">{u.school}</td>
+                        {Object.keys(scores).map(k => <td key={k} className="p-4 text-center text-slate-600">{scores[k]}</td>)}
+                        <td className="p-4 text-center font-bold text-indigo-600 bg-indigo-50/50">{avg}</td>
+                    </tr>
+                    );
+                })}
+                </tbody>
+            </table>
+        </div>
+      </div>
     );
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex font-sans">
-      {/* SIDEBAR */}
-      <aside className="w-64 bg-[#0f172a] text-white flex flex-col p-4 gap-2">
-        <div className="text-xl font-bold p-4 border-b border-slate-700 mb-2">Admin Panel</div>
-        <button onClick={() => setTab('periods')} className={`p-3 rounded text-left flex gap-3 ${tab === 'periods' ? 'bg-indigo-600' : 'hover:bg-slate-800'}`}><Clock size={18}/> Ujian</button>
-        <button onClick={() => setTab('users')} className={`p-3 rounded text-left flex gap-3 ${tab === 'users' ? 'bg-indigo-600' : 'hover:bg-slate-800'}`}><Users size={18}/> Siswa</button>
-        <button onClick={() => setTab('recap')} className={`p-3 rounded text-left flex gap-3 ${tab === 'recap' ? 'bg-indigo-600' : 'hover:bg-slate-800'}`}><BarChart3 size={18}/> Rekap</button>
-        <button onClick={() => setTab('config')} className={`p-3 rounded text-left flex gap-3 ${tab === 'config' ? 'bg-indigo-600' : 'hover:bg-slate-800'}`}><Settings size={18}/> Pengaturan</button>
-        <div className="flex-1"></div>
-        <button onClick={onLogout} className="p-3 rounded bg-red-900/50 text-red-400 hover:bg-red-900 flex gap-2"><LogOut size={18}/> Logout</button>
+    <div className="min-h-screen bg-slate-100 flex font-sans text-slate-800">
+      {/* SIDEBAR MEWAH */}
+      <aside className="w-72 bg-white border-r border-slate-200 flex flex-col fixed h-full z-10 shadow-sm">
+        <div className="p-8 border-b border-slate-100">
+            <h1 className="text-2xl font-black bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent flex items-center gap-2">
+                <LayoutDashboard className="text-indigo-600"/> CBT ADMIN
+            </h1>
+            <p className="text-xs text-slate-400 mt-2 font-medium tracking-wide">PANEL KONTROL TERPADU</p>
+        </div>
+        
+        <nav className="flex-1 p-6 space-y-2 overflow-y-auto">
+            {[
+                {id: 'periods', label: 'Manajemen Ujian', icon: Clock},
+                {id: 'users', label: 'Data Siswa', icon: Users},
+                {id: 'recap', label: 'Rekap Nilai', icon: BarChart3},
+                {id: 'config', label: 'Pengaturan', icon: Settings},
+            ].map(item => (
+                <button 
+                    key={item.id} 
+                    onClick={() => setTab(item.id)} 
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                        tab === item.id 
+                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-[1.02]' 
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-indigo-600'
+                    }`}
+                >
+                    <item.icon size={20} strokeWidth={2}/> {item.label}
+                </button>
+            ))}
+        </nav>
+
+        <div className="p-6 border-t border-slate-100">
+            <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-50 text-red-600 font-bold hover:bg-red-600 hover:text-white transition-all duration-200">
+                <LogOut size={18}/> Keluar
+            </button>
+        </div>
       </aside>
 
-      {/* CONTENT */}
-      <main className="flex-1 p-8 overflow-y-auto">
+      {/* MAIN CONTENT */}
+      <main className="flex-1 ml-72 p-10">
+        <header className="flex justify-between items-center mb-10">
+            <div>
+                <h2 className="text-3xl font-bold text-slate-800 tracking-tight">
+                    {tab === 'periods' && "Manajemen Ujian"}
+                    {tab === 'users' && "Data Siswa"}
+                    {tab === 'recap' && "Rekapitulasi Nilai"}
+                    {tab === 'config' && "Pengaturan Sistem"}
+                </h2>
+                <p className="text-slate-500 mt-1">Kelola sistem CBT Anda dengan mudah.</p>
+            </div>
+            <div className="flex gap-3">
+                <button onClick={fetchData} className="p-3 bg-white border border-slate-200 rounded-full text-slate-500 hover:text-indigo-600 hover:border-indigo-200 transition shadow-sm">
+                    <RefreshCcw size={20} className={loading ? "animate-spin" : ""}/>
+                </button>
+            </div>
+        </header>
+
         {/* --- TAB UJIAN --- */}
         {tab === 'periods' && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm border">
-              <h2 className="font-bold text-lg mb-4">Buat Periode Baru</h2>
-              <div className="flex gap-2">
-                <input value={newPeriodName} onChange={e => setNewPeriodName(e.target.value)} placeholder="Nama Periode (Misal: Tryout Akbar 1)" className="border p-2 rounded flex-1"/>
-                <button onClick={handleCreatePeriod} className="bg-indigo-600 text-white px-4 rounded font-bold">Buat</button>
+          <div className="space-y-8 animate-fade-in">
+            {/* Input Periode Baru */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex gap-4 items-center">
+              <div className="flex-1">
+                <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Buat Periode Baru</label>
+                <input 
+                    value={newPeriodName} 
+                    onChange={e => setNewPeriodName(e.target.value)} 
+                    placeholder="Contoh: Tryout Akbar Nasional 2024" 
+                    className="w-full font-semibold text-slate-800 placeholder:text-slate-300 outline-none text-lg bg-transparent"
+                />
               </div>
+              <button onClick={handleCreatePeriod} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-200 transition-all active:scale-95">
+                <Plus size={20} className="inline mr-2"/> Tambah
+              </button>
             </div>
             
-            <div className="space-y-4">
+            {/* List Periode */}
+            <div className="space-y-6">
               {periods.map(p => (
-                <div key={p.id} className="bg-white border rounded-xl overflow-hidden shadow-sm">
-                  <div className="p-4 bg-slate-50 flex justify-between items-center cursor-pointer" onClick={() => setExpandedPeriod(expandedPeriod === p.id ? null : p.id)}>
-                    <div className="font-bold">{p.name}</div>
-                    <div className="flex gap-2 text-sm text-slate-500">
-                      {p.is_active ? <span className="text-green-600 font-bold">AKTIF</span> : "Non-Aktif"}
-                      {expandedPeriod === p.id ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
+                <div key={p.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 hover:shadow-md">
+                  <div 
+                    className="p-6 flex justify-between items-center cursor-pointer bg-gradient-to-r from-white to-slate-50 hover:to-indigo-50/30" 
+                    onClick={() => setExpandedPeriod(expandedPeriod === p.id ? null : p.id)}
+                  >
+                    <div className="flex items-center gap-4">
+                        <div className={`p-3 rounded-xl ${p.is_active ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                            <Clock size={24}/>
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-800">{p.name}</h3>
+                            <div className="text-sm text-slate-500 font-medium mt-1">
+                                {p.is_active ? <span className="text-emerald-600 flex items-center gap-1"><CheckCircle size={14}/> Sedang Aktif</span> : "Non-Aktif"}
+                            </div>
+                        </div>
                     </div>
+                    {expandedPeriod === p.id ? <ChevronUp className="text-slate-400"/> : <ChevronDown className="text-slate-400"/>}
                   </div>
+                  
                   {expandedPeriod === p.id && (
-                    <div className="p-4 border-t">
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="p-6 border-t border-slate-100 bg-slate-50/50">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         {p.exams.map(ex => (
-                          <div key={ex.id} className="border p-3 rounded bg-white">
-                            <div className="font-bold text-sm mb-2">{ex.title} ({ex.code})</div>
-                            <div className="text-xs text-slate-500 mb-3">{ex.q_count} Soal • {ex.duration} Menit</div>
-                            <label className="block w-full text-center py-2 border border-dashed border-indigo-300 rounded cursor-pointer hover:bg-indigo-50 text-indigo-600 text-xs font-bold">
-                              Upload Excel ({ex.code})
+                          <div key={ex.id} className="bg-white p-5 rounded-xl border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all group">
+                            <div className="flex justify-between items-start mb-3">
+                                <div className="text-xs font-bold px-2 py-1 rounded bg-slate-100 text-slate-500">{ex.code}</div>
+                                <div className={`text-xs px-2 py-1 rounded font-bold ${ex.questions.length > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+                                    {ex.questions.length} Soal
+                                </div>
+                            </div>
+                            <h4 className="font-bold text-slate-800 mb-1 line-clamp-1" title={ex.title}>{ex.title}</h4>
+                            <p className="text-xs text-slate-400 mb-4">{ex.duration} Menit</p>
+                            
+                            <label className="flex items-center justify-center w-full py-3 border-2 border-dashed border-slate-200 rounded-lg cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-all text-sm font-bold text-slate-400 hover:text-indigo-600 gap-2">
+                              <Upload size={16}/> Upload Soal
                               <input type="file" hidden onChange={(e) => handleUploadQuestion(e, ex.id)} accept=".csv,.xlsx"/>
                             </label>
                           </div>
@@ -206,95 +276,151 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
 
         {/* --- TAB SISWA --- */}
         {tab === 'users' && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm border flex flex-col md:flex-row gap-4 justify-between">
-              <div className="flex gap-2 items-center">
+          <div className="space-y-6 animate-fade-in">
+            {/* Toolbar */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col xl:flex-row gap-6 justify-between items-start xl:items-center">
+              <div className="flex flex-wrap gap-3">
                 <input type="file" id="upload-users" hidden onChange={handleUploadUsers} accept=".csv,.xlsx"/>
-                <label htmlFor="upload-users" className="bg-green-600 text-white px-4 py-2 rounded flex gap-2 items-center cursor-pointer hover:bg-green-700"><Upload size={16}/> Import Excel</label>
-                <button onClick={handleDeleteUsers} disabled={selectedUsers.length === 0} className="bg-red-600 text-white px-4 py-2 rounded flex gap-2 items-center hover:bg-red-700 disabled:opacity-50"><Trash2 size={16}/> Hapus ({selectedUsers.length})</button>
+                <label htmlFor="upload-users" className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-200 transition-all active:scale-95">
+                    <Upload size={18}/> Import Excel
+                </label>
+                {selectedUsers.length > 0 && (
+                    <button onClick={handleDeleteUsers} className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-red-200 transition-all active:scale-95">
+                        <Trash2 size={18}/> Hapus ({selectedUsers.length})
+                    </button>
+                )}
               </div>
-              <div className="flex gap-2">
-                <input placeholder="Username" className="border p-2 rounded w-32" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/>
-                <input placeholder="Nama Lengkap" className="border p-2 rounded w-48" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/>
-                <button onClick={handleAddUser} className="bg-blue-600 text-white px-4 rounded"><Plus size={20}/></button>
+              
+              <div className="flex gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200 w-full xl:w-auto">
+                <input 
+                    className="bg-transparent outline-none px-2 w-32 text-sm font-medium" 
+                    placeholder="Username" 
+                    value={newUser.username} 
+                    onChange={e=>setNewUser({...newUser, username:e.target.value})}
+                />
+                <div className="w-px bg-slate-300"></div>
+                <input 
+                    className="bg-transparent outline-none px-2 w-40 text-sm font-medium" 
+                    placeholder="Nama Lengkap" 
+                    value={newUser.full_name} 
+                    onChange={e=>setNewUser({...newUser, full_name:e.target.value})}
+                />
+                <button onClick={handleAddUser} className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 transition">
+                    <Plus size={18}/>
+                </button>
               </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50 border-b">
-                  <tr>
-                    <th className="p-3 w-10"><input type="checkbox" onChange={(e) => setSelectedUsers(e.target.checked ? users.map(u => u.id) : [])}/></th>
-                    <th className="p-3">Nama</th>
-                    <th className="p-3">Username</th>
-                    <th className="p-3">Sekolah</th>
-                    <th className="p-3">Password</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {users.map(u => (
-                    <tr key={u.id} className="hover:bg-slate-50">
-                      <td className="p-3"><input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={(e) => {
-                        if(e.target.checked) setSelectedUsers([...selectedUsers, u.id]);
-                        else setSelectedUsers(selectedUsers.filter(id => id !== u.id));
-                      }}/></td>
-                      <td className="p-3 font-bold">{u.full_name}</td>
-                      <td className="p-3">{u.username}</td>
-                      <td className="p-3">{u.school || "-"}</td>
-                      <td className="p-3 font-mono text-slate-400">{u.password}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
+                    <Search size={18} className="text-slate-400"/>
+                    <input 
+                        type="text" 
+                        placeholder="Cari siswa berdasarkan nama..." 
+                        className="bg-transparent outline-none w-full text-sm"
+                        value={searchUser}
+                        onChange={e => setSearchUser(e.target.value)}
+                    />
+                </div>
+                <div className="max-h-[600px] overflow-y-auto">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 text-slate-500 font-semibold sticky top-0 z-10">
+                        <tr>
+                            <th className="p-4 w-10"><input type="checkbox" onChange={(e) => setSelectedUsers(e.target.checked ? users.map(u => u.id) : [])}/></th>
+                            <th className="p-4">Nama Lengkap</th>
+                            <th className="p-4">Username</th>
+                            <th className="p-4">Sekolah/Cabang</th>
+                            <th className="p-4 font-mono">Password</th>
+                        </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                        {users.filter(u => u.full_name.toLowerCase().includes(searchUser.toLowerCase())).map(u => (
+                            <tr key={u.id} className="hover:bg-slate-50 transition">
+                            <td className="p-4"><input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={(e) => {
+                                if(e.target.checked) setSelectedUsers([...selectedUsers, u.id]);
+                                else setSelectedUsers(selectedUsers.filter(id => id !== u.id));
+                            }}/></td>
+                            <td className="p-4 font-bold text-slate-700">{u.full_name}</td>
+                            <td className="p-4 text-slate-500">{u.username}</td>
+                            <td className="p-4"><span className="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold">{u.school || "-"}</span></td>
+                            <td className="p-4 font-mono text-slate-400">••••••</td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
           </div>
         )}
 
         {/* --- TAB REKAP --- */}
         {tab === 'recap' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-bold">Rekapitulasi Nilai</h2>
-              <div className="flex gap-2">
-                <a href={`${apiUrl}/admin/recap/download`} target="_blank" rel="noreferrer" className="bg-emerald-600 text-white px-4 py-2 rounded flex gap-2"><FileText size={18}/> Excel</a>
-                <a href={`${apiUrl}/admin/recap/download-pdf`} target="_blank" rel="noreferrer" className="bg-red-600 text-white px-4 py-2 rounded flex gap-2"><FileText size={18}/> PDF</a>
+          <div className="space-y-6 animate-fade-in">
+            <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+              <div>
+                  <h2 className="text-xl font-bold text-slate-800">Laporan Hasil Ujian</h2>
+                  <p className="text-sm text-slate-500">Unduh atau lihat data nilai siswa secara real-time.</p>
+              </div>
+              <div className="flex gap-3">
+                <a href={`${apiUrl}/admin/recap/download`} target="_blank" rel="noreferrer" className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold flex gap-2 shadow-lg shadow-emerald-200 transition-all active:scale-95">
+                    <FileText size={18}/> Unduh Excel
+                </a>
+                <a href={`${apiUrl}/admin/recap/download-pdf`} target="_blank" rel="noreferrer" className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl font-bold flex gap-2 shadow-lg shadow-red-200 transition-all active:scale-95">
+                    <FileText size={18}/> Unduh PDF
+                </a>
               </div>
             </div>
-            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-              {renderRecap()}
-            </div>
+            {renderRecap()}
           </div>
         )}
 
-        {/* --- TAB PENGATURAN (UPLOAD JURUSAN) --- */}
+        {/* --- TAB CONFIG --- */}
         {tab === 'config' && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm border">
-              <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Target className="text-blue-600"/> Database Jurusan</h3>
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg mb-4">
-                <p className="text-sm text-blue-800">Upload file Excel berisi daftar jurusan (Format: Universitas, Prodi, Passing_Grade) di sini jika ingin memperbarui data.</p>
+          <div className="space-y-6 animate-fade-in">
+            {/* Card Upload Jurusan */}
+            <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex gap-4 items-start mb-6">
+                <div className="p-3 bg-blue-100 text-blue-600 rounded-xl"><Target size={24}/></div>
+                <div>
+                    <h3 className="font-bold text-lg text-slate-800">Database Jurusan & Passing Grade</h3>
+                    <p className="text-sm text-slate-500 mt-1">Upload file Excel berisi daftar jurusan (Format: Universitas, Prodi, Passing_Grade) untuk memperbarui data pilihan siswa.</p>
+                </div>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="bg-slate-50 p-6 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-center hover:bg-blue-50/50 hover:border-blue-300 transition-all">
                 <input type="file" id="upload-major" hidden onChange={handleUploadMajors} accept=".csv,.xlsx"/>
-                <label htmlFor="upload-major" className="bg-blue-600 text-white px-6 py-3 rounded-lg cursor-pointer hover:bg-blue-700 font-bold flex items-center gap-2">
-                  <Upload size={20}/> Upload File Jurusan
+                <label htmlFor="upload-major" className="cursor-pointer">
+                  <div className="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mx-auto mb-4 text-blue-600">
+                    <Upload size={24}/>
+                  </div>
+                  <span className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 transition">Pilih File Excel</span>
+                  <p className="text-xs text-slate-400 mt-3">Mendukung format .xlsx dan .csv</p>
                 </label>
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-xl shadow-sm border">
-              <h3 className="font-bold text-lg mb-4">Pengumuman Kelulusan</h3>
-              <div className="flex items-center gap-4">
+            {/* Card Pengumuman */}
+            <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex gap-4 items-start mb-6">
+                <div className={`p-3 rounded-xl ${isReleased ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}><RefreshCcw size={24}/></div>
+                <div>
+                    <h3 className="font-bold text-lg text-slate-800">Status Pengumuman Nilai</h3>
+                    <p className="text-sm text-slate-500 mt-1">Atur apakah siswa dapat melihat nilai mereka di dashboard.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
                 <button 
                   onClick={async () => {
                     await fetch(`${apiUrl}/config/release`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({value: (!isReleased).toString()}) });
                     setIsReleased(!isReleased);
                   }}
-                  className={`px-6 py-3 rounded-lg font-bold text-white transition ${isReleased ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
+                  className={`px-6 py-3 rounded-xl font-bold text-white transition-all shadow-lg ${isReleased ? 'bg-red-500 hover:bg-red-600 shadow-red-200' : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-200'}`}
                 >
-                  {isReleased ? "Tutup Pengumuman (Sembunyikan Nilai)" : "Rilis Pengumuman (Tampilkan Nilai)"}
+                  {isReleased ? "Tutup Akses (Sembunyikan Nilai)" : "Rilis Pengumuman (Tampilkan Nilai)"}
                 </button>
-                <span className="text-sm text-slate-500">Status saat ini: <strong>{isReleased ? "DIRILIS" : "DITUTUP"}</strong></span>
+                <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-400 uppercase">Status Saat Ini</span>
+                    <span className={`font-bold ${isReleased ? 'text-emerald-600' : 'text-slate-600'}`}>{isReleased ? "PUBLIK (Dapat Dilihat)" : "PRIVAT (Disembunyikan)"}</span>
+                </div>
               </div>
             </div>
           </div>
