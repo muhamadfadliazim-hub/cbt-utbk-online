@@ -71,7 +71,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   };
 
   const handlePreviewExam = async (examId) => {
-      try { const res = await fetch(`${apiUrl}/student/review/${examId}`); setPreviewQuestions(await res.json()); } catch { alert("Gagal load preview."); }
+      try { const res = await fetch(`${apiUrl}/admin/exams/${examId}/preview`); setPreviewQuestions(await res.json()); } catch { alert("Gagal load preview."); }
   };
 
   const handleAddUser = async () => { await fetch(`${apiUrl}/admin/users`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newUser) }); setNewUser({ username: '', password: '', full_name: '', school: '' }); fetchData(); };
@@ -80,6 +80,15 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const handleUploadMajors = async (e) => { const file = e.target.files[0]; const formData = new FormData(); formData.append('file', file); const res = await fetch(`${apiUrl}/admin/upload-majors`, { method: 'POST', body: formData }); alert((await res.json()).message); };
 
   const filteredUsers = users.filter(u => u.full_name.toLowerCase().includes(searchUser.toLowerCase()) && (selectedSchoolFilter === 'Semua' || u.school === selectedSchoolFilter));
+
+  const renderText = (text) => {
+      if(!text) return "";
+      const parts = text.split(/(\$.*?\$)/g);
+      return parts.map((part, index) => {
+          if (part.startsWith('$') && part.endsWith('$')) return <span key={index} className="mx-1"><InlineMath math={part.replace(/\$/g, '')} /></span>;
+          return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br/>') }} />;
+      });
+  };
 
   const renderRecap = () => {
     const studentWithResults = filteredUsers.filter(u => u.results && u.results.length > 0);
@@ -176,6 +185,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             </div>
         )}
 
+        {/* TAB SISWA: SEKARANG PASSWORD TERLIHAT */}
         {tab === 'users' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between">
@@ -187,13 +197,14 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                     <input placeholder="User" className="bg-transparent px-2 w-24 outline-none" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/>
                     <input placeholder="Nama" className="bg-transparent px-2 w-32 outline-none border-l" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/>
                     <input placeholder="Sekolah" className="bg-transparent px-2 w-32 outline-none border-l" value={newUser.school} onChange={e=>setNewUser({...newUser, school:e.target.value})}/>
+                    <input placeholder="Pass" className="bg-transparent px-2 w-20 outline-none border-l" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/>
                     <button onClick={handleAddUser} className="bg-blue-600 text-white p-2 rounded-lg"><Plus size={18}/></button>
                 </div>
             </div>
             <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
                 <div className="p-4 border-b bg-slate-50"><input placeholder="Cari siswa..." className="outline-none text-sm w-full bg-transparent" value={searchUser} onChange={e=>setSearchUser(e.target.value)}/></div>
                 <div className="max-h-[500px] overflow-y-auto">
-                    <table className="w-full text-sm text-left"><thead className="bg-slate-50 sticky top-0"><tr><th className="p-4 w-10">#</th><th className="p-4">Nama</th><th className="p-4">User</th><th className="p-4">Sekolah</th></tr></thead><tbody className="divide-y">{filteredUsers.map(u=>(<tr key={u.id} className="hover:bg-slate-50"><td className="p-4"><input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={e=>{if(e.target.checked)setSelectedUsers([...selectedUsers,u.id]); else setSelectedUsers(selectedUsers.filter(id=>id!==u.id))}}/></td><td className="p-4 font-bold">{u.full_name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.school}</td></tr>))}</tbody></table>
+                    <table className="w-full text-sm text-left"><thead className="bg-slate-50 sticky top-0"><tr><th className="p-4 w-10">#</th><th className="p-4">Nama</th><th className="p-4">User</th><th className="p-4">Sekolah</th><th className="p-4">Password</th></tr></thead><tbody className="divide-y">{filteredUsers.map(u=>(<tr key={u.id} className="hover:bg-slate-50"><td className="p-4"><input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={e=>{if(e.target.checked)setSelectedUsers([...selectedUsers,u.id]); else setSelectedUsers(selectedUsers.filter(id=>id!==u.id))}}/></td><td className="p-4 font-bold">{u.full_name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.school}</td><td className="p-4 font-mono text-slate-500">{u.password}</td></tr>))}</tbody></table>
                 </div>
             </div>
           </div>
@@ -221,7 +232,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white w-full max-w-2xl max-h-[80vh] rounded-2xl overflow-hidden flex flex-col">
                     <div className="p-4 border-b flex justify-between"><h3 className="font-bold">Preview Soal</h3><button onClick={()=>setPreviewQuestions(null)}><X/></button></div>
-                    <div className="p-4 overflow-y-auto space-y-4">{previewQuestions.questions.map((q,i)=>(<div key={i} className="border p-4 rounded-lg bg-slate-50"><p className="font-bold mb-2">No. {i+1}</p><p>{q.text}</p><div className="text-sm text-green-600 mt-2 font-bold">Kunci: {q.correct_answer}</div></div>))}</div>
+                    <div className="p-4 overflow-y-auto space-y-4">{previewQuestions.questions.map((q,i)=>(<div key={i} className="border p-4 rounded-lg bg-slate-50"><p className="font-bold mb-2">No. {i+1}</p><div className="prose prose-sm mb-2">{renderText(q.text)}</div><div className="text-sm text-green-600 mt-2 font-bold">Kunci: {q.correct_answer}</div></div>))}</div>
                 </div>
             </div>
         )}
