@@ -86,7 +86,7 @@ class SystemConfig(Base):
     __tablename__ = "system_configs"
     key = Column(String, primary_key=True); value = Column(String)
 
-# LOGIC
+# IRT LOGIC
 def calculate_irt_score(correct_questions, total_questions):
     if not total_questions: return 0
     raw = sum([q.difficulty for q in correct_questions])
@@ -122,8 +122,14 @@ def startup_event():
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
+# === PERBAIKAN FATAL: SYNTAX ERROR DIHILANGKAN ===
 def get_db():
-    db = SessionLocal(); try: yield db; finally: db.close()
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+# =================================================
 
 # SCHEMAS
 class LoginSchema(BaseModel): username: str; password: str
@@ -136,7 +142,8 @@ class ConfigSchema(BaseModel): value: str
 class BulkDeleteSchema(BaseModel): user_ids: List[int]
 class ResetResultSchema(BaseModel): user_id: int; exam_id: Optional[str] = None
 
-# API
+# --- API ---
+
 @app.post("/login")
 def login(d: LoginSchema, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=d.username).first()
@@ -381,6 +388,14 @@ async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_
             if pd.notna(univ) and pd.notna(prod): db.add(Major(university=str(univ).strip(), name=str(prod).strip(), passing_grade=float(pg or 0))); count+=1
         db.commit(); return {"message": f"Sukses! {count} Jurusan."}
     except Exception as e: return {"message":str(e)}
+@app.post("/config/release")
+def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
+    c=db.query(SystemConfig).filter_by(key="release_announcement").first()
+    if c: c.value=d.value 
+    else: db.add(SystemConfig(key="release_announcement",value=d.value))
+    db.commit(); return {"message":"OK"}
+@app.get("/config/release")
+def get_conf(db: Session=Depends(get_db)): c=db.query(SystemConfig).filter_by(key="release_announcement").first(); return {"is_released": (c.value=="true") if c else False}
 try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
