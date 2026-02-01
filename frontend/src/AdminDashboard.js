@@ -88,15 +88,12 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const handleDeleteUsers = async () => { if (window.confirm(`Hapus ${selectedUsers.length} siswa?`)) { await fetch(`${apiUrl}/admin/users/delete-bulk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_ids: selectedUsers }) }); setSelectedUsers([]); fetchData(); } };
   const handleUploadMajors = async (e) => { const file = e.target.files[0]; const formData = new FormData(); formData.append('file', file); const res = await fetch(`${apiUrl}/admin/upload-majors`, { method: 'POST', body: formData }); alert((await res.json()).message); };
 
-  // --- FITUR RESET NILAI ---
   const handleReset = async (userId, examId = null) => {
       const msg = examId ? "Reset nilai subtes ini?" : "Reset SEMUA hasil ujian siswa ini?";
       if(!window.confirm(msg)) return;
-      
       try {
           const res = await fetch(`${apiUrl}/admin/reset-result`, {
-              method: 'POST',
-              headers: {'Content-Type': 'application/json'},
+              method: 'POST', headers: {'Content-Type': 'application/json'},
               body: JSON.stringify({ user_id: userId, exam_id: examId })
           });
           if(res.ok) { alert("Berhasil di-reset!"); fetchData(); }
@@ -105,16 +102,21 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
 
   const filteredUsers = users.filter(u => u.full_name.toLowerCase().includes(searchUser.toLowerCase()) && (selectedSchoolFilter === 'Semua' || u.school === selectedSchoolFilter));
 
+  // FIX RENDER TEXT (BOLD, ITALIC, NAN)
   const renderText = (text) => {
-      if(!text) return "";
-      const parts = text.split(/(\$.*?\$)/g);
+      if(!text || text === 'nan') return "";
+      // REPLACE [B] -> <b>, [I] -> <i>
+      let formatted = text
+          .replace(/\[B\]/gi, '<b>').replace(/\[\/B\]/gi, '</b>')
+          .replace(/\[I\]/gi, '<i>').replace(/\[\/I\]/gi, '</i>');
+
+      const parts = formatted.split(/(\$.*?\$)/g);
       return parts.map((part, index) => {
           if (part.startsWith('$') && part.endsWith('$')) return <span key={index} className="mx-1"><InlineMath math={part.replace(/\$/g, '')} /></span>;
           return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br/>') }} />;
       });
   };
 
-  // TABEL REKAP DENGAN FITUR RESET
   const renderRecap = () => {
     const studentWithResults = filteredUsers.filter(u => u.results && u.results.length > 0);
     if (studentWithResults.length === 0) return <div className="p-8 text-center text-slate-400">Belum ada data.</div>;
@@ -124,27 +126,16 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50 border-b font-bold"><tr><th className="p-4 sticky left-0 bg-slate-50 border-r">Nama</th><th className="p-4">Sekolah</th>{["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=><th key={k} className="p-4 text-center border-l w-16">{k}</th>)}<th className="p-4 text-center bg-indigo-50 border-l">AVG</th><th className="p-4 text-center border-l">Aksi</th></tr></thead>
                 <tbody className="divide-y">{studentWithResults.map(u => {
-                    const scores = {}; 
-                    u.results.forEach(r => scores[r.exam_id.split('_').pop()] = {val: Math.round(r.irt_score), eid: r.exam_id});
+                    const scores = {}; u.results.forEach(r => scores[r.exam_id.split('_').pop()] = {val: Math.round(r.irt_score), eid: r.exam_id});
                     const total = Object.values(scores).reduce((a,b)=>a+b.val,0);
                     const avg = Math.round(total/7);
                     return (
                         <tr key={u.id} className="hover:bg-slate-50">
                             <td className="p-4 font-bold sticky left-0 bg-white border-r">{u.full_name}</td>
                             <td className="p-4">{u.school}</td>
-                            {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> (
-                                <td key={k} 
-                                    className={`p-4 text-center border-l cursor-pointer hover:bg-red-50 hover:text-red-600 transition ${scores[k] ? 'font-bold' : 'text-slate-300'}`}
-                                    onClick={() => scores[k] && handleReset(u.id, scores[k].eid)}
-                                    title="Klik untuk reset nilai ini"
-                                >
-                                    {scores[k]?.val || "-"}
-                                </td>
-                            ))}
+                            {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> (<td key={k} className={`p-4 text-center border-l cursor-pointer hover:bg-red-50 hover:text-red-600 transition ${scores[k] ? 'font-bold' : 'text-slate-300'}`} onClick={() => scores[k] && handleReset(u.id, scores[k].eid)} title="Klik untuk reset nilai">{scores[k]?.val || "-"}</td>))}
                             <td className="p-4 text-center font-bold bg-indigo-50 border-l">{avg}</td>
-                            <td className="p-4 text-center border-l">
-                                <button onClick={() => handleReset(u.id)} className="p-1 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Reset Semua Ujian"><Trash2 size={16}/></button>
-                            </td>
+                            <td className="p-4 text-center border-l"><button onClick={() => handleReset(u.id)} className="p-1 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Reset Semua"><Trash2 size={16}/></button></td>
                         </tr>
                     );
                 })}</tbody>
@@ -188,11 +179,15 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                                 <div key={ex.id} className={`p-4 border-2 rounded-xl text-center transition ${hasQ ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-slate-200'}`}>
                                     <div className="font-bold text-slate-800 text-lg mb-1 flex items-center justify-center gap-2">{ex.code} {hasQ && <CheckCircle size={18} className="text-emerald-600"/>}</div>
                                     <div className={`text-xs mb-2 font-medium ${hasQ ? 'text-emerald-600' : 'text-slate-400'}`}>{ex.q_count} Soal Terisi</div>
-                                    <label className={`block w-full py-2 rounded-lg text-xs font-bold cursor-pointer transition ${hasQ ? 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
-                                        <Upload size={12} className="inline mr-1"/> {hasQ ? 'Update File' : 'Upload Excel'}
-                                        <input type="file" hidden onChange={(e)=>handleUploadQuestion(e, ex.id)} accept=".csv,.xlsx"/>
-                                    </label>
-                                    <button onClick={()=>handlePreviewExam(ex.id)} className="mt-2 text-xs text-slate-400 hover:text-indigo-600 flex items-center justify-center w-full"><Eye size={12} className="mr-1"/> Preview & Edit</button>
+                                    <div className="flex flex-col gap-2">
+                                        <label className={`block w-full py-2 rounded-lg text-xs font-bold cursor-pointer transition ${hasQ ? 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                                            <Upload size={12} className="inline mr-1"/> {hasQ ? 'Update File' : 'Upload Excel'}
+                                            <input type="file" hidden onChange={(e)=>handleUploadQuestion(e, ex.id)} accept=".csv,.xlsx"/>
+                                        </label>
+                                        <button disabled={!hasQ} onClick={()=>handlePreviewExam(ex.id)} className={`flex items-center justify-center gap-2 w-full py-2 border rounded-lg text-xs font-bold transition ${hasQ ? 'border-slate-300 text-slate-600 hover:text-indigo-600 hover:border-indigo-600' : 'border-slate-100 text-slate-300 cursor-not-allowed'}`}>
+                                            <Eye size={12}/> Preview & Edit
+                                        </button>
+                                    </div>
                                 </div>
                             )
                         })}
@@ -216,7 +211,10 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                                     <button onClick={() => setEditingQuestion(q)} className="absolute top-2 right-2 p-2 bg-white rounded-lg shadow opacity-0 group-hover:opacity-100 text-blue-600"><Edit size={16}/></button>
                                     <div className="font-bold text-xs text-slate-400 mb-2">NO. {i+1} ({q.type})</div>
                                     <div className="prose prose-sm mb-2">{renderText(q.text)}</div>
-                                    {q.reading_material && <div className="text-xs italic bg-white p-2 rounded border mb-2">{q.reading_material.substring(0,100)}...</div>}
+                                    {q.image_url && <img src={q.image_url} alt="soal" className="max-h-40 rounded mb-2"/>}
+                                    {q.options_preview && <ul className="text-sm list-none space-y-1 mb-2 pl-2 border-l-2 border-slate-200">
+                                        {q.options_preview.map((opt, idx) => <li key={idx} className="text-slate-600">{renderText(opt)}</li>)}
+                                    </ul>}
                                     <div className="text-xs font-bold text-emerald-600">Kunci: {q.correct_answer}</div>
                                     <div className="text-xs text-slate-500 mt-1 border-t pt-1">Pembahasan: {q.explanation || "-"}</div>
                                 </div>
@@ -234,7 +232,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                                         </div>
                                     ))}
                                 </div>
-                            ) : <div className="text-center text-slate-400">Memuat analisis...</div>}
+                            ) : <div className="text-center text-slate-400">Belum ada data.</div>}
                         </div>
                     </div>
                 </div>
@@ -243,8 +241,10 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                     <div className="absolute inset-0 bg-black/50 z-[60] flex items-center justify-center">
                         <div className="bg-white p-6 rounded-xl w-full max-w-lg">
                             <h3 className="font-bold mb-4">Edit Soal</h3>
-                            <textarea className="w-full p-2 border rounded mb-2 h-32" value={editingQuestion.text} onChange={e=>setEditingQuestion({...editingQuestion, text:e.target.value})} placeholder="Teks Soal"></textarea>
-                            <textarea className="w-full p-2 border rounded mb-4 h-24" value={editingQuestion.explanation} onChange={e=>setEditingQuestion({...editingQuestion, explanation:e.target.value})} placeholder="Pembahasan"></textarea>
+                            <label className="text-xs font-bold text-slate-500">Pertanyaan</label>
+                            <textarea className="w-full p-2 border rounded mb-2 h-32" value={editingQuestion.text} onChange={e=>setEditingQuestion({...editingQuestion, text:e.target.value})}></textarea>
+                            <label className="text-xs font-bold text-slate-500">Pembahasan (Explanation)</label>
+                            <textarea className="w-full p-2 border rounded mb-4 h-24" value={editingQuestion.explanation || ''} onChange={e=>setEditingQuestion({...editingQuestion, explanation:e.target.value})} placeholder="Tulis pembahasan disini..."></textarea>
                             <div className="flex gap-2 justify-end">
                                 <button onClick={()=>setEditingQuestion(null)} className="px-4 py-2 rounded border">Batal</button>
                                 <button onClick={handleSaveQuestion} className="px-4 py-2 rounded bg-blue-600 text-white flex items-center gap-2"><Save size={16}/> Simpan</button>

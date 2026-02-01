@@ -86,7 +86,7 @@ class SystemConfig(Base):
     __tablename__ = "system_configs"
     key = Column(String, primary_key=True); value = Column(String)
 
-# IRT LOGIC
+# LOGIC
 def calculate_irt_score(correct_questions, total_questions):
     if not total_questions: return 0
     raw = sum([q.difficulty for q in correct_questions])
@@ -122,14 +122,8 @@ def startup_event():
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
-# === PERBAIKAN FATAL: SYNTAX ERROR DIHILANGKAN ===
 def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-# =================================================
+    db = SessionLocal(); try: yield db; finally: db.close()
 
 # SCHEMAS
 class LoginSchema(BaseModel): username: str; password: str
@@ -142,8 +136,7 @@ class ConfigSchema(BaseModel): value: str
 class BulkDeleteSchema(BaseModel): user_ids: List[int]
 class ResetResultSchema(BaseModel): user_id: int; exam_id: Optional[str] = None
 
-# --- API ---
-
+# API
 @app.post("/login")
 def login(d: LoginSchema, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=d.username).first()
@@ -180,7 +173,7 @@ def get_periods(db: Session = Depends(get_db)):
         res.append({"id":p.id,"name":p.name,"target_schools":p.target_schools,"is_active":p.is_active,"exams":exs})
     return res
 
-# UPLOAD SOAL ANTI NAN
+# UPLOAD SOAL ANTI NAN & BERSIH
 @app.post("/admin/upload-questions/{eid}")
 async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
@@ -228,7 +221,7 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
                     val=str(r.get(f'Opsi{c}') or '').strip()
                     if val and val.lower() != 'nan': db.add(Option(question_id=q.id, label=val, option_index=c, is_correct=(c in keys)))
             cnt+=1
-        db.commit(); return {"message": f"Sukses {cnt}"}
+        db.commit(); return {"message": f"Sukses {cnt} soal tersimpan"}
     except Exception as e: return {"message": str(e)}
 
 # IMPORT SISWA LEBIH PINTAR
@@ -266,8 +259,8 @@ async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(g
             if not u: continue 
             if db.query(User).filter_by(username=u).first(): continue
             db.add(User(username=u, password=p, full_name=n, role=role, school=s)); add+=1
-        db.commit(); return {"message": f"Sukses {add} user"}
-    except Exception as e: return {"message": f"Gagal: {str(e)}"}
+        db.commit(); return {"message": f"Sukses menambah {add} siswa baru!"}
+    except Exception as e: return {"message": f"Gagal Import: {str(e)}"}
 
 @app.post("/admin/users")
 def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
@@ -355,7 +348,12 @@ def admin_preview(eid: str, db: Session = Depends(get_db)):
         if q.type=='table_boolean': ans="Tabel"
         elif q.type=='short_answer': ans=q.options[0].correct_text
         else: ans=next((o.option_index for o in q.options if o.is_correct),"-")
-        qs.append({"id":q.id, "text":q.text, "type":q.type, "explanation":q.explanation, "image_url":q.image_url, "reading_material":q.reading_material, "correct_answer":ans})
+        opts_display = []
+        if q.type == 'table_boolean':
+            for o in q.options: opts_display.append(f"{o.label} ({o.correct_text})")
+        elif q.type == 'multiple_choice' or q.type == 'complex':
+             for o in q.options: opts_display.append(f"{o.option_index}. {o.label}")
+        qs.append({"id":q.id, "text":q.text, "type":q.type, "explanation":q.explanation, "image_url":q.image_url, "reading_material":q.reading_material, "correct_answer":ans, "options_preview": opts_display})
     return {"title":e.title,"questions":qs}
 @app.put("/admin/questions/{qid}")
 def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get_db)):
@@ -388,14 +386,6 @@ async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_
             if pd.notna(univ) and pd.notna(prod): db.add(Major(university=str(univ).strip(), name=str(prod).strip(), passing_grade=float(pg or 0))); count+=1
         db.commit(); return {"message": f"Sukses! {count} Jurusan."}
     except Exception as e: return {"message":str(e)}
-@app.post("/config/release")
-def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
-    c=db.query(SystemConfig).filter_by(key="release_announcement").first()
-    if c: c.value=d.value 
-    else: db.add(SystemConfig(key="release_announcement",value=d.value))
-    db.commit(); return {"message":"OK"}
-@app.get("/config/release")
-def get_conf(db: Session=Depends(get_db)): c=db.query(SystemConfig).filter_by(key="release_announcement").first(); return {"is_released": (c.value=="true") if c else False}
 try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors

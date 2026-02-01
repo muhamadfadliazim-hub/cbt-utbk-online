@@ -53,9 +53,16 @@ const ExamSimulation = ({ examData, onSubmit }) => {
 
   const handleSubmit = () => { if(window.confirm("Yakin ingin mengakhiri ujian?")) onSubmit(answers); };
 
+  // FIX RENDER TEXT (BOLD, ITALIC, NAN)
   const renderText = (text) => {
     if (!text || text === 'nan') return "";
-    const parts = text.split(/(\$.*?\$)/g);
+    
+    // REPLACE [B] -> <b>, [I] -> <i>
+    let formatted = text
+        .replace(/\[B\]/gi, '<b>').replace(/\[\/B\]/gi, '</b>')
+        .replace(/\[I\]/gi, '<i>').replace(/\[\/I\]/gi, '</i>');
+
+    const parts = formatted.split(/(\$.*?\$)/g);
     return <span className="text-slate-800 leading-relaxed text-lg">{parts.map((p, i) => p.startsWith('$') ? <span key={i} className="mx-1"><InlineMath math={p.replace(/\$/g, '')} /></span> : <span key={i} dangerouslySetInnerHTML={{ __html: p.replace(/\n/g, '<br/>') }} />)}</span>;
   };
 
@@ -213,7 +220,16 @@ const ExamSimulation = ({ examData, onSubmit }) => {
                         else filled = !!answers[q.id];
                         
                         return (
-                            <button key={i} onClick={()=>setCurrentIndex(i)} className={`aspect-square rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center border-2 ${i===currentIndex ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : filled ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-indigo-300'}`}>{i+1}</button>
+                            <button 
+                                key={i} 
+                                onClick={()=>setCurrentIndex(i)} 
+                                className={`aspect-square rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center border-2 
+                                ${i===currentIndex ? 'bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-100' : 
+                                  filled ? 'bg-emerald-500 text-white border-emerald-500' : 
+                                  'bg-slate-50 text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'}`}
+                            >
+                                {i+1}
+                            </button>
                         )
                     })}
                 </div>
