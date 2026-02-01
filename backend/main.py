@@ -97,7 +97,7 @@ def calculate_irt_score(correct_questions, total_questions):
     final = 500 + (z * 100)
     return round(max(200, min(1000, final)))
 
-app = FastAPI(title="CBT FIX IMPORT")
+app = FastAPI(title="CBT FIX SYNTAX")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("startup")
@@ -105,15 +105,35 @@ def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
+        # DB Migration Check Manual
+        with engine.connect() as conn:
+            try: conn.execute(text("ALTER TABLE options ADD COLUMN IF NOT EXISTS correct_text TEXT")); conn.commit()
+            except: pass
+            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS type VARCHAR")); conn.commit()
+            except: pass
+            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_correct INTEGER DEFAULT 0")); conn.commit()
+            except: pass
+            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_total INTEGER DEFAULT 0")); conn.commit()
+            except: pass
+        
         if db.query(User).filter_by(username="admin_cabang").count() == 0:
             db.add(User(username="admin_cabang", password="123", full_name="Admin", role="admin", school="PUSAT"))
             db.commit()
-    except: pass
-    finally: db.close()
+    except Exception as e:
+        print(f"Startup Warning: {e}")
+    finally: 
+        db.close()
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
+
+# === INI YANG KEMARIN BIKIN ERROR, SEKARANG SUDAH DIPECAH ===
 def get_db():
-    db = SessionLocal(); try: yield db; finally: db.close()
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+# ============================================================
 
 # SCHEMAS
 class LoginSchema(BaseModel): username: str; password: str
@@ -146,29 +166,12 @@ def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
     for c,t in [("PU",30),("PPU",15),("PBM",25),("PK",20),("LBI",40),("LBE",20),("PM",40)]: db.add(Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=t))
     db.commit(); return {"message": "OK"}
 
-# API PERIODS DENGAN COUNTING SOAL YANG AKURAT
 @app.get("/admin/periods")
 def get_periods(db: Session = Depends(get_db)):
-    # Menggunakan options joinedload agar counting question real-time
-    ps = db.query(ExamPeriod).order_by(ExamPeriod.id.desc()).options(joinedload(ExamPeriod.exams).joinedload(Exam.questions)).all()
-    res = []
+    ps=db.query(ExamPeriod).order_by(ExamPeriod.id.desc()).options(joinedload(ExamPeriod.exams).joinedload(Exam.questions)).all(); res=[]
     for p in ps:
-        exs = []
-        for e in p.exams:
-            exs.append({
-                "id": e.id,
-                "title": e.title,
-                "code": e.code,
-                "duration": e.duration,
-                "q_count": len(e.questions) # Hitung jumlah soal real
-            })
-        res.append({
-            "id": p.id,
-            "name": p.name,
-            "target_schools": p.target_schools,
-            "is_active": p.is_active,
-            "exams": exs
-        })
+        exs=[{"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"q_count":len(e.questions)} for e in p.exams]
+        res.append({"id":p.id,"name":p.name,"target_schools":p.target_schools,"is_active":p.is_active,"exams":exs})
     return res
 
 @app.post("/admin/upload-questions/{eid}")
@@ -203,47 +206,37 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
         db.commit(); return {"message": f"Sukses {cnt}"}
     except Exception as e: return {"message": str(e)}
 
-# === IMPORT SISWA LEBIH PINTAR (SMART DETECT) ===
+# === IMPORT SISWA LEBIH PINTAR ===
 @app.post("/admin/users/bulk")
 async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         c = await file.read()
         df = pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
-        
-        # 1. NORMALISASI HEADER (Hapus spasi, lowercase)
-        # Contoh: "Nama Lengkap " -> "namalengkap"
         df.columns = [str(col).strip().lower().replace(' ', '').replace('_', '') for col in df.columns]
-        
         add = 0
         
-        # 2. DEFINISI VARIASI NAMA KOLOM
+        def get_val(row, candidates):
+            for c in candidates:
+                if c in row.index and pd.notna(row[c]): return str(row[c]).strip()
+            return None
+
         cols_user = ['username', 'user', 'nis', 'nisn', 'nomor', 'id', 'login']
         cols_pass = ['password', 'pass', 'sandi', 'pin', 'token', 'kode']
         cols_name = ['nama', 'name', 'fullname', 'namalengkap', 'siswa', 'namasiswa']
         cols_school = ['sekolah', 'school', 'asal', 'asalsekolah', 'unit']
         cols_role = ['role', 'peran', 'jabatan']
 
-        def get_val(row, candidates):
-            for c in candidates:
-                if c in row.index and pd.notna(row[c]): return str(row[c]).strip()
-            return None
-
         for _, r in df.iterrows():
             u = get_val(r, cols_user)
-            p = get_val(r, cols_pass) or "12345" # Default Pass
-            n = get_val(r, cols_name) or u       # Default Nama = User
+            p = get_val(r, cols_pass) or "12345" 
+            n = get_val(r, cols_name) or u       
             s = get_val(r, cols_school) or "Umum"
             role_raw = get_val(r, cols_role)
             role = "admin" if role_raw and "admin" in str(role_raw).lower() else "student"
-            
-            if not u: continue # User wajib ada
-            
-            # Cek Duplikat
+            if not u: continue 
             if db.query(User).filter_by(username=str(u).strip()).first(): continue
-            
             db.add(User(username=str(u).strip(), password=str(p).strip(), full_name=str(n).strip(), role=role, school=str(s).strip()))
             add += 1
-            
         db.commit()
         return {"message": f"Sukses menambah {add} siswa baru!"}
     except Exception as e: return {"message": f"Gagal Import: {str(e)}"}
@@ -270,7 +263,6 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=d.username).first()
     if db.query(ExamResult).filter_by(user_id=u.id,exam_id=exam_id).first(): return {"message":"Done","score":0}
     questions = db.query(Question).filter_by(exam_id=exam_id).all()
-    # RE-IMPLENTASI CALC SCORE DISINI
     corr=0; tot_w=0; earn_w=0
     for q in questions:
         ans=d.answers.get(str(q.id)); tot_w+=q.difficulty; is_r=False
@@ -287,7 +279,9 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
         else:
             k=next((o.option_index for o in q.options if o.is_correct),None)
             if str(ans)==str(k): is_r=True
-        if is_r: corr+=1; earn_w+=q.difficulty
+        if is_r: 
+            corr+=1; earn_w+=q.difficulty; q.stats_correct+=1 # UPDATE STATS
+        q.stats_total+=1
     
     final = 200+(earn_w/tot_w)*800 if tot_w>0 else 0
     db.add(ExamResult(user_id=u.id, exam_id=exam_id, correct_count=corr, wrong_count=len(questions)-corr, irt_score=final))
