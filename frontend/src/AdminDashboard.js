@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
+// IMPORT IKON LENGKAP - JANGAN DIHAPUS
 import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save } from 'lucide-react';
-import 'katex/dist/katex.min.css'; 
-import { InlineMath } from 'react-katex';
+import 'katex/dist/katex.min.css'; import { InlineMath } from 'react-katex';
 
 const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [tab, setTab] = useState('periods');
@@ -43,6 +43,15 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // AUTO REFRESH REKAP SETIAP 5 DETIK
+  useEffect(() => {
+      let interval;
+      if (tab === 'recap') {
+          interval = setInterval(fetchData, 5000);
+      }
+      return () => clearInterval(interval);
+  }, [tab, fetchData]);
+
   const handleCreatePeriod = async () => {
     if (!newPeriodName) return;
     await fetch(`${apiUrl}/admin/periods`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newPeriodName, target_schools: targetSchool }) });
@@ -66,12 +75,10 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           const res = await fetch(`${apiUrl}/admin/exams/${examId}/preview`); 
           if(!res.ok) throw new Error();
           setPreviewQuestions(await res.json()); 
-          
           try {
             const res2 = await fetch(`${apiUrl}/admin/exams/${examId}/analysis`);
             if(res2.ok) setItemAnalysis(await res2.json());
           } catch(e) { setItemAnalysis([]); }
-
       } catch { alert("Gagal load preview."); }
   };
 
@@ -106,9 +113,15 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const handleUploadMajors = async (e) => { const file = e.target.files[0]; const formData = new FormData(); formData.append('file', file); const res = await fetch(`${apiUrl}/admin/upload-majors`, { method: 'POST', body: formData }); alert((await res.json()).message); };
 
   const handleReset = async (userId, examId = null) => {
-      if(!window.confirm("Reset nilai?")) return;
-      await fetch(`${apiUrl}/admin/reset-result`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ user_id: userId, exam_id: examId }) });
-      alert("Berhasil di-reset!"); fetchData();
+      const msg = examId ? "Reset nilai subtes ini?" : "Reset SEMUA hasil ujian siswa ini?";
+      if(!window.confirm(msg)) return;
+      try {
+          const res = await fetch(`${apiUrl}/admin/reset-result`, {
+              method: 'POST', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ user_id: userId, exam_id: examId })
+          });
+          if(res.ok) { alert("Berhasil di-reset!"); fetchData(); }
+      } catch { alert("Gagal reset"); }
   };
 
   const filteredUsers = users.filter(u => u.full_name.toLowerCase().includes(searchUser.toLowerCase()) && (selectedSchoolFilter === 'Semua' || u.school === selectedSchoolFilter));
@@ -116,16 +129,12 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const renderText = (text) => {
       if(!text || text === 'nan') return "";
       let formatted = text.replace(/\[B\]/gi, '<b>').replace(/\[\/B\]/gi, '</b>').replace(/\[I\]/gi, '<i>').replace(/\[\/I\]/gi, '</i>');
-      const parts = formatted.split(/(\$.*?\$)/g);
-      return parts.map((part, index) => {
-          if (part.startsWith('$') && part.endsWith('$')) return <span key={index} className="mx-1"><InlineMath math={part.replace(/\$/g, '')} /></span>;
-          return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br/>') }} />;
-      });
+      return <span dangerouslySetInnerHTML={{ __html: formatted.replace(/\n/g, '<br/>') }} />;
   };
 
   const renderRecap = () => {
     const studentWithResults = filteredUsers.filter(u => u.results && u.results.length > 0);
-    if (studentWithResults.length === 0) return <div className="p-8 text-center text-slate-400">Belum ada data.</div>;
+    if (studentWithResults.length === 0) return <div className="p-8 text-center text-slate-400">Belum ada data ujian yang masuk.</div>;
     return (
       <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
         <div className="overflow-x-auto">
@@ -138,12 +147,13 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                         {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=><th key={k} className="p-3 text-center border-l w-12">{k}</th>)}
                         <th className="p-4 text-center bg-indigo-50 border-l font-black text-indigo-700">AVG</th>
                         <th className="p-4 text-center border-l">Status</th>
-                        <th className="p-4 text-center border-l">Reset</th>
+                        <th className="p-4 text-center border-l bg-red-50 text-red-600">RESET</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y text-slate-600">
                     {studentWithResults.map(u => {
-                        const scores = {}; u.results.forEach(r => scores[r.exam_id.split('_').pop()] = {val: Math.round(r.irt_score), eid: r.exam_id});
+                        const scores = {}; 
+                        u.results.forEach(r => scores[r.exam_id.split('_').pop()] = {val: Math.round(r.irt_score), eid: r.exam_id});
                         const total = Object.values(scores).reduce((a,b)=>a+b.val,0);
                         const avg = Math.round(total/7);
                         const c1 = majors.find(m => m.id === u.choice1_id);
@@ -159,7 +169,9 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                                 {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> (<td key={k} className={`p-3 text-center border-l cursor-pointer hover:bg-red-100 hover:text-red-600 transition ${scores[k] ? 'font-bold text-slate-700' : 'text-slate-300'}`} onClick={() => scores[k] && handleReset(u.id, scores[k].eid)} title="Klik untuk reset nilai ini">{scores[k]?.val || "-"}</td>))}
                                 <td className="p-4 text-center font-black bg-indigo-50 border-l text-indigo-700 text-sm">{avg}</td>
                                 <td className="p-4 text-center border-l">{status}</td>
-                                <td className="p-4 text-center border-l"><button onClick={() => handleReset(u.id)} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-200 transition" title="Reset Semua"><Trash2 size={16}/></button></td>
+                                <td className="p-4 text-center border-l">
+                                    <button onClick={() => handleReset(u.id)} className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition shadow-sm border border-red-200 font-bold text-xs">RESET SEMUA</button>
+                                </td>
                             </tr>
                         );
                     })}
@@ -179,6 +191,13 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
       </aside>
 
       <main className="flex-1 ml-64 p-8">
+        <div className="flex justify-end mb-4">
+             <button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg text-sm font-bold shadow-sm hover:bg-slate-50 text-indigo-600"><RefreshCcw size={16}/> Refresh Data</button>
+        </div>
+        
+        {/* ... (BAGIAN PERIODS, PREVIEW, USERS, CONFIG SAMA SEPERTI SEBELUMNYA) ... */}
+        {/* Pastikan paste bagian renderRecap di atas ke dalam komponen utama */}
+        
         {tab === 'periods' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex gap-4 items-center">
@@ -224,7 +243,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           </div>
         )}
 
-        {/* MODAL PREVIEW & EDIT (SAMA SEPERTI SEBELUMNYA) */}
+        {/* MODAL PREVIEW & EDIT (PASTIKAN KODE INI ADA) */}
         {previewQuestions && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col">
@@ -304,7 +323,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             </div>
         )}
 
-        {/* TAB SISWA & CONFIG (SAMA SEPERTI SEBELUMNYA) */}
         {tab === 'users' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between items-center">
@@ -334,6 +352,8 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           </div>
         )}
 
+        {tab === 'recap' && renderRecap()}
+        
         {tab === 'config' && (
             <div className="space-y-6">
                 <div className="bg-white p-8 rounded-2xl shadow-sm border flex gap-6 items-center">

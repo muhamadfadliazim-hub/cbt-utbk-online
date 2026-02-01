@@ -1,17 +1,15 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text, inspect
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session, joinedload
-from sqlalchemy import distinct, func
+from sqlalchemy import distinct
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 import pandas as pd
 import io
 import os
-import math
 
 # CONFIG
 UPLOAD_DIR = "uploads"
@@ -82,37 +80,26 @@ class SystemConfig(Base):
     __tablename__ = "system_configs"
     key = Column(String, primary_key=True); value = Column(String)
 
-# LOGIC IRT (SAFETY: Menangani nilai difficulty yang null/error)
+# LOGIC
 def calculate_irt_score(correct_questions, total_questions):
     try:
         if not total_questions: return 0
-        
-        # Safety: Pastikan difficulty dihitung sebagai float, default 1.0 jika error/null
-        def safe_diff(q):
-            try: return float(q.difficulty) if q.difficulty is not None else 1.0
-            except: return 1.0
-
-        raw = sum([safe_diff(q) for q in correct_questions])
-        max_score = sum([safe_diff(q) for q in total_questions])
-        
-        if max_score <= 0: return 0 # Hindari pembagian nol
-        
+        raw = sum([float(q.difficulty or 1.0) for q in correct_questions])
+        max_score = sum([float(q.difficulty or 1.0) for q in total_questions])
+        if max_score <= 0: return 0
         theta = raw / max_score 
         z = (theta - 0.5) / 0.15 
         final = 500 + (z * 100)
         return round(max(200, min(1000, final)))
-    except:
-        return 500 # Nilai aman jika sistem gagal total
+    except: return 500
 
 app = FastAPI(title="CBT FINAL FIX")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 def get_db():
     db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    try: yield db
+    finally: db.close()
 
 @app.on_event("startup")
 def startup_event():
@@ -193,14 +180,12 @@ def get_exam(exam_id: str, db: Session = Depends(get_db)):
         qs.append({"id":q.id,"type":q.type,"text":q.text,"image_url":q.image_url,"reading_material":q.reading_material,"options":opts})
     return {"id":e.id,"title":e.title,"duration":e.duration,"questions":qs}
 
-# API SUBMIT DENGAN SAFETY CHECK (SOLUSI GAGAL KIRIM)
 @app.post("/exams/{exam_id}/submit")
 def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
     try:
         u=db.query(User).filter_by(username=d.username).first()
         if not u: raise HTTPException(404, "User not found")
-        
-        # Hapus jawaban lama agar tidak duplikat (menggunakan flush agar aman)
+        # Overwrite jika sudah ada
         db.query(ExamResult).filter_by(user_id=u.id, exam_id=exam_id).delete()
         db.flush() 
 
@@ -209,12 +194,8 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
         for q in questions:
             ans = d.answers.get(str(q.id))
             is_r = False
-            
-            # PROTEKSI DATA KOSONG
-            if not ans: continue
-
             if q.type=='short_answer': 
-                if q.options and str(ans).strip().lower() == str(q.options[0].correct_text or "").strip().lower(): is_r=True
+                if q.options and str(ans).strip().lower() == str(q.options[0].correct_text).strip().lower(): is_r=True
             elif q.type=='complex':
                 valid_keys = set([o.option_index for o in q.options if o.is_correct])
                 if isinstance(ans, list) and set(ans) == valid_keys: is_r=True
@@ -227,23 +208,16 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
             else:
                 k = next((o.option_index for o in q.options if o.is_correct), None)
                 if str(ans) == str(k): is_r=True
-            
             if is_r:
-                corr_q.append(q)
-                q.stats_correct = (q.stats_correct or 0) + 1
-            
-            q.stats_total = (q.stats_total or 0) + 1
+                corr_q.append(q); q.stats_correct += 1
+            q.stats_total += 1
         
         final = calculate_irt_score(corr_q, questions)
-        
         db.add(ExamResult(user_id=u.id, exam_id=exam_id, correct_count=len(corr_q), wrong_count=len(questions)-len(corr_q), irt_score=final))
         db.commit()
         return {"message":"Saved", "score":final}
     except Exception as e:
-        db.rollback() # Rollback jika error
-        print(f"SUBMIT ERROR: {e}")
-        # Tetap return sukses agar siswa tidak panik (tapi skor 0 sementara)
-        return {"message":"Saved (Partial)", "score": 0}
+        raise HTTPException(500, f"Gagal simpan: {str(e)}")
 
 @app.put("/admin/questions/{qid}")
 def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get_db)):
@@ -262,7 +236,6 @@ def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get
          else: db.add(Option(question_id=qid, label="KUNCI", correct_text=d.correct_answer))
     db.commit(); return {"message": "Tersimpan"}
 
-# UPLOAD SOAL ANTI NAN
 @app.post("/admin/upload-questions/{eid}")
 async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
@@ -331,8 +304,13 @@ def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
     db.add(User(username=u.username, password=u.password, full_name=u.full_name, role=u.role, school=u.school)); db.commit(); return {"message":"OK"}
 @app.post("/admin/users/delete-bulk")
 def del_users(d: BulkDeleteSchema, db: Session = Depends(get_db)): db.query(User).filter(User.id.in_(d.user_ids)).delete(synchronize_session=False); db.commit(); return {"message":"OK"}
+
+# == FETCH USER BESERTA HASIL (PENTING BUAT REKAP) ==
 @app.get("/admin/users") 
-def get_users(db: Session = Depends(get_db)): return db.query(User).options(joinedload(User.results)).all()
+def get_users(db: Session = Depends(get_db)): 
+    return db.query(User).options(joinedload(User.results)).all()
+# ===================================================
+
 @app.post("/admin/periods/{pid}/toggle") 
 def toggle_period(pid: int, db: Session = Depends(get_db)): p=db.query(ExamPeriod).filter_by(id=pid).first(); p.is_active=not p.is_active; db.commit(); return {"message":"OK"}
 @app.delete("/admin/periods/{pid}") 
