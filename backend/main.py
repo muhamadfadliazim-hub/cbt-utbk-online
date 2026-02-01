@@ -33,7 +33,7 @@ class User(Base):
     username = Column(String, unique=True, index=True)
     password = Column(String)
     full_name = Column(String)
-    role = Column(String, default="student") # BISA ADMIN/STUDENT
+    role = Column(String, default="student") 
     school = Column(String, nullable=True)
     choice1_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
     choice2_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
@@ -68,9 +68,7 @@ class Question(Base):
     image_url = Column(String, nullable=True)
     reading_material = Column(Text, nullable=True) 
     explanation = Column(Text, nullable=True)     
-    label1 = Column(String, default="Benar") 
-    label2 = Column(String, default="Salah")
-    # STATISTIK SOAL (UNTUK ITEM ANALYSIS)
+    # STATISTIK SOAL
     stats_correct = Column(Integer, default=0)
     stats_total = Column(Integer, default=0)
     options = relationship("Option", back_populates="question", cascade="all, delete-orphan")
@@ -95,38 +93,16 @@ class SystemConfig(Base):
     __tablename__ = "system_configs"
     key = Column(String, primary_key=True); value = Column(String)
 
-# --- IRT ENGINE (THE REAL DEAL) ---
+# --- IRT ENGINE ---
 def calculate_irt_score(correct_questions, total_questions):
-    """
-    Menggunakan pendekatan T-Score (Standardized Score) yang dipakai UTBK.
-    Nilai = 500 + 100 * ((Theta - Mean) / SD)
-    Theta diestimasi dari bobot soal (Difficulty).
-    """
     if not total_questions: return 0
-    
-    # 1. Hitung Theta (Kemampuan Siswa based on Difficulty)
-    # Soal sulit (difficulty tinggi) bobotnya lebih besar
     raw_weighted_score = sum([q.difficulty for q in correct_questions])
     max_possible_score = sum([q.difficulty for q in total_questions])
-    
     if max_possible_score == 0: return 0
-    
-    # Persentase kemampuan terbobot
     theta = raw_weighted_score / max_possible_score 
-    
-    # 2. Konversi ke Skala UTBK (Range ~200 - 1000)
-    # Asumsi Mean Populasi = 0.5 (Rata-rata orang bisa jawab setengah bobot)
-    # Asumsi SD Populasi = 0.15
     z_score = (theta - 0.5) / 0.15 
-    
-    # T-Score Formula: 500 + (Z * 100)
-    # Kita clamp biar gak minus atau lebih dari 1000
     final_score = 500 + (z_score * 100)
-    
-    # Adjustment biar gak terlalu ekstrem
-    final_score = max(200, min(1000, final_score))
-    
-    return round(final_score)
+    return round(max(200, min(1000, final_score)))
 
 app = FastAPI(title="CBT PRO MAX ULTIMATE")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -140,15 +116,21 @@ def startup_event():
     except: pass
     try: db.execute(text("ALTER TABLE questions ADD COLUMN stats_total INTEGER DEFAULT 0")); db.commit()
     except: pass
-    
     if db.query(User).filter_by(username="admin_cabang").count() == 0:
         db.add(User(username="admin_cabang", password="123", full_name="Admin", role="admin", school="PUSAT"))
         db.commit()
     db.close()
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
+
+# === PERBAIKAN FATAL: SYNTAX ERROR DIHILANGKAN ===
 def get_db():
-    db = SessionLocal(); try: yield db; finally: db.close()
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+# =================================================
 
 # SCHEMAS
 class LoginSchema(BaseModel): username: str; password: str
@@ -168,7 +150,6 @@ def login(d: LoginSchema, db: Session = Depends(get_db)):
     if u and u.password==d.password: return {"message":"OK", "username":u.username, "role":u.role, "school":u.school, "choice1_id":u.choice1_id}
     raise HTTPException(400, "Login Gagal")
 
-# EDIT SOAL & PEMBAHASAN
 @app.put("/admin/questions/{qid}")
 def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get_db)):
     q = db.query(Question).filter_by(id=qid).first()
@@ -178,7 +159,6 @@ def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get
     db.commit()
     return {"message": "Soal terupdate"}
 
-# ITEM ANALYSIS (ANALISIS BUTIR SOAL)
 @app.get("/admin/exams/{eid}/analysis")
 def item_analysis(eid: str, db: Session = Depends(get_db)):
     e = db.query(Exam).filter_by(id=eid).first()
@@ -187,29 +167,16 @@ def item_analysis(eid: str, db: Session = Depends(get_db)):
     for i, q in enumerate(e.questions):
         percent = 0
         if q.stats_total > 0: percent = round((q.stats_correct / q.stats_total) * 100, 1)
-        res.append({
-            "no": i+1,
-            "text": q.text[:50] + "...",
-            "correct": q.stats_correct,
-            "total": q.stats_total,
-            "percent": percent,
-            "difficulty": q.difficulty
-        })
+        res.append({"no": i+1, "text": q.text[:50] + "...", "correct": q.stats_correct, "total": q.stats_total, "percent": percent, "difficulty": q.difficulty})
     return res
 
-# SUBMIT UJIAN (UPDATE STATS SOAL)
 @app.post("/exams/{exam_id}/submit")
 def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=d.username).first()
     if db.query(ExamResult).filter_by(user_id=u.id,exam_id=exam_id).first(): return {"message":"Done","score":0}
-    
-    questions = db.query(Question).filter_by(exam_id=exam_id).all()
-    correct_qs = []
-    
+    questions = db.query(Question).filter_by(exam_id=exam_id).all(); correct_qs = []
     for q in questions:
-        ans = d.answers.get(str(q.id))
-        is_correct = False
-        
+        ans = d.answers.get(str(q.id)); is_correct = False
         if q.type == 'short_answer':
             key = q.options[0].correct_text if q.options else ""
             if str(ans).strip().lower() == str(key).strip().lower(): is_correct = True
@@ -226,25 +193,19 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
         else:
             key = next((o.option_index for o in q.options if o.is_correct), None)
             if str(ans) == str(key): is_correct = True
-            
         if is_correct: 
-            correct_qs.append(q)
-            q.stats_correct += 1 # UPDATE STATS
-        q.stats_total += 1       # UPDATE STATS
-        
+            correct_qs.append(q); q.stats_correct += 1 
+        q.stats_total += 1       
     score = calculate_irt_score(correct_qs, questions)
     db.add(ExamResult(user_id=u.id, exam_id=exam_id, correct_count=len(correct_qs), wrong_count=len(questions)-len(correct_qs), irt_score=score))
-    db.commit()
-    return {"message":"Saved", "score": score}
+    db.commit(); return {"message":"Saved", "score": score}
 
-# ADMIN: ADD USER DENGAN ROLE
 @app.post("/admin/users")
 def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
     if db.query(User).filter(User.username == u.username).first(): raise HTTPException(400, "Username ada")
     db.add(User(username=u.username, password=u.password, full_name=u.full_name, role=u.role, school=u.school))
     db.commit(); return {"message":"Berhasil"}
 
-# SISANYA TETAP SAMA (UPLOAD, PDF, DLL)
 @app.get("/admin/schools-list")
 def get_schools_list(db: Session = Depends(get_db)): return ["Semua"] + ([s[0] for s in db.query(distinct(User.school)).filter(User.school != None).all()] or [])
 @app.get("/majors")
@@ -387,6 +348,7 @@ def rev(exam_id: str, db: Session = Depends(get_db)):
         else: ans=next((o.label for o in x.options if o.is_correct),"")
         q.append({"id":x.id,"text":x.text,"image_url":x.image_url,"reading_material":x.reading_material,"explanation":x.explanation,"correct_answer":ans})
     return {"title":e.title,"questions":q}
+# PDF EXPORT
 try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
