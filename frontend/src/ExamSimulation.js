@@ -10,10 +10,8 @@ const ExamSimulation = ({ examData, onSubmit }) => {
       catch { return {}; }
   });
   
-  // LOGIKA TIMER ANTI-CHEAT (Hitungan Mundur Real)
   const [timeLeft, setTimeLeft] = useState(() => {
       const saved = localStorage.getItem(`timer_${examData?.id}`);
-      // Jika ada simpanan waktu, pakai itu. Jika tidak, pakai durasi * 60 (menit ke detik)
       if (saved) return parseInt(saved);
       return (examData?.duration || 60) * 60; 
   });
@@ -24,7 +22,6 @@ const ExamSimulation = ({ examData, onSubmit }) => {
       setTimeLeft((prev) => {
         if (prev <= 1) { 
             clearInterval(timer); 
-            // AUTO SUBMIT SAAT WAKTU HABIS
             alert("Waktu Habis! Ujian otomatis dikumpulkan.");
             onSubmit(answers); 
             return 0; 
@@ -39,14 +36,14 @@ const ExamSimulation = ({ examData, onSubmit }) => {
   const handleAnswer = (qid, val, type) => {
       setAnswers(prev => {
           let newAns;
-          if (type === 'complex') { // Checkbox Logic
+          if (type === 'complex') { 
               const current = prev[qid] || [];
               if (current.includes(val)) newAns = { ...prev, [qid]: current.filter(x => x !== val) };
               else newAns = { ...prev, [qid]: [...current, val] };
-          } else if (type === 'table_boolean') { // Tabel Logic {rowId: "B"}
+          } else if (type === 'table_boolean') {
               const current = prev[qid] || {};
               newAns = { ...prev, [qid]: { ...current, ...val } };
-          } else { // PG Biasa & Isian
+          } else { 
               newAns = { ...prev, [qid]: val };
           }
           localStorage.setItem(`ans_${examData.id}`, JSON.stringify(newAns));
@@ -57,17 +54,15 @@ const ExamSimulation = ({ examData, onSubmit }) => {
   const handleSubmit = () => { if(window.confirm("Yakin ingin mengakhiri ujian?")) onSubmit(answers); };
 
   const renderText = (text) => {
-    if (!text) return "";
+    if (!text || text === 'nan') return "";
     const parts = text.split(/(\$.*?\$)/g);
-    return <span className="text-gray-800 leading-relaxed text-lg">{parts.map((p, i) => p.startsWith('$') ? <span key={i} className="mx-1"><InlineMath math={p.replace(/\$/g, '')} /></span> : <span key={i} dangerouslySetInnerHTML={{ __html: p.replace(/\n/g, '<br/>') }} />)}</span>;
+    return <span className="text-slate-800 leading-relaxed text-lg">{parts.map((p, i) => p.startsWith('$') ? <span key={i} className="mx-1"><InlineMath math={p.replace(/\$/g, '')} /></span> : <span key={i} dangerouslySetInnerHTML={{ __html: p.replace(/\n/g, '<br/>') }} />)}</span>;
   };
 
   if (!examData) return <div className="min-h-screen flex items-center justify-center bg-slate-100 font-bold text-slate-400">Memuat Soal...</div>;
   
   const q = examData.questions[currentIndex];
   const isLastQuestion = currentIndex === examData.questions.length - 1;
-
-  // Formatting Waktu (HH:MM:SS)
   const formatTime = (seconds) => {
       const h = Math.floor(seconds / 3600);
       const m = Math.floor((seconds % 3600) / 60);
@@ -75,9 +70,11 @@ const ExamSimulation = ({ examData, onSubmit }) => {
       return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  // Logic Hilangkan "Bacaan" jika kosong/nan
+  const hasReading = q.reading_material && q.reading_material.trim() !== '' && q.reading_material.toLowerCase() !== 'nan';
+
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans h-screen overflow-hidden select-none">
-      {/* HEADER MEWAH */}
+    <div className="min-h-screen bg-slate-50 flex flex-col font-sans h-screen overflow-hidden select-none text-slate-800">
       <header className="bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center z-20 shadow-sm">
         <div className="flex items-center gap-4">
             <div className="bg-indigo-600 text-white w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-lg shadow-indigo-200">{currentIndex + 1}</div>
@@ -92,33 +89,25 @@ const ExamSimulation = ({ examData, onSubmit }) => {
       </header>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* AREA SOAL */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
           <div className="max-w-5xl mx-auto">
             {/* BOX SOAL */}
             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden mb-6">
-                {q.reading_material && (
-                    <div className="p-6 bg-blue-50/50 border-b border-blue-100 text-slate-700 leading-relaxed text-sm">
-                        <div className="font-bold text-blue-600 mb-2 flex items-center gap-2"><List size={16}/> Bacaan</div>
-                        {renderText(q.reading_material)}
+                {/* HANYA TAMPILKAN JIKA ADA ISI */}
+                {hasReading && (
+                    <div className="p-6 bg-slate-50/50 border-b border-slate-100 text-slate-700 leading-relaxed text-sm">
+                        <div className="prose max-w-none">{renderText(q.reading_material)}</div>
                     </div>
                 )}
                 
                 <div className="p-8">
-                    {q.image_url && (
+                    {q.image_url && q.image_url !== 'nan' && (
                         <div className="mb-6 p-2 bg-slate-50 rounded-xl border border-slate-100 inline-block">
                             <img src={q.image_url} className="max-h-80 rounded-lg" alt="Soal"/>
                         </div>
                     )}
                     
                     <div className="flex gap-4">
-                        {/* Badge Tipe Soal */}
-                        <div className="flex-shrink-0">
-                            {q.type === 'multiple_choice' && <span className="bg-orange-100 text-orange-700 p-2 rounded-lg" title="Pilihan Ganda"><CheckCircle size={20}/></span>}
-                            {q.type === 'complex' && <span className="bg-purple-100 text-purple-700 p-2 rounded-lg" title="Pilihan Ganda Kompleks"><CheckSquare size={20}/></span>}
-                            {q.type === 'short_answer' && <span className="bg-emerald-100 text-emerald-700 p-2 rounded-lg" title="Isian Singkat"><Type size={20}/></span>}
-                            {q.type === 'table_boolean' && <span className="bg-blue-100 text-blue-700 p-2 rounded-lg" title="Tabel Benar Salah"><Grid size={20}/></span>}
-                        </div>
                         <div className="font-medium text-xl text-slate-800 leading-relaxed flex-1">
                             {renderText(q.text)}
                         </div>
@@ -126,7 +115,7 @@ const ExamSimulation = ({ examData, onSubmit }) => {
                 </div>
             </div>
 
-            {/* AREA JAWABAN (ADAPTIF) */}
+            {/* AREA JAWABAN */}
             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6">
                 <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Jawaban Anda</h3>
                 
@@ -155,7 +144,7 @@ const ExamSimulation = ({ examData, onSubmit }) => {
                             <tbody className="divide-y divide-slate-100">
                                 {q.options.map((opt) => (
                                     <tr key={opt.id} className="hover:bg-slate-50 transition">
-                                        <td className="p-4 font-medium text-slate-700">{opt.text}</td>
+                                        <td className="p-4 font-medium text-slate-700">{renderText(opt.text)}</td>
                                         <td className="text-center p-2">
                                             <label className="cursor-pointer block p-2">
                                                 <input type="radio" name={`row_${opt.id}`} checked={answers[q.id]?.[opt.id] === 'B'} onChange={() => handleAnswer(q.id, {[opt.id]: 'B'}, 'table_boolean')} className="w-6 h-6 accent-emerald-500 cursor-pointer"/>
@@ -196,7 +185,6 @@ const ExamSimulation = ({ examData, onSubmit }) => {
             </div>
           </div>
           
-          {/* NAVIGASI BAWAH */}
           <div className="max-w-5xl mx-auto mt-8 flex justify-between items-center pb-10">
             <button disabled={currentIndex===0} onClick={()=>setCurrentIndex(c=>c-1)} className="px-6 py-3 rounded-xl bg-white border border-slate-300 font-bold text-slate-500 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition"><ChevronLeft size={20}/> Sebelumnya</button>
             
@@ -207,7 +195,6 @@ const ExamSimulation = ({ examData, onSubmit }) => {
           </div>
         </main>
         
-        {/* SIDEBAR NOMOR SOAL */}
         <aside className="hidden xl:flex w-80 bg-white border-l border-slate-200 flex-col">
             <div className="p-6 border-b border-slate-100">
                 <h3 className="font-bold text-slate-800 flex items-center gap-2"><Grid size={18}/> Navigasi Soal</h3>
@@ -226,16 +213,7 @@ const ExamSimulation = ({ examData, onSubmit }) => {
                         else filled = !!answers[q.id];
                         
                         return (
-                            <button 
-                                key={i} 
-                                onClick={()=>setCurrentIndex(i)} 
-                                className={`aspect-square rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center border-2 
-                                ${i===currentIndex ? 'bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-100' : 
-                                  filled ? 'bg-emerald-500 text-white border-emerald-500' : 
-                                  'bg-slate-50 text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'}`}
-                            >
-                                {i+1}
-                            </button>
+                            <button key={i} onClick={()=>setCurrentIndex(i)} className={`aspect-square rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center border-2 ${i===currentIndex ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : filled ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-indigo-300'}`}>{i+1}</button>
                         )
                     })}
                 </div>

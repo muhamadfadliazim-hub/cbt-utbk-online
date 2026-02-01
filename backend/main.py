@@ -97,7 +97,7 @@ def calculate_irt_score(correct_questions, total_questions):
     final = 500 + (z * 100)
     return round(max(200, min(1000, final)))
 
-app = FastAPI(title="CBT PRO RESET")
+app = FastAPI(title="CBT PRO FINAL")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("startup")
@@ -123,9 +123,7 @@ def startup_event():
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
 def get_db():
-    db = SessionLocal()
-    try: yield db
-    finally: db.close()
+    db = SessionLocal(); try: yield db; finally: db.close()
 
 # SCHEMAS
 class LoginSchema(BaseModel): username: str; password: str
@@ -145,17 +143,13 @@ def login(d: LoginSchema, db: Session = Depends(get_db)):
     if u and u.password==d.password: return {"message":"OK", "username":u.username, "role":u.role, "school":u.school, "choice1_id":u.choice1_id}
     raise HTTPException(400, "Login Gagal")
 
-# --- FITUR RESET UJIAN (BARU) ---
 @app.post("/admin/reset-result")
 def reset_result(d: ResetResultSchema, db: Session = Depends(get_db)):
-    # Hapus spesifik subtes
     if d.exam_id:
         res = db.query(ExamResult).filter_by(user_id=d.user_id, exam_id=d.exam_id).first()
         if res: db.delete(res)
-    # Hapus semua hasil user ini
     else:
         db.query(ExamResult).filter_by(user_id=d.user_id).delete()
-    
     db.commit()
     return {"message": "Reset Berhasil"}
 
@@ -178,54 +172,96 @@ def get_periods(db: Session = Depends(get_db)):
         exs=[{"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"q_count":len(e.questions)} for e in p.exams]
         res.append({"id":p.id,"name":p.name,"target_schools":p.target_schools,"is_active":p.is_active,"exams":exs})
     return res
+
+# UPLOAD SOAL ANTI NAN
 @app.post("/admin/upload-questions/{eid}")
 async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
+        # BERSIHKAN DATA (NAN -> KOSONG)
+        df = df.fillna('')
+        
         old=db.query(Question).filter_by(exam_id=eid).all()
         for q in old: db.query(Option).filter_by(question_id=q.id).delete(); db.delete(q)
         db.commit(); cnt=0
         for _, r in df.iterrows():
-            txt=r.get('Soal') or r.get('soal') or r.get('text'); 
-            if pd.isna(txt): continue
+            txt=str(r.get('Soal') or r.get('soal') or r.get('text')).strip()
+            if not txt or txt.lower()=='nan': continue
+            
             q_type='multiple_choice'; raw=str(r.get('Tipe') or 'PG').upper()
             if 'KOMPLEKS' in raw: q_type='complex'
             elif 'ISIAN' in raw: q_type='short_answer'
             elif 'TABEL' in raw: q_type='table_boolean'
-            q=Question(exam_id=eid, text=str(txt), type=q_type, difficulty=float(r.get('Kesulitan') or 1.0), reading_material=str(r.get('Bacaan') or ''), image_url=str(r.get('Gambar') or ''))
+            
+            diff = 1.0
+            try: diff = float(r.get('Kesulitan') or 1.0)
+            except: pass
+            
+            read_mat = str(r.get('Bacaan') or '').strip()
+            if read_mat.lower() == 'nan': read_mat = ''
+            
+            img_url = str(r.get('Gambar') or '').strip()
+            if img_url.lower() == 'nan': img_url = ''
+
+            q=Question(exam_id=eid, text=txt, type=q_type, difficulty=diff, reading_material=read_mat, image_url=img_url)
             db.add(q); db.commit()
+            
             kunci=str(r.get('Kunci') or '').strip()
+            if kunci.lower() == 'nan': kunci = ''
+            
             if q_type=='short_answer': db.add(Option(question_id=q.id, label="KUNCI", correct_text=kunci))
             elif q_type=='table_boolean':
                 keys=kunci.replace(' ','').split(',')
-                stmts=[r.get(c) for c in ['OpsiA','OpsiB','OpsiC','OpsiD','OpsiE']]
-                for i,s in enumerate(stmts): 
-                    if pd.notna(s): db.add(Option(question_id=q.id, label=str(s), option_index=str(i), correct_text=(keys[i] if i<len(keys) else "S")))
+                for i, c in enumerate(['OpsiA','OpsiB','OpsiC','OpsiD','OpsiE']):
+                    stmt=str(r.get(c) or '').strip()
+                    if stmt and stmt.lower() != 'nan': db.add(Option(question_id=q.id, label=stmt, option_index=str(i), correct_text=(keys[i] if i<len(keys) else "S")))
             else:
                 keys=[k.strip().upper() for k in kunci.replace(';',',').split(',')]
                 for i, c in enumerate(['A','B','C','D','E']):
-                    val=r.get(f'Opsi{c}')
-                    if pd.notna(val): db.add(Option(question_id=q.id, label=str(val), option_index=c, is_correct=(c in keys)))
+                    val=str(r.get(f'Opsi{c}') or '').strip()
+                    if val and val.lower() != 'nan': db.add(Option(question_id=q.id, label=val, option_index=c, is_correct=(c in keys)))
             cnt+=1
         db.commit(); return {"message": f"Sukses {cnt}"}
     except Exception as e: return {"message": str(e)}
+
+# IMPORT SISWA LEBIH PINTAR
 @app.post("/admin/users/bulk")
 async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
-        c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
+        c=await file.read()
+        df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
+        
+        # BERSIHKAN DATA
+        df = df.fillna('')
         df.columns = [str(col).strip().lower().replace(' ', '').replace('_', '') for col in df.columns]
+        
         add=0
         def get_val(row, candidates):
             for c in candidates: 
-                if c in row.index and pd.notna(row[c]): return str(row[c]).strip()
+                if c in row.index:
+                    val = str(row[c]).strip()
+                    if val and val.lower() != 'nan': return val
             return None
+
+        cols_user = ['username', 'user', 'nis', 'nisn', 'nomor', 'id', 'login']
+        cols_pass = ['password', 'pass', 'sandi', 'pin', 'token']
+        cols_name = ['nama', 'name', 'fullname', 'namalengkap', 'siswa', 'namasiswa']
+        cols_school = ['sekolah', 'school', 'asal', 'asalsekolah', 'unit']
+        cols_role = ['role', 'peran', 'jabatan']
+
         for _, r in df.iterrows():
-            u = get_val(r, ['username', 'user', 'nis']); p = get_val(r, ['password', 'pass']) or "12345"; n = get_val(r, ['nama', 'name']) or u; s = get_val(r, ['sekolah', 'school']) or "Umum"
-            role = "admin" if "admin" in str(get_val(r, ['role'])).lower() else "student"
-            if not u or db.query(User).filter_by(username=str(u).strip()).first(): continue
-            db.add(User(username=str(u).strip(), password=str(p).strip(), full_name=str(n).strip(), role=role, school=str(s).strip())); add+=1
-        db.commit(); return {"message": f"Sukses {add}"}
+            u = get_val(r, cols_user)
+            p = get_val(r, cols_pass) or "12345" 
+            n = get_val(r, cols_name) or u       
+            s = get_val(r, cols_school) or "Umum"
+            role = "admin" if "admin" in str(get_val(r, cols_role)).lower() else "student"
+            
+            if not u: continue 
+            if db.query(User).filter_by(username=u).first(): continue
+            db.add(User(username=u, password=p, full_name=n, role=role, school=s)); add+=1
+        db.commit(); return {"message": f"Sukses {add} user"}
     except Exception as e: return {"message": f"Gagal: {str(e)}"}
+
 @app.post("/admin/users")
 def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
     if db.query(User).filter(User.username == u.username).first(): raise HTTPException(400, "Username ada")
@@ -263,7 +299,7 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
             k=next((o.option_index for o in q.options if o.is_correct),None)
             if str(ans)==str(k): is_r=True
         if is_r: 
-            corr+=1; earn_w+=q.difficulty; q.stats_correct+=1 # UPDATE STATS
+            corr+=1; earn_w+=q.difficulty; q.stats_correct+=1
         q.stats_total+=1
     final = 200+(earn_w/tot_w)*800 if tot_w>0 else 0
     db.add(ExamResult(user_id=u.id, exam_id=exam_id, correct_count=corr, wrong_count=len(questions)-corr, irt_score=final))
@@ -345,14 +381,6 @@ async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_
             if pd.notna(univ) and pd.notna(prod): db.add(Major(university=str(univ).strip(), name=str(prod).strip(), passing_grade=float(pg or 0))); count+=1
         db.commit(); return {"message": f"Sukses! {count} Jurusan."}
     except Exception as e: return {"message":str(e)}
-@app.post("/config/release")
-def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
-    c=db.query(SystemConfig).filter_by(key="release_announcement").first()
-    if c: c.value=d.value 
-    else: db.add(SystemConfig(key="release_announcement",value=d.value))
-    db.commit(); return {"message":"OK"}
-@app.get("/config/release")
-def get_conf(db: Session=Depends(get_db)): c=db.query(SystemConfig).filter_by(key="release_announcement").first(); return {"is_released": (c.value=="true") if c else False}
 try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
