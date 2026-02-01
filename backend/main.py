@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text
 from sqlalchemy.ext.declarative import declarative_base
@@ -187,7 +188,7 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
         if not u: raise HTTPException(404, "User not found")
         # Overwrite jika sudah ada
         db.query(ExamResult).filter_by(user_id=u.id, exam_id=exam_id).delete()
-        db.flush() 
+        db.commit()
 
         questions = db.query(Question).filter_by(exam_id=exam_id).all()
         corr_q = []
@@ -236,6 +237,7 @@ def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get
          else: db.add(Option(question_id=qid, label="KUNCI", correct_text=d.correct_answer))
     db.commit(); return {"message": "Tersimpan"}
 
+# UPLOAD SOAL ANTI NAN
 @app.post("/admin/upload-questions/{eid}")
 async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
@@ -304,13 +306,8 @@ def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
     db.add(User(username=u.username, password=u.password, full_name=u.full_name, role=u.role, school=u.school)); db.commit(); return {"message":"OK"}
 @app.post("/admin/users/delete-bulk")
 def del_users(d: BulkDeleteSchema, db: Session = Depends(get_db)): db.query(User).filter(User.id.in_(d.user_ids)).delete(synchronize_session=False); db.commit(); return {"message":"OK"}
-
-# == FETCH USER BESERTA HASIL (PENTING BUAT REKAP) ==
 @app.get("/admin/users") 
-def get_users(db: Session = Depends(get_db)): 
-    return db.query(User).options(joinedload(User.results)).all()
-# ===================================================
-
+def get_users(db: Session = Depends(get_db)): return db.query(User).options(joinedload(User.results)).all()
 @app.post("/admin/periods/{pid}/toggle") 
 def toggle_period(pid: int, db: Session = Depends(get_db)): p=db.query(ExamPeriod).filter_by(id=pid).first(); p.is_active=not p.is_active; db.commit(); return {"message":"OK"}
 @app.delete("/admin/periods/{pid}") 
@@ -413,39 +410,95 @@ def admin_preview(eid: str, db: Session = Depends(get_db)):
             "raw_options": raw_options 
         })
     return {"title": e.title, "questions": qs}
+
+# ==========================================
+# FIX PDF: TRY IMPORT AGAR TIDAK CRASH JIKA BELUM INSTALL
+# ==========================================
 try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
     from reportlab.lib.styles import getSampleStyleSheet
     HAS_PDF = True
-except ImportError: HAS_PDF = False
+except ImportError:
+    HAS_PDF = False
+
 @app.get("/admin/recap/download-pdf")
 def dl_pdf(school: Optional[str]=None, db: Session=Depends(get_db)):
-    if not HAS_PDF: return JSONResponse({"message": "Server PDF Error"})
+    if not HAS_PDF: return JSONResponse({"message": "Server PDF Error: ReportLab belum terinstall."}, status_code=500)
+    
     try:
-        q=db.query(ExamResult).join(User).filter(User.role=='student')
-        if school and school != "Semua": q=q.filter(User.school == school)
+        q = db.query(ExamResult).join(User).filter(User.role == 'student')
+        if school and school != "Semua":
+            q = q.filter(User.school == school)
+        
+        results = q.all()
+        
         user_map = {}
-        for r in q.all():
-            if r.user_id not in user_map: user_map[r.user_id] = {"name": r.user.full_name, "school": r.user.school, "c1": r.user.choice1_id, "c2": r.user.choice2_id, "scores": {}}
-            user_map[r.user_id]["scores"][r.exam_id.split('_')[-1]] = int(r.irt_score)
+        for r in results:
+            if r.user_id not in user_map:
+                # SAFETY: Handle None values
+                u_name = r.user.full_name or "Tanpa Nama"
+                u_school = r.user.school or "-"
+                user_map[r.user_id] = {"name": u_name, "school": u_school, "c1": r.user.choice1_id, "c2": r.user.choice2_id, "scores": {}}
+            user_map[r.user_id]["scores"][r.exam_id.split('_')[-1]] = int(r.irt_score or 0)
+
         table_data = []
+        # Header Table
+        headers = ["Nama", "Sekolah", "PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM", "AVG", "Status"]
+        
+        all_majors = {m.id: m for m in db.query(Major).all()}
+
         for uid, data in user_map.items():
-            row = [data['name'][:20], data['school']]; total = 0
+            # Convert everything to String to prevent ReportLab Crash
+            row = [str(data['name'])[:20], str(data['school'])]
+            
+            total = 0
             for code in ["PU","PPU","PBM","PK","LBI","LBE","PM"]:
-                val = data['scores'].get(code, 0); row.append(val); total += val
-            avg = int(total/7); row.append(avg)
-            c1 = db.query(Major).filter_by(id=data["c1"]).first() if data["c1"] else None
-            c2 = db.query(Major).filter_by(id=data["c2"]).first() if data["c2"] else None
-            st = "GAGAL"
+                val = data['scores'].get(code, 0)
+                row.append(str(val))
+                total += val
+            
+            avg = int(total/7)
+            row.append(str(avg))
+
+            c1 = all_majors.get(data["c1"])
+            c2 = all_majors.get(data["c2"])
+            st = "TIDAK LULUS"
             if c1 and avg >= c1.passing_grade: st = "LULUS P1"
             elif c2 and avg >= c2.passing_grade: st = "LULUS P2"
-            row.append(st); table_data.append(row)
-        if not table_data: table_data = [["DATA KOSONG", "-", 0,0,0,0,0,0,0, 0, "-"]]
-        buf=io.BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4)); el=[]
-        el.append(Paragraph(f"REKAP NILAI - {school or 'SEMUA'}", getSampleStyleSheet()['Heading1'])); el.append(Spacer(1,20))
-        t=Table([["Nama", "Sekolah", "PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM", "AVG", "STATUS"]] + table_data)
-        t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,colors.black),('FONTSIZE',(0,0),(-1,-1),8)])); el.append(t); doc.build(el); buf.seek(0)
-        return StreamingResponse(buf,media_type='application/pdf',headers={'Content-Disposition':'attachment;filename="Rekap.pdf"'})
-    except Exception as e: return JSONResponse({"message": str(e)})
+            
+            row.append(st)
+            table_data.append(row)
+
+        if not table_data:
+            table_data = [["DATA KOSONG", "-", "0","0","0","0","0","0","0", "0", "-"]]
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(A4))
+        elements = []
+        
+        styles = getSampleStyleSheet()
+        elements.append(Paragraph(f"REKAP NILAI - {school or 'SEMUA'}", styles['Heading1']))
+        elements.append(Spacer(1, 20))
+
+        # Add Headers to Data
+        final_data = [headers] + table_data
+        
+        t = Table(final_data)
+        t.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+            ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+        ]))
+        elements.append(t)
+        
+        doc.build(elements)
+        buffer.seek(0)
+        
+        return StreamingResponse(buffer, media_type='application/pdf', headers={'Content-Disposition': 'attachment;filename="Rekap.pdf"'})
+
+    except Exception as e:
+        print(f"PDF ERROR: {str(e)}") # Print error to Railway Logs
+        return JSONResponse({"message": f"Gagal membuat PDF: {str(e)}"}, status_code=500)
