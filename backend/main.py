@@ -122,8 +122,14 @@ def startup_event():
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
+# === PERBAIKAN FATAL: SYNTAX ERROR DIHILANGKAN ===
 def get_db():
-    db = SessionLocal(); try: yield db; finally: db.close()
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+# =================================================
 
 # SCHEMAS
 class LoginSchema(BaseModel): username: str; password: str
