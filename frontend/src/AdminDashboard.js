@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save } from 'lucide-react';
+import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save, CheckSquare } from 'lucide-react';
 import 'katex/dist/katex.min.css'; import { InlineMath } from 'react-katex';
 
 const AdminDashboard = ({ onLogout, apiUrl }) => {
@@ -15,10 +15,11 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [selectedSchoolFilter, setSelectedSchoolFilter] = useState('Semua');
   const [isReleased, setIsReleased] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false); // New Loading State
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewQuestions, setPreviewQuestions] = useState(null);
   const [itemAnalysis, setItemAnalysis] = useState(null);
-  const [editingQuestion, setEditingQuestion] = useState(null); // EDIT MODE
+  const [editingQuestion, setEditingQuestion] = useState(null);
 
   const fetchData = useCallback(() => {
     setLoading(true);
@@ -40,19 +41,10 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
 
   const handleCreatePeriod = async () => {
     if (!newPeriodName) return;
-    await fetch(`${apiUrl}/admin/periods`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newPeriodName, target_schools: targetSchool }) 
-    });
+    await fetch(`${apiUrl}/admin/periods`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newPeriodName, target_schools: targetSchool }) });
     setNewPeriodName(''); fetchData();
   };
-
-  const handleDeletePeriod = async (pid) => {
-      if(window.confirm("Hapus TO ini beserta seluruh soalnya?")) {
-          await fetch(`${apiUrl}/admin/periods/${pid}`, { method: 'DELETE' }); fetchData();
-      }
-  };
-
+  const handleDeletePeriod = async (pid) => { if(window.confirm("Hapus TO?")) { await fetch(`${apiUrl}/admin/periods/${pid}`, { method: 'DELETE' }); fetchData(); } };
   const handleTogglePeriod = async (pid) => { await fetch(`${apiUrl}/admin/periods/${pid}/toggle`, { method: 'POST' }); fetchData(); };
 
   const handleUploadQuestion = async (e, examId) => {
@@ -69,7 +61,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
       try { 
           const res = await fetch(`${apiUrl}/admin/exams/${examId}/preview`); 
           setPreviewQuestions(await res.json()); 
-          // Load Item Analysis juga
           const res2 = await fetch(`${apiUrl}/admin/exams/${examId}/analysis`);
           setItemAnalysis(await res2.json());
       } catch { alert("Gagal load preview."); }
@@ -77,23 +68,29 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
 
   const handleSaveQuestion = async () => {
       if(!editingQuestion) return;
-      await fetch(`${apiUrl}/admin/questions/${editingQuestion.id}`, {
-          method: 'PUT', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({text: editingQuestion.text, explanation: editingQuestion.explanation})
-      });
-      alert("Tersimpan!");
-      setEditingQuestion(null);
-      // Refresh preview? maybe close it
-      setPreviewQuestions(null);
+      await fetch(`${apiUrl}/admin/questions/${editingQuestion.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({text: editingQuestion.text, explanation: editingQuestion.explanation}) });
+      alert("Tersimpan!"); setEditingQuestion(null); setPreviewQuestions(null);
   };
 
   const handleAddUser = async () => {
     if (!newUser.username || !newUser.password) return alert("Isi data!");
-    await fetch(`${apiUrl}/admin/users`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newUser) });
-    setNewUser({ username: '', password: '', full_name: '', school: '', role: 'student' }); fetchData();
+    const res = await fetch(`${apiUrl}/admin/users`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newUser) });
+    if(res.ok) { alert("Sukses"); setNewUser({ username: '', password: '', full_name: '', school: '', role: 'student' }); fetchData(); }
+    else alert("Gagal/Username ada");
   };
 
-  const handleUploadUsers = async (e) => { const file = e.target.files[0]; const formData = new FormData(); formData.append('file', file); await fetch(`${apiUrl}/admin/users/bulk`, { method: 'POST', body: formData }); fetchData(); };
+  // NEW: Import dengan Loading Indicator
+  const handleUploadUsers = async (e) => { 
+      const file = e.target.files[0]; 
+      const formData = new FormData(); formData.append('file', file); 
+      setImportLoading(true);
+      const res = await fetch(`${apiUrl}/admin/users/bulk`, { method: 'POST', body: formData }); 
+      const data = await res.json();
+      setImportLoading(false);
+      alert(data.message);
+      fetchData(); 
+  };
+  
   const handleDeleteUsers = async () => { if (window.confirm(`Hapus ${selectedUsers.length} siswa?`)) { await fetch(`${apiUrl}/admin/users/delete-bulk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_ids: selectedUsers }) }); setSelectedUsers([]); fetchData(); } };
   const handleUploadMajors = async (e) => { const file = e.target.files[0]; const formData = new FormData(); formData.append('file', file); const res = await fetch(`${apiUrl}/admin/upload-majors`, { method: 'POST', body: formData }); alert((await res.json()).message); };
 
@@ -136,7 +133,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
       </aside>
 
       <main className="flex-1 ml-64 p-8">
-        {/* --- TAB UJIAN --- */}
         {tab === 'periods' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex gap-4 items-center">
@@ -156,14 +152,21 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                   </div>
                   {expandedPeriod===p.id && (
                     <div className="p-6 grid grid-cols-4 gap-4 bg-slate-50">
-                        {p.exams.map(ex => (
-                            <div key={ex.id} className="p-4 bg-white border rounded-xl text-center hover:shadow-md transition">
-                                <div className="font-bold text-slate-800">{ex.code}</div>
-                                <div className="text-xs text-slate-500 mb-2">{ex.q_count} Soal</div>
-                                <label className="block w-full py-2 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold cursor-pointer hover:bg-indigo-100"><Upload size={12} className="inline mr-1"/> Upload <input type="file" hidden onChange={(e)=>handleUploadQuestion(e, ex.id)}/></label>
-                                <button onClick={()=>handlePreviewExam(ex.id)} className="mt-2 text-xs text-slate-400 hover:text-indigo-600 flex items-center justify-center w-full"><Eye size={12} className="mr-1"/> Preview & Edit</button>
-                            </div>
-                        ))}
+                        {p.exams.map(ex => {
+                            // VISUAL INDICATOR SOAL TERISI
+                            const hasQ = ex.q_count > 0;
+                            return (
+                                <div key={ex.id} className={`p-4 bg-white border-2 rounded-xl text-center transition ${hasQ ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200'}`}>
+                                    <div className="font-bold text-slate-800 text-lg mb-1 flex items-center justify-center gap-2">{ex.code} {hasQ && <CheckCircle size={16} className="text-emerald-600"/>}</div>
+                                    <div className="text-xs text-slate-500 mb-2">{ex.q_count} Soal</div>
+                                    <label className={`block w-full py-2 rounded-lg text-xs font-bold cursor-pointer transition ${hasQ ? 'bg-white text-emerald-600 border border-emerald-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                                        <Upload size={12} className="inline mr-1"/> {hasQ ? 'Update Excel' : 'Upload Excel'}
+                                        <input type="file" hidden onChange={(e)=>handleUploadQuestion(e, ex.id)} accept=".csv,.xlsx"/>
+                                    </label>
+                                    <button onClick={()=>handlePreviewExam(ex.id)} className="mt-2 text-xs text-slate-400 hover:text-indigo-600 flex items-center justify-center w-full"><Eye size={12} className="mr-1"/> Preview & Edit</button>
+                                </div>
+                            )
+                        })}
                     </div>
                   )}
                 </div>
@@ -172,13 +175,12 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           </div>
         )}
 
-        {/* MODAL PREVIEW & EDIT & ANALYSIS */}
+        {/* MODAL PREVIEW */}
         {previewQuestions && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col">
                     <div className="p-4 border-b flex justify-between items-center"><h3 className="font-bold">Preview: {previewQuestions.title}</h3><button onClick={() => setPreviewQuestions(null)}><X/></button></div>
                     <div className="flex-1 overflow-hidden flex">
-                        {/* KIRI: SOAL */}
                         <div className="w-2/3 p-6 overflow-y-auto border-r">
                             {previewQuestions.questions.map((q, i) => (
                                 <div key={i} className="mb-6 p-4 border rounded-xl bg-slate-50 relative group">
@@ -191,7 +193,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                                 </div>
                             ))}
                         </div>
-                        {/* KANAN: STATISTIK */}
                         <div className="w-1/3 p-6 overflow-y-auto bg-slate-50">
                             <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><BarChart3 size={18}/> Analisis Butir Soal</h4>
                             {itemAnalysis ? (
@@ -236,11 +237,18 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             </div>
         )}
 
-        {/* TAB SISWA (DENGAN ROLE) */}
+        {/* TAB SISWA */}
         {tab === 'users' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between items-center">
-                <div className="flex gap-3"><label className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold flex gap-2 cursor-pointer shadow-lg transition"><Upload size={18}/> Import <input type="file" hidden onChange={handleUploadUsers}/></label><button onClick={handleDeleteUsers} className="bg-red-500 hover:bg-red-600 text-white px-5 py-2.5 rounded-xl font-bold flex gap-2 shadow-lg transition"><Trash2 size={18}/> Hapus</button></div>
+                <div className="flex gap-3">
+                    <label className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold flex gap-2 cursor-pointer shadow-lg transition">
+                        {importLoading ? <RefreshCcw className="animate-spin" size={18}/> : <Upload size={18}/>} 
+                        {importLoading ? "Mengimport..." : "Import"}
+                        <input type="file" hidden onChange={handleUploadUsers} disabled={importLoading}/>
+                    </label>
+                    <button onClick={handleDeleteUsers} className="bg-red-500 hover:bg-red-600 text-white px-5 py-2.5 rounded-xl font-bold flex gap-2 shadow-lg transition"><Trash2 size={18}/> Hapus</button>
+                </div>
                 <div className="flex gap-2 bg-slate-50 p-2 rounded-xl border items-center">
                     <input placeholder="User" className="bg-transparent px-2 w-24 outline-none" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/>
                     <input placeholder="Nama" className="bg-transparent px-2 w-32 outline-none border-l" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/>
