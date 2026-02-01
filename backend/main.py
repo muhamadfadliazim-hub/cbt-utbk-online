@@ -1,15 +1,17 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session, joinedload
-from sqlalchemy import distinct
+from sqlalchemy import distinct, func
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 import pandas as pd
 import io
 import os
+import math
 
 # CONFIG
 UPLOAD_DIR = "uploads"
@@ -24,7 +26,7 @@ else: engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# MODELS (User, Major, Exam, etc. tetap sama, saya singkat biar hemat baris)
+# MODELS
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -80,29 +82,30 @@ class SystemConfig(Base):
     __tablename__ = "system_configs"
     key = Column(String, primary_key=True); value = Column(String)
 
-# LOGIC IRT AMAN (ANTI ERROR 500)
+# LOGIC IRT AMAN
 def calculate_irt_score(correct_questions, total_questions):
     try:
         if not total_questions: return 0
         raw = sum([float(q.difficulty or 1.0) for q in correct_questions])
         max_score = sum([float(q.difficulty or 1.0) for q in total_questions])
-        
-        if max_score <= 0: return 0 # Prevent Division by Zero
-        
+        if max_score <= 0: return 0
         theta = raw / max_score 
         z = (theta - 0.5) / 0.15 
         final = 500 + (z * 100)
         return round(max(200, min(1000, final)))
-    except:
-        return 500 # Default score if calc fails
+    except: return 500
 
-app = FastAPI(title="CBT FINAL STABLE")
+app = FastAPI(title="CBT FINAL FIX")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+# === FIX SYNTAX ERROR YANG SEBELUMNYA ===
 def get_db():
     db = SessionLocal()
-    try: yield db
-    finally: db.close()
+    try:
+        yield db
+    finally:
+        db.close()
+# ========================================
 
 @app.on_event("startup")
 def startup_event():
@@ -113,10 +116,6 @@ def startup_event():
             try: conn.execute(text("ALTER TABLE options ADD COLUMN IF NOT EXISTS correct_text TEXT")); conn.commit()
             except: pass
             try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS type VARCHAR")); conn.commit()
-            except: pass
-            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_correct INTEGER DEFAULT 0")); conn.commit()
-            except: pass
-            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_total INTEGER DEFAULT 0")); conn.commit()
             except: pass
         if db.query(User).filter_by(username="admin_cabang").count() == 0:
             db.add(User(username="admin_cabang", password="123", full_name="Admin", role="admin", school="PUSAT"))
@@ -138,31 +137,70 @@ class ConfigSchema(BaseModel): value: str
 class BulkDeleteSchema(BaseModel): user_ids: List[int]
 class ResetResultSchema(BaseModel): user_id: int; exam_id: Optional[str] = None
 
-# --- API ---
+# API
 @app.post("/login")
 def login(d: LoginSchema, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=d.username).first()
     if u and u.password==d.password: return {"message":"OK", "username":u.username, "role":u.role, "school":u.school, "choice1_id":u.choice1_id}
     raise HTTPException(400, "Login Gagal")
 
-# API SUBMIT DENGAN SAFETY CHECK
+@app.post("/admin/reset-result")
+def reset_result(d: ResetResultSchema, db: Session = Depends(get_db)):
+    if d.exam_id:
+        res = db.query(ExamResult).filter_by(user_id=d.user_id, exam_id=d.exam_id).first()
+        if res: db.delete(res)
+    else:
+        db.query(ExamResult).filter_by(user_id=d.user_id).delete()
+    db.commit()
+    return {"message": "Reset Berhasil"}
+
+@app.get("/majors")
+def get_majors(db: Session = Depends(get_db)): return db.query(Major).all()
+@app.get("/admin/schools-list")
+def get_schools_list(db: Session = Depends(get_db)): return ["Semua"] + ([s[0] for s in db.query(distinct(User.school)).filter(User.school != None).all()] or [])
+@app.post("/users/select-major")
+def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
+    u=db.query(User).filter_by(username=d.username).first(); u.choice1_id=d.choice1_id; u.choice2_id=d.choice2_id; db.commit(); return {"status":"success"}
+@app.post("/admin/periods")
+def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
+    p=ExamPeriod(name=d.name, exam_type=d.exam_type, is_active=False, target_schools=d.target_schools); db.add(p); db.commit(); db.refresh(p)
+    for c,t in [("PU",30),("PPU",15),("PBM",25),("PK",20),("LBI",40),("LBE",20),("PM",40)]: db.add(Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=t))
+    db.commit(); return {"message": "OK"}
+@app.get("/admin/periods")
+def get_periods(db: Session = Depends(get_db)):
+    ps=db.query(ExamPeriod).order_by(ExamPeriod.id.desc()).options(joinedload(ExamPeriod.exams).joinedload(Exam.questions)).all(); res=[]
+    for p in ps:
+        exs=[{"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"q_count":len(e.questions)} for e in p.exams]
+        res.append({"id":p.id,"name":p.name,"target_schools":p.target_schools,"is_active":p.is_active,"exams":exs})
+    return res
+
+@app.get("/exams/{exam_id}")
+def get_exam(exam_id: str, db: Session = Depends(get_db)):
+    e=db.query(Exam).filter_by(id=exam_id).first(); 
+    if not e: return {"title":"Error", "questions":[]}
+    
+    # SORTING BY ID (Biar urut sesuai upload)
+    sorted_qs = sorted(e.questions, key=lambda x: x.id)
+    qs=[]
+    for q in sorted_qs:
+        # SORTING OPSI A-Z (BIAR GA ACAK 9,15,18)
+        s_opts = sorted(q.options, key=lambda o: o.option_index)
+        opts=[{"id":o.id if q.type=='table_boolean' else o.option_index,"text":o.label} for o in s_opts]
+        qs.append({"id":q.id,"type":q.type,"text":q.text,"image_url":q.image_url,"reading_material":q.reading_material,"options":opts})
+    return {"id":e.id,"title":e.title,"duration":e.duration,"questions":qs}
+
 @app.post("/exams/{exam_id}/submit")
 def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
     try:
         u=db.query(User).filter_by(username=d.username).first()
         if not u: raise HTTPException(404, "User not found")
-        
-        # Cek jika sudah pernah submit
         existing = db.query(ExamResult).filter_by(user_id=u.id, exam_id=exam_id).first()
         if existing: return {"message":"Done", "score": existing.irt_score}
-        
         questions = db.query(Question).filter_by(exam_id=exam_id).all()
         corr_q = []
-        
         for q in questions:
             ans = d.answers.get(str(q.id))
             is_r = False
-            
             if q.type=='short_answer': 
                 if q.options and str(ans).strip().lower() == str(q.options[0].correct_text).strip().lower(): is_r=True
             elif q.type=='complex':
@@ -177,55 +215,17 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
             else:
                 k = next((o.option_index for o in q.options if o.is_correct), None)
                 if str(ans) == str(k): is_r=True
-            
             if is_r:
                 corr_q.append(q)
                 q.stats_correct += 1
             q.stats_total += 1
-        
         final = calculate_irt_score(corr_q, questions)
-        
         db.add(ExamResult(user_id=u.id, exam_id=exam_id, correct_count=len(corr_q), wrong_count=len(questions)-len(corr_q), irt_score=final))
         db.commit()
         return {"message":"Saved", "score":final}
     except Exception as e:
-        print(f"SUBMIT ERROR: {e}") # Log error di server
-        raise HTTPException(500, f"Gagal Submit: {str(e)}")
-
-# API LAINNYA
-@app.get("/exams/{exam_id}")
-def get_exam(exam_id: str, db: Session = Depends(get_db)):
-    e=db.query(Exam).filter_by(id=exam_id).first(); 
-    if not e: return {"title":"Error", "questions":[]}
-    sorted_qs = sorted(e.questions, key=lambda x: x.id)
-    qs=[]
-    for q in sorted_qs:
-        s_opts = sorted(q.options, key=lambda o: o.option_index)
-        opts=[{"id":o.id if q.type=='table_boolean' else o.option_index,"text":o.label} for o in s_opts]
-        qs.append({"id":q.id,"type":q.type,"text":q.text,"image_url":q.image_url,"reading_material":q.reading_material,"options":opts})
-    return {"id":e.id,"title":e.title,"duration":e.duration,"questions":qs}
-
-@app.post("/admin/reset-result")
-def reset_result(d: ResetResultSchema, db: Session = Depends(get_db)):
-    if d.exam_id: res = db.query(ExamResult).filter_by(user_id=d.user_id, exam_id=d.exam_id).first(); 
-    else: res = db.query(ExamResult).filter_by(user_id=d.user_id).delete()
-    if d.exam_id and res: db.delete(res)
-    db.commit(); return {"message": "Reset Berhasil"}
-
-# INCLUDE SEMUA API LAIN DARI SEBELUMNYA (Admin, Upload, dll)
-@app.get("/admin/exams/{eid}/preview")
-def admin_preview(eid: str, db: Session = Depends(get_db)):
-    e=db.query(Exam).filter_by(id=eid).first(); qs=[]
-    if not e: return {"title":"-", "questions":[]}
-    for q in sorted(e.questions, key=lambda x: x.id):
-        s_opts = sorted(q.options, key=lambda x: x.option_index)
-        ans="-"
-        opts_display = [o.label for o in s_opts]
-        if q.type=='table_boolean': ans="Tabel"; opts_display=[f"{o.label} ({o.correct_text})" for o in s_opts]
-        elif q.type=='short_answer': ans=q.options[0].correct_text if q.options else "-"
-        else: ans=",".join([o.option_index for o in s_opts if o.is_correct])
-        qs.append({"id":q.id, "text":q.text, "type":q.type, "explanation":q.explanation, "image_url":q.image_url, "reading_material":q.reading_material, "correct_answer":ans, "raw_options": opts_display})
-    return {"title":e.title,"questions":qs}
+        print(f"SUBMIT ERROR: {e}")
+        raise HTTPException(500, "Gagal simpan")
 
 @app.put("/admin/questions/{qid}")
 def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get_db)):
@@ -244,6 +244,7 @@ def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get
          else: db.add(Option(question_id=qid, label="KUNCI", correct_text=d.correct_answer))
     db.commit(); return {"message": "Tersimpan"}
 
+# UPLOAD SOAL ANTI NAN
 @app.post("/admin/upload-questions/{eid}")
 async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
@@ -284,6 +285,7 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
         db.commit(); return {"message": f"Sukses {cnt}"}
     except Exception as e: return {"message": str(e)}
 
+# IMPORT USER LEBIH AGRESIF
 @app.post("/admin/users/bulk")
 async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
@@ -351,6 +353,19 @@ def stats(username: str, db: Session = Depends(get_db)):
         if c1 and avg>=c1.passing_grade: status=f"LULUS P1: {c1.university}"
         elif c2 and avg>=c2.passing_grade: status=f"LULUS P2: {c2.university}"
     return {"is_released":is_released,"average":avg,"details":details,"radar":details,"status":status}
+@app.get("/admin/exams/{eid}/preview")
+def admin_preview(eid: str, db: Session = Depends(get_db)):
+    e=db.query(Exam).filter_by(id=eid).first(); qs=[]
+    if not e: return {"title":"-", "questions":[]}
+    for q in sorted(e.questions, key=lambda x: x.id):
+        s_opts = sorted(q.options, key=lambda x: x.option_index)
+        ans="-"
+        opts_display = [o.label for o in s_opts]
+        if q.type=='table_boolean': ans="Tabel"; opts_display=[f"{o.label} ({o.correct_text})" for o in s_opts]
+        elif q.type=='short_answer': ans=q.options[0].correct_text if q.options else "-"
+        else: ans=",".join([o.option_index for o in s_opts if o.is_correct])
+        qs.append({"id":q.id, "text":q.text, "type":q.type, "explanation":q.explanation, "image_url":q.image_url, "reading_material":q.reading_material, "correct_answer":ans, "raw_options": opts_display})
+    return {"title":e.title,"questions":qs}
 @app.get("/admin/exams/{eid}/analysis")
 def item_analysis(eid: str, db: Session = Depends(get_db)):
     e=db.query(Exam).filter_by(id=eid).first(); res=[]

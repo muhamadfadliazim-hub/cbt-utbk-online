@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save } from 'lucide-react';
-import 'katex/dist/katex.min.css'; import { InlineMath } from 'react-katex';
+import { Trash2, Plus, Upload, Users, LogOut, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Filter, Lock, Unlock, Eye, X, Save } from 'lucide-react';
 
 const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [tab, setTab] = useState('periods');
@@ -65,9 +64,8 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           
           try {
             const res2 = await fetch(`${apiUrl}/admin/exams/${examId}/analysis`);
-            setItemAnalysis(await res2.json());
+            if(res2.ok) setItemAnalysis(await res2.json());
           } catch(e) { setItemAnalysis([]); }
-
       } catch { alert("Gagal load preview."); }
   };
 
@@ -76,11 +74,11 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
       await fetch(`${apiUrl}/admin/questions/${editingQuestion.id}`, { 
           method: 'PUT', headers: {'Content-Type':'application/json'}, 
           body: JSON.stringify({
-              text: editingQuestion.text, 
+              text: editingQuestion.text,
               explanation: editingQuestion.explanation,
               correct_answer: editingQuestion.correct_answer,
               options: editingQuestion.raw_options
-          }) 
+          })
       });
       alert("Tersimpan!"); setEditingQuestion(null); setPreviewQuestions(null);
   };
@@ -100,7 +98,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   
   const handleDeleteUsers = async () => { if (window.confirm(`Hapus ${selectedUsers.length} siswa?`)) { await fetch(`${apiUrl}/admin/users/delete-bulk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_ids: selectedUsers }) }); setSelectedUsers([]); fetchData(); } };
   const handleUploadMajors = async (e) => { const file = e.target.files[0]; const formData = new FormData(); formData.append('file', file); const res = await fetch(`${apiUrl}/admin/upload-majors`, { method: 'POST', body: formData }); alert((await res.json()).message); };
-  
+
   const handleReset = async (userId, examId = null) => {
       if(!window.confirm("Reset nilai?")) return;
       await fetch(`${apiUrl}/admin/reset-result`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ user_id: userId, exam_id: examId }) });
@@ -112,11 +110,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const renderText = (text) => {
       if(!text || text === 'nan') return "";
       let formatted = text.replace(/\[B\]/gi, '<b>').replace(/\[\/B\]/gi, '</b>').replace(/\[I\]/gi, '<i>').replace(/\[\/I\]/gi, '</i>');
-      const parts = formatted.split(/(\$.*?\$)/g);
-      return parts.map((part, index) => {
-          if (part.startsWith('$') && part.endsWith('$')) return <span key={index} className="mx-1"><InlineMath math={part.replace(/\$/g, '')} /></span>;
-          return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br/>') }} />;
-      });
+      return <span dangerouslySetInnerHTML={{ __html: formatted.replace(/\n/g, '<br/>') }} />;
   };
 
   const renderRecap = () => {
@@ -131,7 +125,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                     const scores = {}; u.results.forEach(r => scores[r.exam_id.split('_').pop()] = {val: Math.round(r.irt_score), eid: r.exam_id});
                     const total = Object.values(scores).reduce((a,b)=>a+b.val,0);
                     const avg = Math.round(total/7);
-                    return (<tr key={u.id} className="hover:bg-slate-50"><td className="p-4 font-bold sticky left-0 bg-white border-r">{u.full_name}</td><td className="p-4">{u.school}</td>{["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> (<td key={k} className={`p-4 text-center border-l cursor-pointer hover:bg-red-50 hover:text-red-600 ${scores[k] ? 'font-bold' : 'text-slate-300'}`} onClick={() => scores[k] && handleReset(u.id, scores[k].eid)}>{scores[k]?.val || "-"}</td>))}<td className="p-4 text-center font-bold bg-indigo-50 border-l">{avg}</td><td className="p-4 text-center border-l"><button onClick={() => handleReset(u.id)} className="p-1 bg-red-100 text-red-600 rounded"><Trash2 size={16}/></button></td></tr>);
+                    return (<tr key={u.id} className="hover:bg-slate-50"><td className="p-4 font-bold sticky left-0 bg-white border-r">{u.full_name}</td><td className="p-4">{u.school}</td>{["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> (<td key={k} className={`p-4 text-center border-l cursor-pointer hover:bg-red-50 hover:text-red-600 transition ${scores[k] ? 'font-bold' : 'text-slate-300'}`} onClick={() => scores[k] && handleReset(u.id, scores[k].eid)}>{scores[k]?.val || "-"}</td>))}<td className="p-4 text-center font-bold bg-indigo-50 border-l">{avg}</td><td className="p-4 text-center border-l"><button onClick={() => handleReset(u.id)} className="p-1 bg-red-100 text-red-600 rounded"><Trash2 size={16}/></button></td></tr>);
                 })}</tbody>
             </table>
         </div>
@@ -222,7 +216,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                         </div>
                     </div>
                 </div>
-                {/* MODAL EDIT LENGKAP */}
+                {/* MODAL EDIT */}
                 {editingQuestion && (
                     <div className="absolute inset-0 bg-black/50 z-[60] flex items-center justify-center">
                         <div className="bg-white p-6 rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
@@ -262,6 +256,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             </div>
         )}
 
+        {/* ... (SISANYA SAMA) ... */}
         {(tab === 'users' || tab === 'recap') && (
             <div className="mb-6 flex gap-4 items-center bg-white p-4 rounded-xl border shadow-sm sticky top-0 z-10">
                 <Filter className="text-slate-400" size={20}/>
@@ -273,7 +268,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             </div>
         )}
 
-        {/* TAB SISWA */}
         {tab === 'users' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between items-center">
