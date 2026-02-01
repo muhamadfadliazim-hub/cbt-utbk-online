@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, Users, LogOut, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Filter, Lock, Unlock, Eye, X, Save } from 'lucide-react';
+// IMPORT IKON SUDAH LENGKAP - ANTI CRASH
+import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save } from 'lucide-react';
+import 'katex/dist/katex.min.css'; 
+import { InlineMath } from 'react-katex';
 
 const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [tab, setTab] = useState('periods');
@@ -66,7 +69,8 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             const res2 = await fetch(`${apiUrl}/admin/exams/${examId}/analysis`);
             if(res2.ok) setItemAnalysis(await res2.json());
           } catch(e) { setItemAnalysis([]); }
-      } catch { alert("Gagal load preview."); }
+
+      } catch { alert("Gagal load preview. Pastikan soal sudah diupload."); }
   };
 
   const handleSaveQuestion = async () => {
@@ -110,7 +114,11 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const renderText = (text) => {
       if(!text || text === 'nan') return "";
       let formatted = text.replace(/\[B\]/gi, '<b>').replace(/\[\/B\]/gi, '</b>').replace(/\[I\]/gi, '<i>').replace(/\[\/I\]/gi, '</i>');
-      return <span dangerouslySetInnerHTML={{ __html: formatted.replace(/\n/g, '<br/>') }} />;
+      const parts = formatted.split(/(\$.*?\$)/g);
+      return parts.map((part, index) => {
+          if (part.startsWith('$') && part.endsWith('$')) return <span key={index} className="mx-1"><InlineMath math={part.replace(/\$/g, '')} /></span>;
+          return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br/>') }} />;
+      });
   };
 
   const renderRecap = () => {
@@ -125,7 +133,25 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                     const scores = {}; u.results.forEach(r => scores[r.exam_id.split('_').pop()] = {val: Math.round(r.irt_score), eid: r.exam_id});
                     const total = Object.values(scores).reduce((a,b)=>a+b.val,0);
                     const avg = Math.round(total/7);
-                    return (<tr key={u.id} className="hover:bg-slate-50"><td className="p-4 font-bold sticky left-0 bg-white border-r">{u.full_name}</td><td className="p-4">{u.school}</td>{["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> (<td key={k} className={`p-4 text-center border-l cursor-pointer hover:bg-red-50 hover:text-red-600 transition ${scores[k] ? 'font-bold' : 'text-slate-300'}`} onClick={() => scores[k] && handleReset(u.id, scores[k].eid)}>{scores[k]?.val || "-"}</td>))}<td className="p-4 text-center font-bold bg-indigo-50 border-l">{avg}</td><td className="p-4 text-center border-l"><button onClick={() => handleReset(u.id)} className="p-1 bg-red-100 text-red-600 rounded"><Trash2 size={16}/></button></td></tr>);
+                    return (
+                        <tr key={u.id} className="hover:bg-slate-50">
+                            <td className="p-4 font-bold sticky left-0 bg-white border-r">{u.full_name}</td>
+                            <td className="p-4">{u.school}</td>
+                            {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> (
+                                <td key={k} 
+                                    className={`p-4 text-center border-l cursor-pointer hover:bg-red-50 hover:text-red-600 transition ${scores[k] ? 'font-bold' : 'text-slate-300'}`}
+                                    onClick={() => scores[k] && handleReset(u.id, scores[k].eid)}
+                                    title="Klik untuk reset nilai ini"
+                                >
+                                    {scores[k]?.val || "-"}
+                                </td>
+                            ))}
+                            <td className="p-4 text-center font-bold bg-indigo-50 border-l">{avg}</td>
+                            <td className="p-4 text-center border-l">
+                                <button onClick={() => handleReset(u.id)} className="p-1 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Reset Semua Ujian"><Trash2 size={16}/></button>
+                            </td>
+                        </tr>
+                    );
                 })}</tbody>
             </table>
         </div>

@@ -6,7 +6,6 @@ import { InlineMath } from 'react-katex';
 const ExamSimulation = ({ examData, onSubmit }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   
-  // FIX 1: SIMPAN JAWABAN DI LOCALSTORAGE AGAR TIDAK HILANG SAAT REFRESH
   const [answers, setAnswers] = useState(() => {
       try { return JSON.parse(localStorage.getItem(`ans_${examData?.id}`)) || {}; } 
       catch { return {}; }
@@ -24,7 +23,6 @@ const ExamSimulation = ({ examData, onSubmit }) => {
       setTimeLeft((prev) => {
         if (prev <= 1) { 
             clearInterval(timer); 
-            // AUTO SUBMIT
             handleFinalSubmit();
             return 0; 
         }
@@ -54,10 +52,9 @@ const ExamSimulation = ({ examData, onSubmit }) => {
   };
 
   const handleFinalSubmit = () => {
-      // Hapus data temporary biar tidak nyangkut utk ujian berikutnya
       localStorage.removeItem(`ans_${examData?.id}`);
       localStorage.removeItem(`timer_${examData?.id}`);
-      localStorage.removeItem(`active_exam_id`); // PENTING UTK DASHBOARD
+      localStorage.removeItem(`active_exam_id`); 
       onSubmit(answers);
   };
 
@@ -109,7 +106,6 @@ const ExamSimulation = ({ examData, onSubmit }) => {
                 ) : (
                     <div className="grid grid-cols-1 gap-3">
                         {q.options.map((opt, idx) => {
-                            // FIX 1: PAKSA LABEL A, B, C, D, E (JANGAN PAKAI TEXT)
                             const label = ["A", "B", "C", "D", "E"][idx];
                             const isComplex = q.type === 'complex';
                             const isSelected = isComplex ? (answers[q.id]||[]).includes(label) : answers[q.id] === label;

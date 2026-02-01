@@ -82,7 +82,7 @@ class SystemConfig(Base):
     __tablename__ = "system_configs"
     key = Column(String, primary_key=True); value = Column(String)
 
-# LOGIC IRT AMAN
+# LOGIC
 def calculate_irt_score(correct_questions, total_questions):
     try:
         if not total_questions: return 0
@@ -98,14 +98,14 @@ def calculate_irt_score(correct_questions, total_questions):
 app = FastAPI(title="CBT FINAL FIX")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# === FIX SYNTAX ERROR YANG SEBELUMNYA ===
+# === INI PERBAIKAN KRUSIAL (DIBUAT MULTI-LINE) ===
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-# ========================================
+# ================================================
 
 @app.on_event("startup")
 def startup_event():
@@ -116,6 +116,10 @@ def startup_event():
             try: conn.execute(text("ALTER TABLE options ADD COLUMN IF NOT EXISTS correct_text TEXT")); conn.commit()
             except: pass
             try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS type VARCHAR")); conn.commit()
+            except: pass
+            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_correct INTEGER DEFAULT 0")); conn.commit()
+            except: pass
+            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_total INTEGER DEFAULT 0")); conn.commit()
             except: pass
         if db.query(User).filter_by(username="admin_cabang").count() == 0:
             db.add(User(username="admin_cabang", password="123", full_name="Admin", role="admin", school="PUSAT"))
@@ -178,12 +182,9 @@ def get_periods(db: Session = Depends(get_db)):
 def get_exam(exam_id: str, db: Session = Depends(get_db)):
     e=db.query(Exam).filter_by(id=exam_id).first(); 
     if not e: return {"title":"Error", "questions":[]}
-    
-    # SORTING BY ID (Biar urut sesuai upload)
     sorted_qs = sorted(e.questions, key=lambda x: x.id)
     qs=[]
     for q in sorted_qs:
-        # SORTING OPSI A-Z (BIAR GA ACAK 9,15,18)
         s_opts = sorted(q.options, key=lambda o: o.option_index)
         opts=[{"id":o.id if q.type=='table_boolean' else o.option_index,"text":o.label} for o in s_opts]
         qs.append({"id":q.id,"type":q.type,"text":q.text,"image_url":q.image_url,"reading_material":q.reading_material,"options":opts})
@@ -353,19 +354,6 @@ def stats(username: str, db: Session = Depends(get_db)):
         if c1 and avg>=c1.passing_grade: status=f"LULUS P1: {c1.university}"
         elif c2 and avg>=c2.passing_grade: status=f"LULUS P2: {c2.university}"
     return {"is_released":is_released,"average":avg,"details":details,"radar":details,"status":status}
-@app.get("/admin/exams/{eid}/preview")
-def admin_preview(eid: str, db: Session = Depends(get_db)):
-    e=db.query(Exam).filter_by(id=eid).first(); qs=[]
-    if not e: return {"title":"-", "questions":[]}
-    for q in sorted(e.questions, key=lambda x: x.id):
-        s_opts = sorted(q.options, key=lambda x: x.option_index)
-        ans="-"
-        opts_display = [o.label for o in s_opts]
-        if q.type=='table_boolean': ans="Tabel"; opts_display=[f"{o.label} ({o.correct_text})" for o in s_opts]
-        elif q.type=='short_answer': ans=q.options[0].correct_text if q.options else "-"
-        else: ans=",".join([o.option_index for o in s_opts if o.is_correct])
-        qs.append({"id":q.id, "text":q.text, "type":q.type, "explanation":q.explanation, "image_url":q.image_url, "reading_material":q.reading_material, "correct_answer":ans, "raw_options": opts_display})
-    return {"title":e.title,"questions":qs}
 @app.get("/admin/exams/{eid}/analysis")
 def item_analysis(eid: str, db: Session = Depends(get_db)):
     e=db.query(Exam).filter_by(id=eid).first(); res=[]
@@ -436,3 +424,62 @@ def dl_pdf(school: Optional[str]=None, db: Session=Depends(get_db)):
         t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,colors.black),('FONTSIZE',(0,0),(-1,-1),8)])); el.append(t); doc.build(el); buf.seek(0)
         return StreamingResponse(buf,media_type='application/pdf',headers={'Content-Disposition':'attachment;filename="Rekap.pdf"'})
     except Exception as e: return JSONResponse({"message": str(e)})
+
+# API PREVIEW LENGKAP (RAW DATA)
+@app.get("/admin/exams/{eid}/preview")
+def admin_preview(eid: str, db: Session = Depends(get_db)):
+    e = db.query(Exam).filter_by(id=eid).first()
+    qs = []
+    if not e: return {"title":"-", "questions":[]}
+    
+    # Sort questions by ID
+    for q in sorted(e.questions, key=lambda x: x.id):
+        raw_options = []
+        ans_str = ""
+        # Sort options by index (A, B, C)
+        sorted_opts = sorted(q.options, key=lambda x: x.option_index)
+        
+        if q.type == 'multiple_choice' or q.type == 'complex':
+            raw_options = [o.label for o in sorted_opts]
+            ans_str = ",".join([o.option_index for o in sorted_opts if o.is_correct])
+        elif q.type == 'short_answer':
+            if q.options: ans_str = q.options[0].correct_text
+        elif q.type == 'table_boolean':
+             raw_options = [o.label for o in sorted_opts]
+             ans_str = ",".join([o.correct_text for o in sorted_opts])
+
+        qs.append({
+            "id": q.id, 
+            "text": q.text, 
+            "type": q.type, 
+            "explanation": q.explanation, 
+            "image_url": q.image_url, 
+            "reading_material": q.reading_material, 
+            "correct_answer": ans_str,
+            "raw_options": raw_options 
+        })
+    return {"title": e.title, "questions": qs}
+
+@app.put("/admin/questions/{qid}")
+def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get_db)):
+    q = db.query(Question).filter_by(id=qid).first()
+    if not q: raise HTTPException(404, "Soal tidak ada")
+    
+    q.text = d.text
+    q.explanation = d.explanation
+    
+    if d.options and (q.type == 'multiple_choice' or q.type == 'complex'):
+        db.query(Option).filter_by(question_id=qid).delete()
+        keys = [k.strip().upper() for k in (d.correct_answer or "").split(',')]
+        abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        for i, opt_text in enumerate(d.options):
+            idx_char = abc[i] if i < len(abc) else str(i)
+            is_corr = idx_char in keys
+            db.add(Option(question_id=qid, label=opt_text, option_index=idx_char, is_correct=is_corr))
+            
+    elif q.type == 'short_answer' and d.correct_answer:
+         if q.options: q.options[0].correct_text = d.correct_answer
+         else: db.add(Option(question_id=qid, label="KUNCI", correct_text=d.correct_answer))
+
+    db.commit()
+    return {"message": "Soal berhasil diperbarui!"}
