@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save, CheckSquare } from 'lucide-react';
+import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save } from 'lucide-react';
 import 'katex/dist/katex.min.css'; import { InlineMath } from 'react-katex';
 
 const AdminDashboard = ({ onLogout, apiUrl }) => {
@@ -15,7 +15,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [selectedSchoolFilter, setSelectedSchoolFilter] = useState('Semua');
   const [isReleased, setIsReleased] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [importLoading, setImportLoading] = useState(false); // New Loading State
+  const [importLoading, setImportLoading] = useState(false);
   const [expandedPeriod, setExpandedPeriod] = useState(null);
   const [previewQuestions, setPreviewQuestions] = useState(null);
   const [itemAnalysis, setItemAnalysis] = useState(null);
@@ -79,7 +79,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
     else alert("Gagal/Username ada");
   };
 
-  // NEW: Import dengan Loading Indicator
   const handleUploadUsers = async (e) => { 
       const file = e.target.files[0]; 
       const formData = new FormData(); formData.append('file', file); 
@@ -153,14 +152,17 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                   {expandedPeriod===p.id && (
                     <div className="p-6 grid grid-cols-4 gap-4 bg-slate-50">
                         {p.exams.map(ex => {
-                            // VISUAL INDICATOR SOAL TERISI
+                            // INDIKATOR WARNA HIJAU JIKA SOAL TERISI
                             const hasQ = ex.q_count > 0;
                             return (
-                                <div key={ex.id} className={`p-4 bg-white border-2 rounded-xl text-center transition ${hasQ ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200'}`}>
-                                    <div className="font-bold text-slate-800 text-lg mb-1 flex items-center justify-center gap-2">{ex.code} {hasQ && <CheckCircle size={16} className="text-emerald-600"/>}</div>
-                                    <div className="text-xs text-slate-500 mb-2">{ex.q_count} Soal</div>
-                                    <label className={`block w-full py-2 rounded-lg text-xs font-bold cursor-pointer transition ${hasQ ? 'bg-white text-emerald-600 border border-emerald-200' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
-                                        <Upload size={12} className="inline mr-1"/> {hasQ ? 'Update Excel' : 'Upload Excel'}
+                                <div key={ex.id} className={`p-4 border-2 rounded-xl text-center transition ${hasQ ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-slate-200'}`}>
+                                    <div className="font-bold text-slate-800 text-lg mb-1 flex items-center justify-center gap-2">
+                                        {ex.code} 
+                                        {hasQ && <CheckCircle size={18} className="text-emerald-600"/>}
+                                    </div>
+                                    <div className={`text-xs mb-2 font-medium ${hasQ ? 'text-emerald-600' : 'text-slate-400'}`}>{ex.q_count} Soal Terisi</div>
+                                    <label className={`block w-full py-2 rounded-lg text-xs font-bold cursor-pointer transition ${hasQ ? 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                                        <Upload size={12} className="inline mr-1"/> {hasQ ? 'Update File' : 'Upload Excel'}
                                         <input type="file" hidden onChange={(e)=>handleUploadQuestion(e, ex.id)} accept=".csv,.xlsx"/>
                                     </label>
                                     <button onClick={()=>handlePreviewExam(ex.id)} className="mt-2 text-xs text-slate-400 hover:text-indigo-600 flex items-center justify-center w-full"><Eye size={12} className="mr-1"/> Preview & Edit</button>
@@ -242,7 +244,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between items-center">
                 <div className="flex gap-3">
-                    <label className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold flex gap-2 cursor-pointer shadow-lg transition">
+                    <label className={`text-white px-5 py-2.5 rounded-xl font-bold flex gap-2 cursor-pointer shadow-lg transition ${importLoading ? 'bg-slate-400' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
                         {importLoading ? <RefreshCcw className="animate-spin" size={18}/> : <Upload size={18}/>} 
                         {importLoading ? "Mengimport..." : "Import"}
                         <input type="file" hidden onChange={handleUploadUsers} disabled={importLoading}/>
