@@ -97,7 +97,7 @@ def calculate_irt_score(correct_questions, total_questions):
     final = 500 + (z * 100)
     return round(max(200, min(1000, final)))
 
-app = FastAPI(title="CBT FIX SYNTAX")
+app = FastAPI(title="CBT PRO RESET")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("startup")
@@ -105,7 +105,6 @@ def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        # DB Migration Check Manual
         with engine.connect() as conn:
             try: conn.execute(text("ALTER TABLE options ADD COLUMN IF NOT EXISTS correct_text TEXT")); conn.commit()
             except: pass
@@ -115,25 +114,18 @@ def startup_event():
             except: pass
             try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_total INTEGER DEFAULT 0")); conn.commit()
             except: pass
-        
         if db.query(User).filter_by(username="admin_cabang").count() == 0:
             db.add(User(username="admin_cabang", password="123", full_name="Admin", role="admin", school="PUSAT"))
             db.commit()
-    except Exception as e:
-        print(f"Startup Warning: {e}")
-    finally: 
-        db.close()
+    except: pass
+    finally: db.close()
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
-# === INI YANG KEMARIN BIKIN ERROR, SEKARANG SUDAH DIPECAH ===
 def get_db():
     db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-# ============================================================
+    try: yield db
+    finally: db.close()
 
 # SCHEMAS
 class LoginSchema(BaseModel): username: str; password: str
@@ -144,6 +136,7 @@ class UserCreateSchema(BaseModel): username: str; full_name: str; password: str;
 class QuestionUpdateSchema(BaseModel): text: str; explanation: Optional[str] = None
 class ConfigSchema(BaseModel): value: str
 class BulkDeleteSchema(BaseModel): user_ids: List[int]
+class ResetResultSchema(BaseModel): user_id: int; exam_id: Optional[str] = None
 
 # API
 @app.post("/login")
@@ -152,6 +145,20 @@ def login(d: LoginSchema, db: Session = Depends(get_db)):
     if u and u.password==d.password: return {"message":"OK", "username":u.username, "role":u.role, "school":u.school, "choice1_id":u.choice1_id}
     raise HTTPException(400, "Login Gagal")
 
+# --- FITUR RESET UJIAN (BARU) ---
+@app.post("/admin/reset-result")
+def reset_result(d: ResetResultSchema, db: Session = Depends(get_db)):
+    # Hapus spesifik subtes
+    if d.exam_id:
+        res = db.query(ExamResult).filter_by(user_id=d.user_id, exam_id=d.exam_id).first()
+        if res: db.delete(res)
+    # Hapus semua hasil user ini
+    else:
+        db.query(ExamResult).filter_by(user_id=d.user_id).delete()
+    
+    db.commit()
+    return {"message": "Reset Berhasil"}
+
 @app.get("/majors")
 def get_majors(db: Session = Depends(get_db)): return db.query(Major).all()
 @app.get("/admin/schools-list")
@@ -159,13 +166,11 @@ def get_schools_list(db: Session = Depends(get_db)): return ["Semua"] + ([s[0] f
 @app.post("/users/select-major")
 def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=d.username).first(); u.choice1_id=d.choice1_id; u.choice2_id=d.choice2_id; db.commit(); return {"status":"success"}
-
 @app.post("/admin/periods")
 def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
     p=ExamPeriod(name=d.name, exam_type=d.exam_type, is_active=False, target_schools=d.target_schools); db.add(p); db.commit(); db.refresh(p)
     for c,t in [("PU",30),("PPU",15),("PBM",25),("PK",20),("LBI",40),("LBE",20),("PM",40)]: db.add(Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=t))
     db.commit(); return {"message": "OK"}
-
 @app.get("/admin/periods")
 def get_periods(db: Session = Depends(get_db)):
     ps=db.query(ExamPeriod).order_by(ExamPeriod.id.desc()).options(joinedload(ExamPeriod.exams).joinedload(Exam.questions)).all(); res=[]
@@ -173,7 +178,6 @@ def get_periods(db: Session = Depends(get_db)):
         exs=[{"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"q_count":len(e.questions)} for e in p.exams]
         res.append({"id":p.id,"name":p.name,"target_schools":p.target_schools,"is_active":p.is_active,"exams":exs})
     return res
-
 @app.post("/admin/upload-questions/{eid}")
 async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
@@ -194,9 +198,9 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
             if q_type=='short_answer': db.add(Option(question_id=q.id, label="KUNCI", correct_text=kunci))
             elif q_type=='table_boolean':
                 keys=kunci.replace(' ','').split(',')
-                for i, c in enumerate(['OpsiA','OpsiB','OpsiC','OpsiD','OpsiE']):
-                    stmt=r.get(c)
-                    if pd.notna(stmt): db.add(Option(question_id=q.id, label=str(stmt), option_index=str(i), correct_text=(keys[i] if i<len(keys) else "S")))
+                stmts=[r.get(c) for c in ['OpsiA','OpsiB','OpsiC','OpsiD','OpsiE']]
+                for i,s in enumerate(stmts): 
+                    if pd.notna(s): db.add(Option(question_id=q.id, label=str(s), option_index=str(i), correct_text=(keys[i] if i<len(keys) else "S")))
             else:
                 keys=[k.strip().upper() for k in kunci.replace(';',',').split(',')]
                 for i, c in enumerate(['A','B','C','D','E']):
@@ -205,42 +209,23 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
             cnt+=1
         db.commit(); return {"message": f"Sukses {cnt}"}
     except Exception as e: return {"message": str(e)}
-
-# === IMPORT SISWA LEBIH PINTAR ===
 @app.post("/admin/users/bulk")
 async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
-        c = await file.read()
-        df = pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
+        c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
         df.columns = [str(col).strip().lower().replace(' ', '').replace('_', '') for col in df.columns]
-        add = 0
-        
+        add=0
         def get_val(row, candidates):
-            for c in candidates:
+            for c in candidates: 
                 if c in row.index and pd.notna(row[c]): return str(row[c]).strip()
             return None
-
-        cols_user = ['username', 'user', 'nis', 'nisn', 'nomor', 'id', 'login']
-        cols_pass = ['password', 'pass', 'sandi', 'pin', 'token', 'kode']
-        cols_name = ['nama', 'name', 'fullname', 'namalengkap', 'siswa', 'namasiswa']
-        cols_school = ['sekolah', 'school', 'asal', 'asalsekolah', 'unit']
-        cols_role = ['role', 'peran', 'jabatan']
-
         for _, r in df.iterrows():
-            u = get_val(r, cols_user)
-            p = get_val(r, cols_pass) or "12345" 
-            n = get_val(r, cols_name) or u       
-            s = get_val(r, cols_school) or "Umum"
-            role_raw = get_val(r, cols_role)
-            role = "admin" if role_raw and "admin" in str(role_raw).lower() else "student"
-            if not u: continue 
-            if db.query(User).filter_by(username=str(u).strip()).first(): continue
-            db.add(User(username=str(u).strip(), password=str(p).strip(), full_name=str(n).strip(), role=role, school=str(s).strip()))
-            add += 1
-        db.commit()
-        return {"message": f"Sukses menambah {add} siswa baru!"}
-    except Exception as e: return {"message": f"Gagal Import: {str(e)}"}
-
+            u = get_val(r, ['username', 'user', 'nis']); p = get_val(r, ['password', 'pass']) or "12345"; n = get_val(r, ['nama', 'name']) or u; s = get_val(r, ['sekolah', 'school']) or "Umum"
+            role = "admin" if "admin" in str(get_val(r, ['role'])).lower() else "student"
+            if not u or db.query(User).filter_by(username=str(u).strip()).first(): continue
+            db.add(User(username=str(u).strip(), password=str(p).strip(), full_name=str(n).strip(), role=role, school=str(s).strip())); add+=1
+        db.commit(); return {"message": f"Sukses {add}"}
+    except Exception as e: return {"message": f"Gagal: {str(e)}"}
 @app.post("/admin/users")
 def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
     if db.query(User).filter(User.username == u.username).first(): raise HTTPException(400, "Username ada")
@@ -249,8 +234,6 @@ def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
 def del_users(d: BulkDeleteSchema, db: Session = Depends(get_db)): db.query(User).filter(User.id.in_(d.user_ids)).delete(synchronize_session=False); db.commit(); return {"message":"OK"}
 @app.get("/admin/users") 
 def get_users(db: Session = Depends(get_db)): return db.query(User).options(joinedload(User.results)).all()
-
-# SISWA EXAM
 @app.get("/exams/{exam_id}")
 def get_exam(exam_id: str, db: Session = Depends(get_db)):
     e=db.query(Exam).filter_by(id=exam_id).first(); qs=[]
@@ -282,12 +265,9 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
         if is_r: 
             corr+=1; earn_w+=q.difficulty; q.stats_correct+=1 # UPDATE STATS
         q.stats_total+=1
-    
     final = 200+(earn_w/tot_w)*800 if tot_w>0 else 0
     db.add(ExamResult(user_id=u.id, exam_id=exam_id, correct_count=corr, wrong_count=len(questions)-corr, irt_score=final))
     db.commit(); return {"message":"Saved", "score":final}
-
-# Lain-lain
 @app.post("/admin/periods/{pid}/toggle") 
 def toggle_period(pid: int, db: Session = Depends(get_db)): p=db.query(ExamPeriod).filter_by(id=pid).first(); p.is_active=not p.is_active; db.commit(); return {"message":"OK"}
 @app.delete("/admin/periods/{pid}") 
@@ -365,6 +345,14 @@ async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_
             if pd.notna(univ) and pd.notna(prod): db.add(Major(university=str(univ).strip(), name=str(prod).strip(), passing_grade=float(pg or 0))); count+=1
         db.commit(); return {"message": f"Sukses! {count} Jurusan."}
     except Exception as e: return {"message":str(e)}
+@app.post("/config/release")
+def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
+    c=db.query(SystemConfig).filter_by(key="release_announcement").first()
+    if c: c.value=d.value 
+    else: db.add(SystemConfig(key="release_announcement",value=d.value))
+    db.commit(); return {"message":"OK"}
+@app.get("/config/release")
+def get_conf(db: Session=Depends(get_db)): c=db.query(SystemConfig).filter_by(key="release_announcement").first(); return {"is_released": (c.value=="true") if c else False}
 try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
