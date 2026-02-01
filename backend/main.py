@@ -1,17 +1,15 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text, inspect
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session, joinedload
-from sqlalchemy import distinct, func
+from sqlalchemy import distinct
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 import pandas as pd
 import io
 import os
-import math
 
 # CONFIG
 UPLOAD_DIR = "uploads"
@@ -98,14 +96,14 @@ def calculate_irt_score(correct_questions, total_questions):
 app = FastAPI(title="CBT FINAL FIX")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# === INI PERBAIKAN KRUSIAL (DIBUAT MULTI-LINE) ===
+# === FIX SYNTAX ERROR DI SINI ===
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-# ================================================
+# ===============================
 
 @app.on_event("startup")
 def startup_event():
@@ -116,10 +114,6 @@ def startup_event():
             try: conn.execute(text("ALTER TABLE options ADD COLUMN IF NOT EXISTS correct_text TEXT")); conn.commit()
             except: pass
             try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS type VARCHAR")); conn.commit()
-            except: pass
-            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_correct INTEGER DEFAULT 0")); conn.commit()
-            except: pass
-            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_total INTEGER DEFAULT 0")); conn.commit()
             except: pass
         if db.query(User).filter_by(username="admin_cabang").count() == 0:
             db.add(User(username="admin_cabang", password="123", full_name="Admin", role="admin", school="PUSAT"))
@@ -195,8 +189,10 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
     try:
         u=db.query(User).filter_by(username=d.username).first()
         if not u: raise HTTPException(404, "User not found")
-        existing = db.query(ExamResult).filter_by(user_id=u.id, exam_id=exam_id).first()
-        if existing: return {"message":"Done", "score": existing.irt_score}
+        # Overwrite jika sudah ada
+        db.query(ExamResult).filter_by(user_id=u.id, exam_id=exam_id).delete()
+        db.commit()
+
         questions = db.query(Question).filter_by(exam_id=exam_id).all()
         corr_q = []
         for q in questions:
@@ -217,16 +213,15 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
                 k = next((o.option_index for o in q.options if o.is_correct), None)
                 if str(ans) == str(k): is_r=True
             if is_r:
-                corr_q.append(q)
-                q.stats_correct += 1
+                corr_q.append(q); q.stats_correct += 1
             q.stats_total += 1
+        
         final = calculate_irt_score(corr_q, questions)
         db.add(ExamResult(user_id=u.id, exam_id=exam_id, correct_count=len(corr_q), wrong_count=len(questions)-len(corr_q), irt_score=final))
         db.commit()
         return {"message":"Saved", "score":final}
     except Exception as e:
-        print(f"SUBMIT ERROR: {e}")
-        raise HTTPException(500, "Gagal simpan")
+        raise HTTPException(500, f"Gagal simpan: {str(e)}")
 
 @app.put("/admin/questions/{qid}")
 def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get_db)):
@@ -286,7 +281,6 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
         db.commit(); return {"message": f"Sukses {cnt}"}
     except Exception as e: return {"message": str(e)}
 
-# IMPORT USER LEBIH AGRESIF
 @app.post("/admin/users/bulk")
 async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
@@ -388,6 +382,37 @@ def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
     db.commit(); return {"message":"OK"}
 @app.get("/config/release")
 def get_conf(db: Session=Depends(get_db)): c=db.query(SystemConfig).filter_by(key="release_announcement").first(); return {"is_released": (c.value=="true") if c else False}
+@app.get("/admin/exams/{eid}/preview")
+def admin_preview(eid: str, db: Session = Depends(get_db)):
+    e = db.query(Exam).filter_by(id=eid).first()
+    qs = []
+    if not e: return {"title":"-", "questions":[]}
+    
+    for q in sorted(e.questions, key=lambda x: x.id):
+        raw_options = []
+        ans_str = ""
+        sorted_opts = sorted(q.options, key=lambda x: x.option_index)
+        
+        if q.type == 'multiple_choice' or q.type == 'complex':
+            raw_options = [o.label for o in sorted_opts]
+            ans_str = ",".join([o.option_index for o in sorted_opts if o.is_correct])
+        elif q.type == 'short_answer':
+            if q.options: ans_str = q.options[0].correct_text
+        elif q.type == 'table_boolean':
+             raw_options = [o.label for o in sorted_opts]
+             ans_str = ",".join([o.correct_text for o in sorted_opts])
+
+        qs.append({
+            "id": q.id, 
+            "text": q.text, 
+            "type": q.type, 
+            "explanation": q.explanation, 
+            "image_url": q.image_url, 
+            "reading_material": q.reading_material, 
+            "correct_answer": ans_str,
+            "raw_options": raw_options 
+        })
+    return {"title": e.title, "questions": qs}
 try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
@@ -424,62 +449,3 @@ def dl_pdf(school: Optional[str]=None, db: Session=Depends(get_db)):
         t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,colors.black),('FONTSIZE',(0,0),(-1,-1),8)])); el.append(t); doc.build(el); buf.seek(0)
         return StreamingResponse(buf,media_type='application/pdf',headers={'Content-Disposition':'attachment;filename="Rekap.pdf"'})
     except Exception as e: return JSONResponse({"message": str(e)})
-
-# API PREVIEW LENGKAP (RAW DATA)
-@app.get("/admin/exams/{eid}/preview")
-def admin_preview(eid: str, db: Session = Depends(get_db)):
-    e = db.query(Exam).filter_by(id=eid).first()
-    qs = []
-    if not e: return {"title":"-", "questions":[]}
-    
-    # Sort questions by ID
-    for q in sorted(e.questions, key=lambda x: x.id):
-        raw_options = []
-        ans_str = ""
-        # Sort options by index (A, B, C)
-        sorted_opts = sorted(q.options, key=lambda x: x.option_index)
-        
-        if q.type == 'multiple_choice' or q.type == 'complex':
-            raw_options = [o.label for o in sorted_opts]
-            ans_str = ",".join([o.option_index for o in sorted_opts if o.is_correct])
-        elif q.type == 'short_answer':
-            if q.options: ans_str = q.options[0].correct_text
-        elif q.type == 'table_boolean':
-             raw_options = [o.label for o in sorted_opts]
-             ans_str = ",".join([o.correct_text for o in sorted_opts])
-
-        qs.append({
-            "id": q.id, 
-            "text": q.text, 
-            "type": q.type, 
-            "explanation": q.explanation, 
-            "image_url": q.image_url, 
-            "reading_material": q.reading_material, 
-            "correct_answer": ans_str,
-            "raw_options": raw_options 
-        })
-    return {"title": e.title, "questions": qs}
-
-@app.put("/admin/questions/{qid}")
-def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get_db)):
-    q = db.query(Question).filter_by(id=qid).first()
-    if not q: raise HTTPException(404, "Soal tidak ada")
-    
-    q.text = d.text
-    q.explanation = d.explanation
-    
-    if d.options and (q.type == 'multiple_choice' or q.type == 'complex'):
-        db.query(Option).filter_by(question_id=qid).delete()
-        keys = [k.strip().upper() for k in (d.correct_answer or "").split(',')]
-        abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        for i, opt_text in enumerate(d.options):
-            idx_char = abc[i] if i < len(abc) else str(i)
-            is_corr = idx_char in keys
-            db.add(Option(question_id=qid, label=opt_text, option_index=idx_char, is_correct=is_corr))
-            
-    elif q.type == 'short_answer' and d.correct_answer:
-         if q.options: q.options[0].correct_text = d.correct_answer
-         else: db.add(Option(question_id=qid, label="KUNCI", correct_text=d.correct_answer))
-
-    db.commit()
-    return {"message": "Soal berhasil diperbarui!"}

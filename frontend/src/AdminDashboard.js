@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-// IMPORT IKON SUDAH LENGKAP - ANTI CRASH
 import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save } from 'lucide-react';
 import 'katex/dist/katex.min.css'; 
 import { InlineMath } from 'react-katex';
@@ -11,6 +10,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [targetSchool, setTargetSchool] = useState('Semua'); 
   const [schoolList, setSchoolList] = useState(['Semua']); 
   const [users, setUsers] = useState([]);
+  const [majors, setMajors] = useState([]);
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', school: '', role: 'student' });
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [searchUser, setSearchUser] = useState('');
@@ -29,12 +29,14 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
         fetch(`${apiUrl}/admin/periods`).then(r => r.json()),
         fetch(`${apiUrl}/admin/users`).then(r => r.json()),
         fetch(`${apiUrl}/config/release`).then(r => r.json()),
-        fetch(`${apiUrl}/admin/schools-list`).then(r => r.json())
-    ]).then(([p, u, c, s]) => {
+        fetch(`${apiUrl}/admin/schools-list`).then(r => r.json()),
+        fetch(`${apiUrl}/majors`).then(r => r.json())
+    ]).then(([p, u, c, s, m]) => {
         setPeriods(Array.isArray(p) ? p : []);
         setUsers(Array.isArray(u) ? u : []);
         setIsReleased(c.is_released);
         setSchoolList(s);
+        setMajors(m);
         setLoading(false);
     }).catch(() => setLoading(false));
   }, [apiUrl]);
@@ -70,7 +72,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             if(res2.ok) setItemAnalysis(await res2.json());
           } catch(e) { setItemAnalysis([]); }
 
-      } catch { alert("Gagal load preview. Pastikan soal sudah diupload."); }
+      } catch { alert("Gagal load preview."); }
   };
 
   const handleSaveQuestion = async () => {
@@ -127,35 +129,44 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
     return (
       <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
         <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50 border-b font-bold"><tr><th className="p-4 sticky left-0 bg-slate-50 border-r">Nama</th><th className="p-4">Sekolah</th>{["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=><th key={k} className="p-4 text-center border-l w-16">{k}</th>)}<th className="p-4 text-center bg-indigo-50 border-l">AVG</th><th className="p-4 text-center border-l">Aksi</th></tr></thead>
-                <tbody className="divide-y">{studentWithResults.map(u => {
-                    const scores = {}; u.results.forEach(r => scores[r.exam_id.split('_').pop()] = {val: Math.round(r.irt_score), eid: r.exam_id});
-                    const total = Object.values(scores).reduce((a,b)=>a+b.val,0);
-                    const avg = Math.round(total/7);
-                    return (
-                        <tr key={u.id} className="hover:bg-slate-50">
-                            <td className="p-4 font-bold sticky left-0 bg-white border-r">{u.full_name}</td>
-                            <td className="p-4">{u.school}</td>
-                            {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> (
-                                <td key={k} 
-                                    className={`p-4 text-center border-l cursor-pointer hover:bg-red-50 hover:text-red-600 transition ${scores[k] ? 'font-bold' : 'text-slate-300'}`}
-                                    onClick={() => scores[k] && handleReset(u.id, scores[k].eid)}
-                                    title="Klik untuk reset nilai ini"
-                                >
-                                    {scores[k]?.val || "-"}
-                                </td>
-                            ))}
-                            <td className="p-4 text-center font-bold bg-indigo-50 border-l">{avg}</td>
-                            <td className="p-4 text-center border-l">
-                                <button onClick={() => handleReset(u.id)} className="p-1 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Reset Semua Ujian"><Trash2 size={16}/></button>
-                            </td>
-                        </tr>
-                    );
-                })}</tbody>
+            <table className="w-full text-xs text-left whitespace-nowrap">
+                <thead className="bg-slate-50 border-b font-bold text-slate-700">
+                    <tr>
+                        <th className="p-4 sticky left-0 bg-slate-50 border-r z-10">Nama Siswa</th>
+                        <th className="p-4 border-r">Pilihan 1</th>
+                        <th className="p-4 border-r">Pilihan 2</th>
+                        {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=><th key={k} className="p-3 text-center border-l w-12">{k}</th>)}
+                        <th className="p-4 text-center bg-indigo-50 border-l font-black text-indigo-700">AVG</th>
+                        <th className="p-4 text-center border-l">Status</th>
+                        <th className="p-4 text-center border-l">Reset</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y text-slate-600">
+                    {studentWithResults.map(u => {
+                        const scores = {}; u.results.forEach(r => scores[r.exam_id.split('_').pop()] = {val: Math.round(r.irt_score), eid: r.exam_id});
+                        const total = Object.values(scores).reduce((a,b)=>a+b.val,0);
+                        const avg = Math.round(total/7);
+                        const c1 = majors.find(m => m.id === u.choice1_id);
+                        const c2 = majors.find(m => m.id === u.choice2_id);
+                        let status = <span className="text-red-500 font-bold">TIDAK LULUS</span>;
+                        if (c1 && avg >= c1.passing_grade) status = <span className="text-emerald-600 font-bold">LULUS P1</span>;
+                        else if (c2 && avg >= c2.passing_grade) status = <span className="text-blue-600 font-bold">LULUS P2</span>;
+                        return (
+                            <tr key={u.id} className="hover:bg-slate-50 transition">
+                                <td className="p-4 font-bold sticky left-0 bg-white border-r z-10 text-slate-800">{u.full_name}<br/><span className="text-xs font-normal text-slate-400">{u.school}</span></td>
+                                <td className="p-4 border-r max-w-[150px] truncate" title={c1?.university + " - " + c1?.name}>{c1 ? `${c1.university} - ${c1.name}` : "-"}</td>
+                                <td className="p-4 border-r max-w-[150px] truncate" title={c2?.university + " - " + c2?.name}>{c2 ? `${c2.university} - ${c2.name}` : "-"}</td>
+                                {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> (<td key={k} className={`p-3 text-center border-l cursor-pointer hover:bg-red-100 hover:text-red-600 transition ${scores[k] ? 'font-bold text-slate-700' : 'text-slate-300'}`} onClick={() => scores[k] && handleReset(u.id, scores[k].eid)} title="Klik untuk reset nilai ini">{scores[k]?.val || "-"}</td>))}
+                                <td className="p-4 text-center font-black bg-indigo-50 border-l text-indigo-700 text-sm">{avg}</td>
+                                <td className="p-4 text-center border-l">{status}</td>
+                                <td className="p-4 text-center border-l"><button onClick={() => handleReset(u.id)} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-200 transition" title="Reset Semua"><Trash2 size={16}/></button></td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
             </table>
         </div>
-      </div>
+    </div>
     );
   };
 
@@ -213,7 +224,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           </div>
         )}
 
-        {/* MODAL PREVIEW */}
+        {/* MODAL PREVIEW & EDIT (SAMA SEPERTI SEBELUMNYA) */}
         {previewQuestions && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col">
@@ -282,7 +293,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             </div>
         )}
 
-        {/* ... (SISANYA SAMA) ... */}
         {(tab === 'users' || tab === 'recap') && (
             <div className="mb-6 flex gap-4 items-center bg-white p-4 rounded-xl border shadow-sm sticky top-0 z-10">
                 <Filter className="text-slate-400" size={20}/>
@@ -294,6 +304,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             </div>
         )}
 
+        {/* TAB SISWA & CONFIG (SAMA SEPERTI SEBELUMNYA) */}
         {tab === 'users' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between items-center">
@@ -323,8 +334,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           </div>
         )}
 
-        {tab === 'recap' && renderRecap()}
-        
         {tab === 'config' && (
             <div className="space-y-6">
                 <div className="bg-white p-8 rounded-2xl shadow-sm border flex gap-6 items-center">
