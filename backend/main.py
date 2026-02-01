@@ -1,17 +1,15 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text, inspect
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session, joinedload
-from sqlalchemy import distinct, func
+from sqlalchemy import distinct
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 import pandas as pd
 import io
 import os
-import math
 
 # CONFIG
 UPLOAD_DIR = "uploads"
@@ -31,12 +29,8 @@ class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
-    password = Column(String)
-    full_name = Column(String)
-    role = Column(String, default="student") 
-    school = Column(String, nullable=True)
-    choice1_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
-    choice2_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
+    password = Column(String); full_name = Column(String); role = Column(String, default="student"); school = Column(String, nullable=True)
+    choice1_id = Column(Integer, ForeignKey("majors.id"), nullable=True); choice2_id = Column(Integer, ForeignKey("majors.id"), nullable=True)
     results = relationship("ExamResult", back_populates="user", cascade="all, delete-orphan")
 
 class Major(Base):
@@ -86,7 +80,7 @@ class SystemConfig(Base):
     __tablename__ = "system_configs"
     key = Column(String, primary_key=True); value = Column(String)
 
-# LOGIC
+# IRT LOGIC
 def calculate_irt_score(correct_questions, total_questions):
     if not total_questions: return 0
     raw = sum([q.difficulty for q in correct_questions])
@@ -97,14 +91,20 @@ def calculate_irt_score(correct_questions, total_questions):
     final = 500 + (z * 100)
     return round(max(200, min(1000, final)))
 
-app = FastAPI(title="CBT PRO FINAL")
+app = FastAPI(title="CBT FINAL FIX")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+def get_db():
+    db = SessionLocal()
+    try: yield db
+    finally: db.close()
 
 @app.on_event("startup")
 def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
+        # Migration Safety
         with engine.connect() as conn:
             try: conn.execute(text("ALTER TABLE options ADD COLUMN IF NOT EXISTS correct_text TEXT")); conn.commit()
             except: pass
@@ -114,6 +114,7 @@ def startup_event():
             except: pass
             try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_total INTEGER DEFAULT 0")); conn.commit()
             except: pass
+        
         if db.query(User).filter_by(username="admin_cabang").count() == 0:
             db.add(User(username="admin_cabang", password="123", full_name="Admin", role="admin", school="PUSAT"))
             db.commit()
@@ -122,76 +123,141 @@ def startup_event():
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
-# === PERBAIKAN FATAL: SYNTAX ERROR DIHILANGKAN ===
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-# =================================================
-
 # SCHEMAS
 class LoginSchema(BaseModel): username: str; password: str
 class AnswerSchema(BaseModel): answers: Dict[str, Any]; username: str
 class MajorSelectionSchema(BaseModel): username: str; choice1_id: Optional[int]; choice2_id: Optional[int]
 class PeriodCreateSchema(BaseModel): name: str; target_schools: Optional[str] = "Semua"; exam_type: str = "UTBK"
 class UserCreateSchema(BaseModel): username: str; full_name: str; password: str; role: str = "student"; school: Optional[str]
-class QuestionUpdateSchema(BaseModel): text: str; explanation: Optional[str] = None
+# SCHEMA UPDATE YANG DITUNGGU-TUNGGU
+class QuestionUpdateSchema(BaseModel): 
+    text: str
+    explanation: Optional[str] = None
+    options: Optional[List[str]] = None 
+    correct_answer: Optional[str] = None
 class ConfigSchema(BaseModel): value: str
 class BulkDeleteSchema(BaseModel): user_ids: List[int]
 class ResetResultSchema(BaseModel): user_id: int; exam_id: Optional[str] = None
 
-# API
+# --- API ---
+
 @app.post("/login")
 def login(d: LoginSchema, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=d.username).first()
     if u and u.password==d.password: return {"message":"OK", "username":u.username, "role":u.role, "school":u.school, "choice1_id":u.choice1_id}
     raise HTTPException(400, "Login Gagal")
 
-@app.post("/admin/reset-result")
-def reset_result(d: ResetResultSchema, db: Session = Depends(get_db)):
-    if d.exam_id:
-        res = db.query(ExamResult).filter_by(user_id=d.user_id, exam_id=d.exam_id).first()
-        if res: db.delete(res)
-    else:
-        db.query(ExamResult).filter_by(user_id=d.user_id).delete()
+# API PREVIEW DENGAN URUTAN YANG BENAR (ORDER BY ID)
+@app.get("/admin/exams/{eid}/preview")
+def admin_preview(eid: str, db: Session = Depends(get_db)):
+    e = db.query(Exam).filter_by(id=eid).first()
+    if not e: return {"title": "Error", "questions": []}
+    
+    # SORTING PENTING: Urutkan berdasarkan ID agar sesuai urutan upload
+    sorted_qs = sorted(e.questions, key=lambda x: x.id)
+    
+    qs = []
+    for q in sorted_qs:
+        raw_options = []
+        ans_str = "-"
+        
+        # Urutkan opsi A, B, C, D, E
+        sorted_opts = sorted(q.options, key=lambda x: x.option_index)
+        
+        if q.type == 'table_boolean':
+            ans_str = "Tabel"
+            raw_options = [f"{o.label} ({o.correct_text})" for o in sorted_opts]
+        elif q.type == 'short_answer':
+            ans_str = q.options[0].correct_text if q.options else ""
+        else:
+            raw_options = [o.label for o in sorted_opts]
+            ans_str = ",".join([o.option_index for o in sorted_opts if o.is_correct])
+
+        qs.append({
+            "id": q.id, 
+            "text": q.text, 
+            "type": q.type, 
+            "explanation": q.explanation, 
+            "image_url": q.image_url, 
+            "reading_material": q.reading_material, 
+            "correct_answer": ans_str,
+            "raw_options": raw_options # Untuk diedit di frontend
+        })
+    return {"title": e.title, "questions": qs}
+
+@app.put("/admin/questions/{qid}")
+def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get_db)):
+    q = db.query(Question).filter_by(id=qid).first()
+    if not q: raise HTTPException(404, "Soal tidak ada")
+    
+    q.text = d.text
+    q.explanation = d.explanation
+    
+    # Update Opsi jika dikirim
+    if d.options and (q.type == 'multiple_choice' or q.type == 'complex'):
+        db.query(Option).filter_by(question_id=qid).delete()
+        keys = [k.strip().upper() for k in (d.correct_answer or "").split(',')]
+        abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        for i, opt_text in enumerate(d.options):
+            idx = abc[i] if i < len(abc) else str(i)
+            db.add(Option(question_id=qid, label=opt_text, option_index=idx, is_correct=(idx in keys)))
+            
+    elif q.type == 'short_answer' and d.correct_answer:
+         if q.options: q.options[0].correct_text = d.correct_answer
+         else: db.add(Option(question_id=qid, label="KUNCI", correct_text=d.correct_answer))
+
     db.commit()
-    return {"message": "Reset Berhasil"}
+    return {"message": "Tersimpan"}
 
-@app.get("/majors")
-def get_majors(db: Session = Depends(get_db)): return db.query(Major).all()
-@app.get("/admin/schools-list")
-def get_schools_list(db: Session = Depends(get_db)): return ["Semua"] + ([s[0] for s in db.query(distinct(User.school)).filter(User.school != None).all()] or [])
-@app.post("/users/select-major")
-def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
-    u=db.query(User).filter_by(username=d.username).first(); u.choice1_id=d.choice1_id; u.choice2_id=d.choice2_id; db.commit(); return {"status":"success"}
-@app.post("/admin/periods")
-def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
-    p=ExamPeriod(name=d.name, exam_type=d.exam_type, is_active=False, target_schools=d.target_schools); db.add(p); db.commit(); db.refresh(p)
-    for c,t in [("PU",30),("PPU",15),("PBM",25),("PK",20),("LBI",40),("LBE",20),("PM",40)]: db.add(Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=t))
-    db.commit(); return {"message": "OK"}
-@app.get("/admin/periods")
-def get_periods(db: Session = Depends(get_db)):
-    ps=db.query(ExamPeriod).order_by(ExamPeriod.id.desc()).options(joinedload(ExamPeriod.exams).joinedload(Exam.questions)).all(); res=[]
-    for p in ps:
-        exs=[{"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"q_count":len(e.questions)} for e in p.exams]
-        res.append({"id":p.id,"name":p.name,"target_schools":p.target_schools,"is_active":p.is_active,"exams":exs})
-    return res
+@app.post("/admin/users/bulk")
+async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    try:
+        c=await file.read()
+        df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
+        df = df.fillna('')
+        df.columns = [str(col).strip().lower().replace(' ', '').replace('_', '') for col in df.columns]
+        
+        add=0
+        def get_val(row, candidates):
+            for c in candidates: 
+                if c in row.index:
+                    val = str(row[c]).strip()
+                    if val and val.lower() != 'nan': return val
+            return None
 
-# UPLOAD SOAL ANTI NAN & BERSIH
+        # LIST PENEBAK KOLOM LEBIH BANYAK
+        cols_user = ['username', 'user', 'nis', 'nisn', 'nomor', 'id', 'login', 'nopeserta', 'no_peserta']
+        cols_pass = ['password', 'pass', 'sandi', 'pin', 'token', 'kode']
+        cols_name = ['nama', 'name', 'fullname', 'namalengkap', 'siswa', 'namasiswa', 'nama_siswa']
+        cols_school = ['sekolah', 'school', 'asal', 'asalsekolah', 'unit', 'cabang']
+        cols_role = ['role', 'peran', 'jabatan', 'status']
+
+        for _, r in df.iterrows():
+            u = get_val(r, cols_user)
+            p = get_val(r, cols_pass) or "12345" 
+            n = get_val(r, cols_name) or u       
+            s = get_val(r, cols_school) or "Umum"
+            role = "admin" if "admin" in str(get_val(r, cols_role)).lower() else "student"
+            
+            if not u: continue 
+            if db.query(User).filter_by(username=u).first(): continue
+            db.add(User(username=u, password=p, full_name=n, role=role, school=s)); add+=1
+        db.commit(); return {"message": f"Sukses {add} user"}
+    except Exception as e: return {"message": f"Gagal: {str(e)}"}
+
 @app.post("/admin/upload-questions/{eid}")
 async def upload_questions(eid: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
         c=await file.read(); df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
-        # BERSIHKAN DATA (NAN -> KOSONG)
-        df = df.fillna('')
+        df = df.fillna('') # HAPUS NAN
         
         old=db.query(Question).filter_by(exam_id=eid).all()
         for q in old: db.query(Option).filter_by(question_id=q.id).delete(); db.delete(q)
         db.commit(); cnt=0
+        
         for _, r in df.iterrows():
             txt=str(r.get('Soal') or r.get('soal') or r.get('text')).strip()
+            # HAPUS NAN DARI SOAL
             if not txt or txt.lower()=='nan': continue
             
             q_type='multiple_choice'; raw=str(r.get('Tipe') or 'PG').upper()
@@ -203,6 +269,7 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
             try: diff = float(r.get('Kesulitan') or 1.0)
             except: pass
             
+            # HAPUS NAN DARI BACAAN
             read_mat = str(r.get('Bacaan') or '').strip()
             if read_mat.lower() == 'nan': read_mat = ''
             
@@ -227,62 +294,24 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
                     val=str(r.get(f'Opsi{c}') or '').strip()
                     if val and val.lower() != 'nan': db.add(Option(question_id=q.id, label=val, option_index=c, is_correct=(c in keys)))
             cnt+=1
-        db.commit(); return {"message": f"Sukses {cnt} soal tersimpan"}
+        db.commit(); return {"message": f"Sukses {cnt}"}
     except Exception as e: return {"message": str(e)}
 
-# IMPORT SISWA LEBIH PINTAR
-@app.post("/admin/users/bulk")
-async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    try:
-        c=await file.read()
-        df=pd.read_csv(io.BytesIO(c)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(c))
-        
-        # BERSIHKAN DATA
-        df = df.fillna('')
-        df.columns = [str(col).strip().lower().replace(' ', '').replace('_', '') for col in df.columns]
-        
-        add=0
-        def get_val(row, candidates):
-            for c in candidates: 
-                if c in row.index:
-                    val = str(row[c]).strip()
-                    if val and val.lower() != 'nan': return val
-            return None
-
-        cols_user = ['username', 'user', 'nis', 'nisn', 'nomor', 'id', 'login']
-        cols_pass = ['password', 'pass', 'sandi', 'pin', 'token']
-        cols_name = ['nama', 'name', 'fullname', 'namalengkap', 'siswa', 'namasiswa']
-        cols_school = ['sekolah', 'school', 'asal', 'asalsekolah', 'unit']
-        cols_role = ['role', 'peran', 'jabatan']
-
-        for _, r in df.iterrows():
-            u = get_val(r, cols_user)
-            p = get_val(r, cols_pass) or "12345" 
-            n = get_val(r, cols_name) or u       
-            s = get_val(r, cols_school) or "Umum"
-            role = "admin" if "admin" in str(get_val(r, cols_role)).lower() else "student"
-            
-            if not u: continue 
-            if db.query(User).filter_by(username=u).first(): continue
-            db.add(User(username=u, password=p, full_name=n, role=role, school=s)); add+=1
-        db.commit(); return {"message": f"Sukses menambah {add} siswa baru!"}
-    except Exception as e: return {"message": f"Gagal Import: {str(e)}"}
-
-@app.post("/admin/users")
-def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.username == u.username).first(): raise HTTPException(400, "Username ada")
-    db.add(User(username=u.username, password=u.password, full_name=u.full_name, role=u.role, school=u.school)); db.commit(); return {"message":"OK"}
-@app.post("/admin/users/delete-bulk")
-def del_users(d: BulkDeleteSchema, db: Session = Depends(get_db)): db.query(User).filter(User.id.in_(d.user_ids)).delete(synchronize_session=False); db.commit(); return {"message":"OK"}
-@app.get("/admin/users") 
-def get_users(db: Session = Depends(get_db)): return db.query(User).options(joinedload(User.results)).all()
+# API SISANYA (TETAP)
 @app.get("/exams/{exam_id}")
 def get_exam(exam_id: str, db: Session = Depends(get_db)):
-    e=db.query(Exam).filter_by(id=exam_id).first(); qs=[]
-    for q in e.questions:
-        opts=[{"id":o.id if q.type=='table_boolean' else o.option_index,"text":o.label} for o in q.options]
+    e=db.query(Exam).filter_by(id=exam_id).first(); 
+    if not e: return {"title":"Error", "questions":[]}
+    # SORTING ID AGAR URUT
+    sorted_qs = sorted(e.questions, key=lambda x: x.id)
+    qs=[]
+    for q in sorted_qs:
+        # Sort Options by Index (A,B,C)
+        s_opts = sorted(q.options, key=lambda o: o.option_index)
+        opts=[{"id":o.id if q.type=='table_boolean' else o.option_index,"text":o.label} for o in s_opts]
         qs.append({"id":q.id,"type":q.type,"text":q.text,"image_url":q.image_url,"reading_material":q.reading_material,"options":opts})
     return {"id":e.id,"title":e.title,"duration":e.duration,"questions":qs}
+
 @app.post("/exams/{exam_id}/submit")
 def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=d.username).first()
@@ -310,6 +339,15 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
     final = 200+(earn_w/tot_w)*800 if tot_w>0 else 0
     db.add(ExamResult(user_id=u.id, exam_id=exam_id, correct_count=corr, wrong_count=len(questions)-corr, irt_score=final))
     db.commit(); return {"message":"Saved", "score":final}
+
+@app.post("/admin/users")
+def add_user(u: UserCreateSchema, db: Session = Depends(get_db)):
+    if db.query(User).filter(User.username == u.username).first(): raise HTTPException(400, "Username ada")
+    db.add(User(username=u.username, password=u.password, full_name=u.full_name, role=u.role, school=u.school)); db.commit(); return {"message":"OK"}
+@app.post("/admin/users/delete-bulk")
+def del_users(d: BulkDeleteSchema, db: Session = Depends(get_db)): db.query(User).filter(User.id.in_(d.user_ids)).delete(synchronize_session=False); db.commit(); return {"message":"OK"}
+@app.get("/admin/users") 
+def get_users(db: Session = Depends(get_db)): return db.query(User).options(joinedload(User.results)).all()
 @app.post("/admin/periods/{pid}/toggle") 
 def toggle_period(pid: int, db: Session = Depends(get_db)): p=db.query(ExamPeriod).filter_by(id=pid).first(); p.is_active=not p.is_active; db.commit(); return {"message":"OK"}
 @app.delete("/admin/periods/{pid}") 
@@ -347,25 +385,6 @@ def stats(username: str, db: Session = Depends(get_db)):
         if c1 and avg>=c1.passing_grade: status=f"LULUS P1: {c1.university}"
         elif c2 and avg>=c2.passing_grade: status=f"LULUS P2: {c2.university}"
     return {"is_released":is_released,"average":avg,"details":details,"radar":details,"status":status}
-@app.get("/admin/exams/{eid}/preview")
-def admin_preview(eid: str, db: Session = Depends(get_db)):
-    e=db.query(Exam).filter_by(id=eid).first(); qs=[]
-    for q in e.questions:
-        if q.type=='table_boolean': ans="Tabel"
-        elif q.type=='short_answer': ans=q.options[0].correct_text
-        else: ans=next((o.option_index for o in q.options if o.is_correct),"-")
-        opts_display = []
-        if q.type == 'table_boolean':
-            for o in q.options: opts_display.append(f"{o.label} ({o.correct_text})")
-        elif q.type == 'multiple_choice' or q.type == 'complex':
-             for o in q.options: opts_display.append(f"{o.option_index}. {o.label}")
-        qs.append({"id":q.id, "text":q.text, "type":q.type, "explanation":q.explanation, "image_url":q.image_url, "reading_material":q.reading_material, "correct_answer":ans, "options_preview": opts_display})
-    return {"title":e.title,"questions":qs}
-@app.put("/admin/questions/{qid}")
-def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get_db)):
-    q=db.query(Question).filter_by(id=qid).first()
-    if q: q.text=d.text; q.explanation=d.explanation; db.commit()
-    return {"message":"OK"}
 @app.get("/admin/exams/{eid}/analysis")
 def item_analysis(eid: str, db: Session = Depends(get_db)):
     e=db.query(Exam).filter_by(id=eid).first(); res=[]
@@ -392,6 +411,42 @@ async def upload_majors(file: UploadFile = File(...), db: Session = Depends(get_
             if pd.notna(univ) and pd.notna(prod): db.add(Major(university=str(univ).strip(), name=str(prod).strip(), passing_grade=float(pg or 0))); count+=1
         db.commit(); return {"message": f"Sukses! {count} Jurusan."}
     except Exception as e: return {"message":str(e)}
+@app.post("/admin/reset-result")
+def reset_result(d: ResetResultSchema, db: Session = Depends(get_db)):
+    if d.exam_id:
+        res = db.query(ExamResult).filter_by(user_id=d.user_id, exam_id=d.exam_id).first()
+        if res: db.delete(res)
+    else:
+        db.query(ExamResult).filter_by(user_id=d.user_id).delete()
+    db.commit()
+    return {"message": "Reset Berhasil"}
+@app.get("/majors")
+def get_majors(db: Session = Depends(get_db)): return db.query(Major).all()
+@app.get("/admin/schools-list")
+def get_schools_list(db: Session = Depends(get_db)): return ["Semua"] + ([s[0] for s in db.query(distinct(User.school)).filter(User.school != None).all()] or [])
+@app.post("/users/select-major")
+def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
+    u=db.query(User).filter_by(username=d.username).first(); u.choice1_id=d.choice1_id; u.choice2_id=d.choice2_id; db.commit(); return {"status":"success"}
+@app.post("/admin/periods")
+def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
+    p=ExamPeriod(name=d.name, exam_type=d.exam_type, is_active=False, target_schools=d.target_schools); db.add(p); db.commit(); db.refresh(p)
+    for c,t in [("PU",30),("PPU",15),("PBM",25),("PK",20),("LBI",40),("LBE",20),("PM",40)]: db.add(Exam(id=f"P{p.id}_{c}", period_id=p.id, code=c, title=f"Tes {c}", duration=t))
+    db.commit(); return {"message": "OK"}
+@app.get("/admin/periods")
+def get_periods(db: Session = Depends(get_db)):
+    ps=db.query(ExamPeriod).order_by(ExamPeriod.id.desc()).options(joinedload(ExamPeriod.exams).joinedload(Exam.questions)).all(); res=[]
+    for p in ps:
+        exs=[{"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"q_count":len(e.questions)} for e in p.exams]
+        res.append({"id":p.id,"name":p.name,"target_schools":p.target_schools,"is_active":p.is_active,"exams":exs})
+    return res
+@app.post("/config/release")
+def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
+    c=db.query(SystemConfig).filter_by(key="release_announcement").first()
+    if c: c.value=d.value 
+    else: db.add(SystemConfig(key="release_announcement",value=d.value))
+    db.commit(); return {"message":"OK"}
+@app.get("/config/release")
+def get_conf(db: Session=Depends(get_db)): c=db.query(SystemConfig).filter_by(key="release_announcement").first(); return {"is_released": (c.value=="true") if c else False}
 try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors

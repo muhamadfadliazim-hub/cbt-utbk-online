@@ -53,15 +53,9 @@ const ExamSimulation = ({ examData, onSubmit }) => {
 
   const handleSubmit = () => { if(window.confirm("Yakin ingin mengakhiri ujian?")) onSubmit(answers); };
 
-  // FIX RENDER TEXT (BOLD, ITALIC, NAN)
   const renderText = (text) => {
     if (!text || text === 'nan') return "";
-    
-    // REPLACE [B] -> <b>, [I] -> <i>
-    let formatted = text
-        .replace(/\[B\]/gi, '<b>').replace(/\[\/B\]/gi, '</b>')
-        .replace(/\[I\]/gi, '<i>').replace(/\[\/I\]/gi, '</i>');
-
+    let formatted = text.replace(/\[B\]/gi, '<b>').replace(/\[\/B\]/gi, '</b>').replace(/\[I\]/gi, '<i>').replace(/\[\/I\]/gi, '</i>');
     const parts = formatted.split(/(\$.*?\$)/g);
     return <span className="text-slate-800 leading-relaxed text-lg">{parts.map((p, i) => p.startsWith('$') ? <span key={i} className="mx-1"><InlineMath math={p.replace(/\$/g, '')} /></span> : <span key={i} dangerouslySetInnerHTML={{ __html: p.replace(/\n/g, '<br/>') }} />)}</span>;
   };
@@ -77,7 +71,6 @@ const ExamSimulation = ({ examData, onSubmit }) => {
       return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Logic Hilangkan "Bacaan" jika kosong/nan
   const hasReading = q.reading_material && q.reading_material.trim() !== '' && q.reading_material.toLowerCase() !== 'nan';
 
   return (
@@ -226,7 +219,7 @@ const ExamSimulation = ({ examData, onSubmit }) => {
                                 className={`aspect-square rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center border-2 
                                 ${i===currentIndex ? 'bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-100' : 
                                   filled ? 'bg-emerald-500 text-white border-emerald-500' : 
-                                  'bg-slate-50 text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'}`}
+                                  'bg-slate-50 text-slate-500 border-slate-200 hover:border-indigo-300'}`}
                             >
                                 {i+1}
                             </button>

@@ -60,15 +60,28 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const handlePreviewExam = async (examId) => {
       try { 
           const res = await fetch(`${apiUrl}/admin/exams/${examId}/preview`); 
+          if(!res.ok) throw new Error();
           setPreviewQuestions(await res.json()); 
-          const res2 = await fetch(`${apiUrl}/admin/exams/${examId}/analysis`);
-          setItemAnalysis(await res2.json());
+          
+          try {
+            const res2 = await fetch(`${apiUrl}/admin/exams/${examId}/analysis`);
+            setItemAnalysis(await res2.json());
+          } catch(e) { setItemAnalysis([]); }
+
       } catch { alert("Gagal load preview."); }
   };
 
   const handleSaveQuestion = async () => {
       if(!editingQuestion) return;
-      await fetch(`${apiUrl}/admin/questions/${editingQuestion.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({text: editingQuestion.text, explanation: editingQuestion.explanation}) });
+      await fetch(`${apiUrl}/admin/questions/${editingQuestion.id}`, { 
+          method: 'PUT', headers: {'Content-Type':'application/json'}, 
+          body: JSON.stringify({
+              text: editingQuestion.text, 
+              explanation: editingQuestion.explanation,
+              correct_answer: editingQuestion.correct_answer,
+              options: editingQuestion.raw_options
+          }) 
+      });
       alert("Tersimpan!"); setEditingQuestion(null); setPreviewQuestions(null);
   };
 
@@ -87,29 +100,18 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   
   const handleDeleteUsers = async () => { if (window.confirm(`Hapus ${selectedUsers.length} siswa?`)) { await fetch(`${apiUrl}/admin/users/delete-bulk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_ids: selectedUsers }) }); setSelectedUsers([]); fetchData(); } };
   const handleUploadMajors = async (e) => { const file = e.target.files[0]; const formData = new FormData(); formData.append('file', file); const res = await fetch(`${apiUrl}/admin/upload-majors`, { method: 'POST', body: formData }); alert((await res.json()).message); };
-
+  
   const handleReset = async (userId, examId = null) => {
-      const msg = examId ? "Reset nilai subtes ini?" : "Reset SEMUA hasil ujian siswa ini?";
-      if(!window.confirm(msg)) return;
-      try {
-          const res = await fetch(`${apiUrl}/admin/reset-result`, {
-              method: 'POST', headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({ user_id: userId, exam_id: examId })
-          });
-          if(res.ok) { alert("Berhasil di-reset!"); fetchData(); }
-      } catch { alert("Gagal reset"); }
+      if(!window.confirm("Reset nilai?")) return;
+      await fetch(`${apiUrl}/admin/reset-result`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ user_id: userId, exam_id: examId }) });
+      alert("Berhasil di-reset!"); fetchData();
   };
 
   const filteredUsers = users.filter(u => u.full_name.toLowerCase().includes(searchUser.toLowerCase()) && (selectedSchoolFilter === 'Semua' || u.school === selectedSchoolFilter));
 
-  // FIX RENDER TEXT (BOLD, ITALIC, NAN)
   const renderText = (text) => {
       if(!text || text === 'nan') return "";
-      // REPLACE [B] -> <b>, [I] -> <i>
-      let formatted = text
-          .replace(/\[B\]/gi, '<b>').replace(/\[\/B\]/gi, '</b>')
-          .replace(/\[I\]/gi, '<i>').replace(/\[\/I\]/gi, '</i>');
-
+      let formatted = text.replace(/\[B\]/gi, '<b>').replace(/\[\/B\]/gi, '</b>').replace(/\[I\]/gi, '<i>').replace(/\[\/I\]/gi, '</i>');
       const parts = formatted.split(/(\$.*?\$)/g);
       return parts.map((part, index) => {
           if (part.startsWith('$') && part.endsWith('$')) return <span key={index} className="mx-1"><InlineMath math={part.replace(/\$/g, '')} /></span>;
@@ -129,15 +131,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                     const scores = {}; u.results.forEach(r => scores[r.exam_id.split('_').pop()] = {val: Math.round(r.irt_score), eid: r.exam_id});
                     const total = Object.values(scores).reduce((a,b)=>a+b.val,0);
                     const avg = Math.round(total/7);
-                    return (
-                        <tr key={u.id} className="hover:bg-slate-50">
-                            <td className="p-4 font-bold sticky left-0 bg-white border-r">{u.full_name}</td>
-                            <td className="p-4">{u.school}</td>
-                            {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> (<td key={k} className={`p-4 text-center border-l cursor-pointer hover:bg-red-50 hover:text-red-600 transition ${scores[k] ? 'font-bold' : 'text-slate-300'}`} onClick={() => scores[k] && handleReset(u.id, scores[k].eid)} title="Klik untuk reset nilai">{scores[k]?.val || "-"}</td>))}
-                            <td className="p-4 text-center font-bold bg-indigo-50 border-l">{avg}</td>
-                            <td className="p-4 text-center border-l"><button onClick={() => handleReset(u.id)} className="p-1 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Reset Semua"><Trash2 size={16}/></button></td>
-                        </tr>
-                    );
+                    return (<tr key={u.id} className="hover:bg-slate-50"><td className="p-4 font-bold sticky left-0 bg-white border-r">{u.full_name}</td><td className="p-4">{u.school}</td>{["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> (<td key={k} className={`p-4 text-center border-l cursor-pointer hover:bg-red-50 hover:text-red-600 ${scores[k] ? 'font-bold' : 'text-slate-300'}`} onClick={() => scores[k] && handleReset(u.id, scores[k].eid)}>{scores[k]?.val || "-"}</td>))}<td className="p-4 text-center font-bold bg-indigo-50 border-l">{avg}</td><td className="p-4 text-center border-l"><button onClick={() => handleReset(u.id)} className="p-1 bg-red-100 text-red-600 rounded"><Trash2 size={16}/></button></td></tr>);
                 })}</tbody>
             </table>
         </div>
@@ -222,29 +216,42 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                         </div>
                         <div className="w-1/3 p-6 overflow-y-auto bg-slate-50">
                             <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><BarChart3 size={18}/> Analisis Butir Soal</h4>
-                            {itemAnalysis ? (
-                                <div className="space-y-2">
-                                    {itemAnalysis.map(a => (
-                                        <div key={a.no} className="bg-white p-3 rounded-lg border text-xs">
-                                            <div className="flex justify-between mb-1"><span className="font-bold">No {a.no}</span><span>Diff: {a.difficulty}</span></div>
-                                            <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mb-1"><div className="bg-indigo-600 h-full" style={{width: `${a.percent}%`}}></div></div>
-                                            <div className="flex justify-between text-slate-500"><span>Benar: {a.correct}/{a.total}</span><span>{a.percent}%</span></div>
-                                        </div>
-                                    ))}
-                                </div>
+                            {itemAnalysis && itemAnalysis.length > 0 ? (
+                                <div className="space-y-2">{itemAnalysis.map(a => (<div key={a.no} className="bg-white p-3 rounded-lg border text-xs"><div className="flex justify-between mb-1"><span className="font-bold">No {a.no}</span><span>Diff: {a.difficulty}</span></div><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mb-1"><div className="bg-indigo-600 h-full" style={{width: `${a.percent}%`}}></div></div><div className="flex justify-between text-slate-500"><span>Benar: {a.correct}/{a.total}</span><span>{a.percent}%</span></div></div>))}</div>
                             ) : <div className="text-center text-slate-400">Belum ada data.</div>}
                         </div>
                     </div>
                 </div>
-                {/* MODAL EDIT */}
+                {/* MODAL EDIT LENGKAP */}
                 {editingQuestion && (
                     <div className="absolute inset-0 bg-black/50 z-[60] flex items-center justify-center">
-                        <div className="bg-white p-6 rounded-xl w-full max-w-lg">
+                        <div className="bg-white p-6 rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
                             <h3 className="font-bold mb-4">Edit Soal</h3>
                             <label className="text-xs font-bold text-slate-500">Pertanyaan</label>
-                            <textarea className="w-full p-2 border rounded mb-2 h-32" value={editingQuestion.text} onChange={e=>setEditingQuestion({...editingQuestion, text:e.target.value})}></textarea>
-                            <label className="text-xs font-bold text-slate-500">Pembahasan (Explanation)</label>
+                            <textarea className="w-full p-2 border rounded mb-2 h-24" value={editingQuestion.text} onChange={e=>setEditingQuestion({...editingQuestion, text:e.target.value})}></textarea>
+                            
+                            {(editingQuestion.type === 'multiple_choice' || editingQuestion.type === 'complex') && (
+                                <>
+                                    <label className="text-xs font-bold text-slate-500 mt-2 block">Opsi A-E</label>
+                                    {editingQuestion.raw_options.map((opt, idx) => (
+                                        <div key={idx} className="flex gap-2 mb-1">
+                                            <span className="font-bold w-4 text-center">{['A','B','C','D','E'][idx]}</span>
+                                            <input className="flex-1 p-1 border rounded text-sm" value={opt} onChange={e => {
+                                                const newOpts = [...editingQuestion.raw_options];
+                                                newOpts[idx] = e.target.value;
+                                                setEditingQuestion({...editingQuestion, raw_options: newOpts});
+                                            }}/>
+                                        </div>
+                                    ))}
+                                </>
+                            )}
+
+                            <label className="text-xs font-bold text-slate-500 mt-2 block">Kunci Jawaban</label>
+                            <input className="w-full p-2 border rounded mb-2" value={editingQuestion.correct_answer} onChange={e=>setEditingQuestion({...editingQuestion, correct_answer:e.target.value})} placeholder="Contoh: A (atau A,B untuk kompleks)"/>
+
+                            <label className="text-xs font-bold text-slate-500 mt-2 block">Pembahasan</label>
                             <textarea className="w-full p-2 border rounded mb-4 h-24" value={editingQuestion.explanation || ''} onChange={e=>setEditingQuestion({...editingQuestion, explanation:e.target.value})} placeholder="Tulis pembahasan disini..."></textarea>
+                            
                             <div className="flex gap-2 justify-end">
                                 <button onClick={()=>setEditingQuestion(null)} className="px-4 py-2 rounded border">Batal</button>
                                 <button onClick={handleSaveQuestion} className="px-4 py-2 rounded bg-blue-600 text-white flex items-center gap-2"><Save size={16}/> Simpan</button>
