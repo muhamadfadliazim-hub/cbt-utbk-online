@@ -3,6 +3,7 @@ import { LogOut, Clock, PlayCircle, BarChart3, ChevronRight, CheckCircle, AlertT
 import ExamSimulation from './ExamSimulation';
 
 const StudentDashboard = ({ user, onLogout, apiUrl }) => {
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [periods, setPeriods] = useState([]);
   const [stats, setStats] = useState(null);
   const [majors, setMajors] = useState([]);
@@ -12,7 +13,6 @@ const StudentDashboard = ({ user, onLogout, apiUrl }) => {
   // AUTO RESUME (CEK LOCALSTORAGE)
   const [activeExamId, setActiveExamId] = useState(localStorage.getItem('active_exam_id'));
   const [activeExamData, setActiveExamData] = useState(null);
-  const [reviewExamId, setReviewExamId] = useState(null); // Mode Pembahasan
   const [reviewData, setReviewData] = useState(null);
 
   useEffect(() => {
@@ -64,7 +64,6 @@ const StudentDashboard = ({ user, onLogout, apiUrl }) => {
   const handleReview = async (examId) => {
       const res = await fetch(`${apiUrl}/student/review/${examId}`);
       setReviewData(await res.json());
-      setReviewExamId(examId);
   };
 
   const handleSubmitExam = async (answers) => {

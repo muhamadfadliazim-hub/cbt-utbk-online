@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-// IMPORT IKON LENGKAP - JANGAN DIHAPUS
 import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save } from 'lucide-react';
 import 'katex/dist/katex.min.css'; import { InlineMath } from 'react-katex';
 
@@ -43,12 +42,10 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // AUTO REFRESH REKAP SETIAP 5 DETIK
+  // AUTO REFRESH REKAP
   useEffect(() => {
       let interval;
-      if (tab === 'recap') {
-          interval = setInterval(fetchData, 5000);
-      }
+      if (tab === 'recap') { interval = setInterval(fetchData, 5000); }
       return () => clearInterval(interval);
   }, [tab, fetchData]);
 
@@ -195,9 +192,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
              <button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg text-sm font-bold shadow-sm hover:bg-slate-50 text-indigo-600"><RefreshCcw size={16}/> Refresh Data</button>
         </div>
         
-        {/* ... (BAGIAN PERIODS, PREVIEW, USERS, CONFIG SAMA SEPERTI SEBELUMNYA) ... */}
-        {/* Pastikan paste bagian renderRecap di atas ke dalam komponen utama */}
-        
         {tab === 'periods' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex gap-4 items-center">
@@ -243,7 +237,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           </div>
         )}
 
-        {/* MODAL PREVIEW & EDIT (PASTIKAN KODE INI ADA) */}
+        {/* MODAL PREVIEW & EDIT (SAMA SEPERTI SEBELUMNYA) */}
         {previewQuestions && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col">
@@ -309,17 +303,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                         </div>
                     </div>
                 )}
-            </div>
-        )}
-
-        {(tab === 'users' || tab === 'recap') && (
-            <div className="mb-6 flex gap-4 items-center bg-white p-4 rounded-xl border shadow-sm sticky top-0 z-10">
-                <Filter className="text-slate-400" size={20}/>
-                <span className="font-bold text-slate-700">Filter Cabang:</span>
-                <select value={selectedSchoolFilter} onChange={e => setSelectedSchoolFilter(e.target.value)} className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 font-medium outline-none">
-                    {schoolList.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-                {tab === 'recap' && <a href={`${apiUrl}/admin/recap/download-pdf?school=${selectedSchoolFilter}`} target="_blank" className="ml-auto bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow flex gap-2"><FileText size={16}/> PDF</a>}
             </div>
         )}
 
