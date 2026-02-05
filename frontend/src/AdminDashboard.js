@@ -192,6 +192,8 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
              <button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg text-sm font-bold shadow-sm hover:bg-slate-50 text-indigo-600"><RefreshCcw size={16}/> Refresh Data</button>
         </div>
         
+        {/* ... (BAGIAN PERIODS, PREVIEW SAMA) ... */}
+        
         {tab === 'periods' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex gap-4 items-center">
@@ -306,6 +308,19 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             </div>
         )}
 
+        {(tab === 'users' || tab === 'recap') && (
+            <div className="mb-6 flex gap-4 items-center bg-white p-4 rounded-xl border shadow-sm sticky top-0 z-10">
+                <Filter className="text-slate-400" size={20}/>
+                <span className="font-bold text-slate-700">Filter Cabang:</span>
+                <select value={selectedSchoolFilter} onChange={e => setSelectedSchoolFilter(e.target.value)} className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 font-medium outline-none">
+                    {schoolList.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                {/* FIX: ENCODE URI COMPONENT AGAR LINK AMAN DARI SPASI */}
+                {tab === 'recap' && <a href={`${apiUrl}/admin/recap/download-pdf?school=${encodeURIComponent(selectedSchoolFilter)}`} target="_blank" className="ml-auto bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow flex gap-2"><FileText size={16}/> PDF</a>}
+            </div>
+        )}
+
+        {/* TAB SISWA: TAMBAHKAN TOMBOL RESET DI SINI */}
         {tab === 'users' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between items-center">
@@ -329,7 +344,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
                 <div className="p-4 border-b bg-slate-50"><input placeholder="Cari siswa..." className="outline-none text-sm w-full bg-transparent" value={searchUser} onChange={e=>setSearchUser(e.target.value)}/></div>
                 <div className="max-h-[500px] overflow-y-auto">
-                    <table className="w-full text-sm text-left"><thead className="bg-slate-50 sticky top-0"><tr><th className="p-4 w-10">#</th><th className="p-4">Nama</th><th className="p-4">User</th><th className="p-4">Sekolah</th><th className="p-4">Role</th><th className="p-4">Pass</th></tr></thead><tbody className="divide-y">{filteredUsers.map(u=>(<tr key={u.id} className="hover:bg-slate-50"><td className="p-4"><input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={e=>{if(e.target.checked)setSelectedUsers([...selectedUsers,u.id]); else setSelectedUsers(selectedUsers.filter(id=>id!==u.id))}}/></td><td className="p-4 font-bold">{u.full_name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.school}</td><td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-blue-50 text-blue-600'}`}>{u.role}</span></td><td className="p-4 font-mono text-slate-500">{u.password}</td></tr>))}</tbody></table>
+                    <table className="w-full text-sm text-left"><thead className="bg-slate-50 sticky top-0"><tr><th className="p-4 w-10">#</th><th className="p-4">Nama</th><th className="p-4">User</th><th className="p-4">Sekolah</th><th className="p-4">Role</th><th className="p-4">Pass</th><th className="p-4 text-center">Reset</th></tr></thead><tbody className="divide-y">{filteredUsers.map(u=>(<tr key={u.id} className="hover:bg-slate-50"><td className="p-4"><input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={e=>{if(e.target.checked)setSelectedUsers([...selectedUsers,u.id]); else setSelectedUsers(selectedUsers.filter(id=>id!==u.id))}}/></td><td className="p-4 font-bold">{u.full_name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.school}</td><td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-blue-50 text-blue-600'}`}>{u.role}</span></td><td className="p-4 font-mono text-slate-500">{u.password}</td><td className="p-4 text-center"><button onClick={() => handleReset(u.id)} className="p-1 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Reset Ujian"><RefreshCcw size={16}/></button></td></tr>))}</tbody></table>
                 </div>
             </div>
           </div>
