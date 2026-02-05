@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session, joinedload
 from sqlalchemy import distinct, func
@@ -82,12 +82,18 @@ class SystemConfig(Base):
     __tablename__ = "system_configs"
     key = Column(String, primary_key=True); value = Column(String)
 
-# LOGIC IRT
+# LOGIC
 def calculate_irt_score(correct_questions, total_questions):
     try:
         if not total_questions: return 0
-        raw = sum([float(q.difficulty or 1.0) for q in correct_questions])
-        max_score = sum([float(q.difficulty or 1.0) for q in total_questions])
+        def safe_diff(val):
+            try:
+                f = float(val)
+                if math.isnan(f): return 1.0 
+                return f
+            except: return 1.0
+        raw = sum([safe_diff(q.difficulty) for q in correct_questions])
+        max_score = sum([safe_diff(q.difficulty) for q in total_questions])
         if max_score <= 0: return 0
         theta = raw / max_score 
         z = (theta - 0.5) / 0.15 
@@ -158,7 +164,6 @@ def reset_result(d: ResetResultSchema, db: Session = Depends(get_db)):
 def get_majors(db: Session = Depends(get_db)): return db.query(Major).all()
 @app.get("/admin/schools-list")
 def get_schools_list(db: Session = Depends(get_db)): 
-    # Urutkan sekolah agar di dropdown rapi
     schools = [s[0] for s in db.query(distinct(User.school)).filter(User.school != None).order_by(User.school).all()]
     return ["Semua"] + schools
 
@@ -298,7 +303,6 @@ async def bulk_user_upload(file: UploadFile = File(...), db: Session = Depends(g
             u = get_val(r, ['user', 'nis', 'nomor', 'id', 'login'])
             p = get_val(r, ['pass', 'sandi', 'pin', 'token']) or "12345"
             n = get_val(r, ['nama', 'name', 'siswa']) or u
-            # TAMBAH KEYWORD PESANTREN
             s = get_val(r, ['sekolah', 'school', 'asal', 'pesantren', 'cabang', 'unit']) or "Umum"
             role = "admin" if "admin" in str(get_val(r, ['role'])).lower() else "student"
             if not u or db.query(User).filter_by(username=u).first(): continue
@@ -385,15 +389,19 @@ def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
     db.commit(); return {"message":"OK"}
 @app.get("/config/release")
 def get_conf(db: Session=Depends(get_db)): c=db.query(SystemConfig).filter_by(key="release_announcement").first(); return {"is_released": (c.value=="true") if c else False}
+
+# API PREVIEW LENGKAP
 @app.get("/admin/exams/{eid}/preview")
 def admin_preview(eid: str, db: Session = Depends(get_db)):
     e = db.query(Exam).filter_by(id=eid).first()
     qs = []
     if not e: return {"title":"-", "questions":[]}
+    
     for q in sorted(e.questions, key=lambda x: x.id):
         raw_options = []
         ans_str = ""
         sorted_opts = sorted(q.options, key=lambda x: x.option_index)
+        
         if q.type == 'multiple_choice' or q.type == 'complex':
             raw_options = [o.label for o in sorted_opts]
             ans_str = ",".join([o.option_index for o in sorted_opts if o.is_correct])
@@ -402,12 +410,20 @@ def admin_preview(eid: str, db: Session = Depends(get_db)):
         elif q.type == 'table_boolean':
              raw_options = [o.label for o in sorted_opts]
              ans_str = ",".join([o.correct_text for o in sorted_opts])
-        qs.append({"id": q.id, "text": q.text, "type": q.type, "explanation": q.explanation, "image_url": q.image_url, "reading_material": q.reading_material, "correct_answer": ans_str, "raw_options": raw_options})
+
+        qs.append({
+            "id": q.id, 
+            "text": q.text, 
+            "type": q.type, 
+            "difficulty": q.difficulty, # Include Difficulty
+            "explanation": q.explanation, 
+            "image_url": q.image_url, 
+            "reading_material": q.reading_material, 
+            "correct_answer": ans_str,
+            "raw_options": raw_options 
+        })
     return {"title": e.title, "questions": qs}
 
-# ==========================================
-# FIX PDF: URUTKAN BERDASARKAN SEKOLAH
-# ==========================================
 try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
@@ -422,7 +438,6 @@ def dl_pdf(school: Optional[str]=None, db: Session=Depends(get_db)):
     if not HAS_PDF: return JSONResponse({"message": "Server PDF Error: ReportLab belum terinstall."}, status_code=500)
     
     try:
-        # URUTKAN BERDASARKAN SEKOLAH DULU, BARU NAMA
         q = db.query(ExamResult).join(User).filter(User.role == 'student').order_by(User.school, User.full_name)
         if school and school != "Semua":
             q = q.filter(User.school == school)

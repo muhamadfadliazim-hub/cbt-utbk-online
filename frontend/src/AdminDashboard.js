@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save } from 'lucide-react';
-import 'katex/dist/katex.min.css'; import { InlineMath } from 'react-katex';
+import 'katex/dist/katex.min.css'; 
+import { InlineMath } from 'react-katex';
 
 const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [tab, setTab] = useState('periods');
@@ -42,7 +43,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // AUTO REFRESH REKAP
   useEffect(() => {
       let interval;
       if (tab === 'recap') { interval = setInterval(fetchData, 5000); }
@@ -126,7 +126,11 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const renderText = (text) => {
       if(!text || text === 'nan') return "";
       let formatted = text.replace(/\[B\]/gi, '<b>').replace(/\[\/B\]/gi, '</b>').replace(/\[I\]/gi, '<i>').replace(/\[\/I\]/gi, '</i>');
-      return <span dangerouslySetInnerHTML={{ __html: formatted.replace(/\n/g, '<br/>') }} />;
+      const parts = formatted.split(/(\$.*?\$)/g);
+      return parts.map((part, index) => {
+          if (part.startsWith('$') && part.endsWith('$')) return <span key={index} className="mx-1"><InlineMath math={part.replace(/\$/g, '')} /></span>;
+          return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br/>') }} />;
+      });
   };
 
   const renderRecap = () => {
@@ -192,8 +196,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
              <button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg text-sm font-bold shadow-sm hover:bg-slate-50 text-indigo-600"><RefreshCcw size={16}/> Refresh Data</button>
         </div>
         
-        {/* ... (BAGIAN PERIODS, PREVIEW SAMA) ... */}
-        
         {tab === 'periods' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex gap-4 items-center">
@@ -239,68 +241,131 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           </div>
         )}
 
-        {/* MODAL PREVIEW & EDIT (SAMA SEPERTI SEBELUMNYA) */}
+        {/* MODAL PREVIEW & EDIT BARU (SUPER LENGKAP) */}
         {previewQuestions && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col">
-                    <div className="p-4 border-b flex justify-between items-center"><h3 className="font-bold">Preview: {previewQuestions.title}</h3><button onClick={() => setPreviewQuestions(null)}><X/></button></div>
-                    <div className="flex-1 overflow-hidden flex">
-                        <div className="w-2/3 p-6 overflow-y-auto border-r">
+                <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col shadow-2xl">
+                    <div className="p-4 border-b flex justify-between items-center bg-slate-50"><h3 className="font-bold text-lg text-slate-700">Preview: {previewQuestions.title}</h3><button onClick={() => setPreviewQuestions(null)} className="p-2 hover:bg-slate-200 rounded-full"><X size={20}/></button></div>
+                    <div className="flex-1 overflow-hidden flex bg-slate-100">
+                        <div className="w-2/3 p-6 overflow-y-auto border-r custom-scrollbar">
                             {previewQuestions.questions.map((q, i) => (
-                                <div key={i} className="mb-6 p-4 border rounded-xl bg-slate-50 relative group">
-                                    <button onClick={() => setEditingQuestion(q)} className="absolute top-2 right-2 p-2 bg-white rounded-lg shadow opacity-0 group-hover:opacity-100 text-blue-600"><Edit size={16}/></button>
-                                    <div className="font-bold text-xs text-slate-400 mb-2">NO. {i+1} ({q.type})</div>
-                                    <div className="prose prose-sm mb-2">{renderText(q.text)}</div>
-                                    {q.image_url && <img src={q.image_url} alt="soal" className="max-h-40 rounded mb-2"/>}
-                                    {q.options_preview && <ul className="text-sm list-none space-y-1 mb-2 pl-2 border-l-2 border-slate-200">
-                                        {q.options_preview.map((opt, idx) => <li key={idx} className="text-slate-600">{renderText(opt)}</li>)}
-                                    </ul>}
-                                    <div className="text-xs font-bold text-emerald-600">Kunci: {q.correct_answer}</div>
-                                    <div className="text-xs text-slate-500 mt-1 border-t pt-1">Pembahasan: {q.explanation || "-"}</div>
+                                <div key={i} className="mb-6 p-6 border border-slate-200 rounded-xl bg-white relative group shadow-sm">
+                                    <button onClick={() => setEditingQuestion(q)} className="absolute top-4 right-4 p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg shadow-sm transition"><Edit size={16}/></button>
+                                    
+                                    <div className="flex gap-2 mb-4">
+                                        <span className="bg-slate-800 text-white text-xs font-bold px-2 py-1 rounded">No. {i+1}</span>
+                                        <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded uppercase">{q.type}</span>
+                                        <span className="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-1 rounded">Diff: {q.difficulty || 1.0}</span>
+                                    </div>
+
+                                    {/* BACAAN */}
+                                    {q.reading_material && q.reading_material !== 'nan' && (
+                                        <div className="mb-4 p-4 bg-slate-50 border-l-4 border-slate-300 rounded text-sm text-slate-600 italic">
+                                            <strong>Bacaan:</strong> {renderText(q.reading_material)}
+                                        </div>
+                                    )}
+
+                                    {/* GAMBAR */}
+                                    {q.image_url && q.image_url !== 'nan' && (
+                                        <img src={q.image_url} alt="soal" className="max-h-60 rounded-lg border mb-4 shadow-sm"/>
+                                    )}
+
+                                    {/* PERTANYAAN */}
+                                    <div className="text-lg font-medium text-slate-800 mb-6 leading-relaxed">{renderText(q.text)}</div>
+
+                                    {/* OPSI JAWABAN */}
+                                    {q.raw_options && (
+                                        <div className="grid gap-2 mb-6">
+                                            {q.raw_options.map((opt, idx) => {
+                                                // Cek apakah opsi ini adalah kunci jawaban
+                                                const label = ['A','B','C','D','E'][idx];
+                                                const isKey = q.correct_answer.includes(label);
+                                                return (
+                                                    <div key={idx} className={`p-3 border rounded-lg flex gap-3 items-center ${isKey ? 'bg-emerald-50 border-emerald-300 ring-1 ring-emerald-300' : 'bg-white border-slate-200'}`}>
+                                                        <div className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center font-bold text-sm ${isKey ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{label}</div>
+                                                        <div className="text-slate-700 text-sm">{renderText(opt)}</div>
+                                                        {isKey && <span className="ml-auto text-xs font-bold text-emerald-600 bg-emerald-100 px-2 py-1 rounded">KUNCI</span>}
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    )}
+
+                                    {/* PEMBAHASAN */}
+                                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                                        <h4 className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-2">Pembahasan</h4>
+                                        <div className="text-sm text-slate-700 leading-relaxed">{renderText(q.explanation || "-")}</div>
+                                    </div>
                                 </div>
                             ))}
                         </div>
-                        <div className="w-1/3 p-6 overflow-y-auto bg-slate-50">
-                            <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><BarChart3 size={18}/> Analisis Butir Soal</h4>
+                        
+                        {/* SIDEBAR ANALISIS */}
+                        <div className="w-1/3 p-6 overflow-y-auto bg-white border-l">
+                            <h4 className="font-bold text-slate-700 mb-6 flex items-center gap-2"><BarChart3 size={20} className="text-indigo-600"/> Analisis Butir Soal</h4>
                             {itemAnalysis && itemAnalysis.length > 0 ? (
-                                <div className="space-y-2">{itemAnalysis.map(a => (<div key={a.no} className="bg-white p-3 rounded-lg border text-xs"><div className="flex justify-between mb-1"><span className="font-bold">No {a.no}</span><span>Diff: {a.difficulty}</span></div><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mb-1"><div className="bg-indigo-600 h-full" style={{width: `${a.percent}%`}}></div></div><div className="flex justify-between text-slate-500"><span>Benar: {a.correct}/{a.total}</span><span>{a.percent}%</span></div></div>))}</div>
-                            ) : <div className="text-center text-slate-400">Belum ada data.</div>}
+                                <div className="space-y-3">{itemAnalysis.map(a => (
+                                    <div key={a.no} className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                        <div className="flex justify-between mb-2">
+                                            <span className="font-bold text-slate-700">Soal {a.no}</span>
+                                            <span className="text-xs font-bold bg-white border px-2 py-1 rounded text-slate-500">Diff: {a.difficulty}</span>
+                                        </div>
+                                        <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mb-2"><div className="bg-indigo-600 h-full transition-all duration-500" style={{width: `${a.percent}%`}}></div></div>
+                                        <div className="flex justify-between text-xs text-slate-500 font-medium"><span>{a.correct} Siswa Benar</span><span>{a.percent}%</span></div>
+                                    </div>
+                                ))}</div>
+                            ) : <div className="text-center py-10 text-slate-400 border-2 border-dashed rounded-xl">Belum ada data analisis.<br/>Tunggu siswa mengerjakan.</div>}
                         </div>
                     </div>
                 </div>
-                {/* MODAL EDIT */}
+
+                {/* MODAL EDIT (POPUP DI ATAS POPUP) */}
                 {editingQuestion && (
-                    <div className="absolute inset-0 bg-black/50 z-[60] flex items-center justify-center">
-                        <div className="bg-white p-6 rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-                            <h3 className="font-bold mb-4">Edit Soal</h3>
-                            <label className="text-xs font-bold text-slate-500">Pertanyaan</label>
-                            <textarea className="w-full p-2 border rounded mb-2 h-24" value={editingQuestion.text} onChange={e=>setEditingQuestion({...editingQuestion, text:e.target.value})}></textarea>
+                    <div className="absolute inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+                        <div className="bg-white p-6 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl animate-fade-in">
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="font-bold text-xl text-slate-800">Edit Soal</h3>
+                                <button onClick={()=>setEditingQuestion(null)} className="p-2 hover:bg-slate-100 rounded-full"><X size={20}/></button>
+                            </div>
                             
-                            {(editingQuestion.type === 'multiple_choice' || editingQuestion.type === 'complex') && (
-                                <>
-                                    <label className="text-xs font-bold text-slate-500 mt-2 block">Opsi A-E</label>
-                                    {editingQuestion.raw_options.map((opt, idx) => (
-                                        <div key={idx} className="flex gap-2 mb-1">
-                                            <span className="font-bold w-4 text-center">{['A','B','C','D','E'][idx]}</span>
-                                            <input className="flex-1 p-1 border rounded text-sm" value={opt} onChange={e => {
-                                                const newOpts = [...editingQuestion.raw_options];
-                                                newOpts[idx] = e.target.value;
-                                                setEditingQuestion({...editingQuestion, raw_options: newOpts});
-                                            }}/>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Pertanyaan</label>
+                                    <textarea className="w-full p-3 border-2 border-slate-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50 outline-none transition h-32 text-sm" value={editingQuestion.text} onChange={e=>setEditingQuestion({...editingQuestion, text:e.target.value})}></textarea>
+                                </div>
+
+                                {(editingQuestion.type === 'multiple_choice' || editingQuestion.type === 'complex') && (
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Opsi Jawaban (A-E)</label>
+                                        <div className="space-y-2">
+                                            {editingQuestion.raw_options.map((opt, idx) => (
+                                                <div key={idx} className="flex gap-3 items-center">
+                                                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-slate-500 text-sm">{['A','B','C','D','E'][idx]}</div>
+                                                    <input className="flex-1 p-2 border-2 border-slate-200 rounded-lg text-sm focus:border-indigo-500 outline-none" value={opt} onChange={e => {
+                                                        const newOpts = [...editingQuestion.raw_options];
+                                                        newOpts[idx] = e.target.value;
+                                                        setEditingQuestion({...editingQuestion, raw_options: newOpts});
+                                                    }}/>
+                                                </div>
+                                            ))}
                                         </div>
-                                    ))}
-                                </>
-                            )}
+                                    </div>
+                                )}
 
-                            <label className="text-xs font-bold text-slate-500 mt-2 block">Kunci Jawaban</label>
-                            <input className="w-full p-2 border rounded mb-2" value={editingQuestion.correct_answer} onChange={e=>setEditingQuestion({...editingQuestion, correct_answer:e.target.value})} placeholder="Contoh: A (atau A,B untuk kompleks)"/>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Kunci Jawaban</label>
+                                    <input className="w-full p-3 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none text-sm font-bold tracking-widest uppercase" value={editingQuestion.correct_answer} onChange={e=>setEditingQuestion({...editingQuestion, correct_answer:e.target.value})} placeholder="CONTOH: A (ATAU A,B UNTUK KOMPLEKS)"/>
+                                </div>
 
-                            <label className="text-xs font-bold text-slate-500 mt-2 block">Pembahasan</label>
-                            <textarea className="w-full p-2 border rounded mb-4 h-24" value={editingQuestion.explanation || ''} onChange={e=>setEditingQuestion({...editingQuestion, explanation:e.target.value})} placeholder="Tulis pembahasan disini..."></textarea>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Pembahasan</label>
+                                    <textarea className="w-full p-3 border-2 border-slate-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50 outline-none transition h-24 text-sm" value={editingQuestion.explanation || ''} onChange={e=>setEditingQuestion({...editingQuestion, explanation:e.target.value})} placeholder="Tulis pembahasan disini..."></textarea>
+                                </div>
+                            </div>
                             
-                            <div className="flex gap-2 justify-end">
-                                <button onClick={()=>setEditingQuestion(null)} className="px-4 py-2 rounded border">Batal</button>
-                                <button onClick={handleSaveQuestion} className="px-4 py-2 rounded bg-blue-600 text-white flex items-center gap-2"><Save size={16}/> Simpan</button>
+                            <div className="flex gap-3 mt-8 pt-6 border-t">
+                                <button onClick={()=>setEditingQuestion(null)} className="flex-1 py-3 rounded-xl border-2 border-slate-200 font-bold text-slate-500 hover:bg-slate-50 transition">Batal</button>
+                                <button onClick={handleSaveQuestion} className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 flex items-center justify-center gap-2 transition"><Save size={18}/> Simpan Perubahan</button>
                             </div>
                         </div>
                     </div>
@@ -315,12 +380,11 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                 <select value={selectedSchoolFilter} onChange={e => setSelectedSchoolFilter(e.target.value)} className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 font-medium outline-none">
                     {schoolList.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-                {/* FIX: ENCODE URI COMPONENT AGAR LINK AMAN DARI SPASI */}
                 {tab === 'recap' && <a href={`${apiUrl}/admin/recap/download-pdf?school=${encodeURIComponent(selectedSchoolFilter)}`} target="_blank" className="ml-auto bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow flex gap-2"><FileText size={16}/> PDF</a>}
             </div>
         )}
 
-        {/* TAB SISWA: TAMBAHKAN TOMBOL RESET DI SINI */}
+        {/* ... (TAB SISWA DAN CONFIG SAMA SEPERTI SEBELUMNYA) ... */}
         {tab === 'users' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between items-center">
@@ -344,7 +408,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
                 <div className="p-4 border-b bg-slate-50"><input placeholder="Cari siswa..." className="outline-none text-sm w-full bg-transparent" value={searchUser} onChange={e=>setSearchUser(e.target.value)}/></div>
                 <div className="max-h-[500px] overflow-y-auto">
-                    <table className="w-full text-sm text-left"><thead className="bg-slate-50 sticky top-0"><tr><th className="p-4 w-10">#</th><th className="p-4">Nama</th><th className="p-4">User</th><th className="p-4">Sekolah</th><th className="p-4">Role</th><th className="p-4">Pass</th><th className="p-4 text-center">Reset</th></tr></thead><tbody className="divide-y">{filteredUsers.map(u=>(<tr key={u.id} className="hover:bg-slate-50"><td className="p-4"><input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={e=>{if(e.target.checked)setSelectedUsers([...selectedUsers,u.id]); else setSelectedUsers(selectedUsers.filter(id=>id!==u.id))}}/></td><td className="p-4 font-bold">{u.full_name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.school}</td><td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-blue-50 text-blue-600'}`}>{u.role}</span></td><td className="p-4 font-mono text-slate-500">{u.password}</td><td className="p-4 text-center"><button onClick={() => handleReset(u.id)} className="p-1 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Reset Ujian"><RefreshCcw size={16}/></button></td></tr>))}</tbody></table>
+                    <table className="w-full text-sm text-left"><thead className="bg-slate-50 sticky top-0"><tr><th className="p-4 w-10">#</th><th className="p-4">Nama</th><th className="p-4">User</th><th className="p-4">Sekolah</th><th className="p-4">Role</th><th className="p-4">Pass</th></tr></thead><tbody className="divide-y">{filteredUsers.map(u=>(<tr key={u.id} className="hover:bg-slate-50"><td className="p-4"><input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={e=>{if(e.target.checked)setSelectedUsers([...selectedUsers,u.id]); else setSelectedUsers(selectedUsers.filter(id=>id!==u.id))}}/></td><td className="p-4 font-bold">{u.full_name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.school}</td><td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-blue-50 text-blue-600'}`}>{u.role}</span></td><td className="p-4 font-mono text-slate-500">{u.password}</td></tr>))}</tbody></table>
                 </div>
             </div>
           </div>
