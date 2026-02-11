@@ -2,10 +2,10 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text, inspect
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session, joinedload
-from sqlalchemy import distinct, func
+from sqlalchemy import distinct
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 import pandas as pd
@@ -86,14 +86,8 @@ class SystemConfig(Base):
 def calculate_irt_score(correct_questions, total_questions):
     try:
         if not total_questions: return 0
-        def safe_diff(val):
-            try:
-                f = float(val)
-                if math.isnan(f): return 1.0 
-                return f
-            except: return 1.0
-        raw = sum([safe_diff(q.difficulty) for q in correct_questions])
-        max_score = sum([safe_diff(q.difficulty) for q in total_questions])
+        raw = sum([float(q.difficulty or 1.0) for q in correct_questions])
+        max_score = sum([float(q.difficulty or 1.0) for q in total_questions])
         if max_score <= 0: return 0
         theta = raw / max_score 
         z = (theta - 0.5) / 0.15 
@@ -118,10 +112,6 @@ def startup_event():
             try: conn.execute(text("ALTER TABLE options ADD COLUMN IF NOT EXISTS correct_text TEXT")); conn.commit()
             except: pass
             try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS type VARCHAR")); conn.commit()
-            except: pass
-            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_correct INTEGER DEFAULT 0")); conn.commit()
-            except: pass
-            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_total INTEGER DEFAULT 0")); conn.commit()
             except: pass
         if db.query(User).filter_by(username="admin_cabang").count() == 0:
             db.add(User(username="admin_cabang", password="123", full_name="Admin", role="admin", school="PUSAT"))
@@ -389,8 +379,6 @@ def set_conf(d: ConfigSchema, db: Session=Depends(get_db)):
     db.commit(); return {"message":"OK"}
 @app.get("/config/release")
 def get_conf(db: Session=Depends(get_db)): c=db.query(SystemConfig).filter_by(key="release_announcement").first(); return {"is_released": (c.value=="true") if c else False}
-
-# API PREVIEW LENGKAP
 @app.get("/admin/exams/{eid}/preview")
 def admin_preview(eid: str, db: Session = Depends(get_db)):
     e = db.query(Exam).filter_by(id=eid).first()
@@ -428,7 +416,8 @@ try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
     HAS_PDF = True
 except ImportError:
     HAS_PDF = False
@@ -452,40 +441,90 @@ def dl_pdf(school: Optional[str]=None, db: Session=Depends(get_db)):
                 user_map[r.user_id] = {"name": u_name, "school": u_school, "c1": r.user.choice1_id, "c2": r.user.choice2_id, "scores": {}}
             user_map[r.user_id]["scores"][r.exam_id.split('_')[-1]] = int(r.irt_score or 0)
 
-        table_data = []
-        headers = ["Nama", "Sekolah", "PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM", "AVG", "Status"]
+        styles = getSampleStyleSheet()
+        style_cell = ParagraphStyle(name='Cell', parent=styles['Normal'], fontSize=8, leading=10)
+        style_header = ParagraphStyle(name='Header', parent=styles['Normal'], fontSize=9, leading=11, alignment=TA_CENTER, fontName='Helvetica-Bold', textColor=colors.white)
+
+        # HEADER LENGKAP
+        headers = [
+            Paragraph("Nama", style_header), 
+            Paragraph("Sekolah", style_header),
+            Paragraph("Pilihan 1", style_header), 
+            Paragraph("Pilihan 2", style_header), 
+            "PU", "PPU", "PBM", "PK", "LBI", "LBE", "PM", 
+            "AVG", "Status"
+        ]
+        
         all_majors = {m.id: m for m in db.query(Major).all()}
+        table_data = []
 
         for uid, data in user_map.items():
-            row = [str(data['name'])[:20], str(data['school'])]
+            row = []
+            row.append(Paragraph(str(data['name']), style_cell))
+            row.append(Paragraph(str(data['school']), style_cell))
+            
+            c1 = all_majors.get(data["c1"])
+            c2 = all_majors.get(data["c2"])
+            
+            c1_name = f"{c1.university}\n{c1.name}" if c1 else "-"
+            c2_name = f"{c2.university}\n{c2.name}" if c2 else "-"
+            
+            row.append(Paragraph(c1_name, style_cell))
+            row.append(Paragraph(c2_name, style_cell))
+
             total = 0
             for code in ["PU","PPU","PBM","PK","LBI","LBE","PM"]:
                 val = data['scores'].get(code, 0)
                 row.append(str(val))
                 total += val
+            
             avg = int(total/7)
             row.append(str(avg))
-            c1 = all_majors.get(data["c1"])
-            c2 = all_majors.get(data["c2"])
+
             st = "TIDAK LULUS"
-            if c1 and avg >= c1.passing_grade: st = "LULUS P1"
-            elif c2 and avg >= c2.passing_grade: st = "LULUS P2"
-            row.append(st)
+            if c1 and avg >= c1.passing_grade: 
+                st = f"LULUS P1\n{c1.name}"
+            elif c2 and avg >= c2.passing_grade: 
+                st = f"LULUS P2\n{c2.name}"
+                
+            row.append(Paragraph(st, style_cell))
             table_data.append(row)
 
-        if not table_data: table_data = [["DATA KOSONG", "-", "0","0","0","0","0","0","0", "0", "-"]]
+        if not table_data:
+            table_data = [["DATA KOSONG", "-", "-", "-", "0","0","0","0","0","0","0", "0", "-"]]
 
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=landscape(A4))
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20)
         elements = []
-        styles = getSampleStyleSheet()
-        elements.append(Paragraph(f"REKAP NILAI - {school or 'SEMUA'}", styles['Heading1']))
-        elements.append(Spacer(1, 20))
+        
+        title_text = f"REKAP HASIL UJIAN - {school if school else 'SEMUA DATA'}"
+        elements.append(Paragraph(title_text, styles['Heading2']))
+        elements.append(Spacer(1, 15))
+
         final_data = [headers] + table_data
-        t = Table(final_data)
-        t.setStyle(TableStyle([('GRID', (0, 0), (-1, -1), 1, colors.black),('FONTSIZE', (0, 0), (-1, -1), 8),('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),('ALIGN', (2, 0), (-1, -1), 'CENTER'),]))
+        
+        # LEBAR KOLOM (Total ~800)
+        col_widths = [110, 90, 100, 100, 30, 30, 30, 30, 30, 30, 30, 35, 90]
+
+        t = Table(final_data, colWidths=col_widths, repeatRows=1)
+        t.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue), 
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (4, 0), (-1, -1), 'CENTER'), # Nilai rata tengah
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'), 
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('PADDING', (0, 0), (-1, -1), 4),
+        ]))
+        
         elements.append(t)
         doc.build(elements)
         buffer.seek(0)
-        return StreamingResponse(buffer, media_type='application/pdf', headers={'Content-Disposition': 'attachment;filename="Rekap.pdf"'})
-    except Exception as e: return JSONResponse({"message": f"Gagal membuat PDF: {str(e)}"}, status_code=500)
+        
+        filename = f"Rekap_{school if school else 'All'}.pdf"
+        return StreamingResponse(buffer, media_type='application/pdf', headers={'Content-Disposition': f'attachment;filename="{filename}"'})
+
+    except Exception as e:
+        print(f"PDF ERROR: {str(e)}") 
+        return JSONResponse({"message": f"Gagal membuat PDF: {str(e)}"}, status_code=500)
