@@ -2,10 +2,10 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session, joinedload
-from sqlalchemy import distinct
+from sqlalchemy import distinct, func
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 import pandas as pd
@@ -86,8 +86,14 @@ class SystemConfig(Base):
 def calculate_irt_score(correct_questions, total_questions):
     try:
         if not total_questions: return 0
-        raw = sum([float(q.difficulty or 1.0) for q in correct_questions])
-        max_score = sum([float(q.difficulty or 1.0) for q in total_questions])
+        def safe_diff(val):
+            try:
+                f = float(val)
+                if math.isnan(f): return 1.0 
+                return f
+            except: return 1.0
+        raw = sum([safe_diff(q.difficulty) for q in correct_questions])
+        max_score = sum([safe_diff(q.difficulty) for q in total_questions])
         if max_score <= 0: return 0
         theta = raw / max_score 
         z = (theta - 0.5) / 0.15 
@@ -103,20 +109,38 @@ def get_db():
     try: yield db
     finally: db.close()
 
+# === PERBAIKAN: AUTO REPAIR DATABASE SAAT STARTUP (FIX GAGAL LOGIN) ===
 @app.on_event("startup")
 def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         with engine.connect() as conn:
+            # Tambahkan kolom sekolah & jurusan ke user jika belum ada
+            try: conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS school VARCHAR(255)")); conn.commit()
+            except: pass
+            try: conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS choice1_id INTEGER")); conn.commit()
+            except: pass
+            try: conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS choice2_id INTEGER")); conn.commit()
+            except: pass
+            
+            # Fix kolom lain
+            try: conn.execute(text("ALTER TABLE exam_periods ADD COLUMN IF NOT EXISTS target_schools TEXT")); conn.commit()
+            except: pass
             try: conn.execute(text("ALTER TABLE options ADD COLUMN IF NOT EXISTS correct_text TEXT")); conn.commit()
             except: pass
-            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS type VARCHAR")); conn.commit()
+            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS type VARCHAR(50)")); conn.commit()
             except: pass
+            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_correct INTEGER DEFAULT 0")); conn.commit()
+            except: pass
+            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_total INTEGER DEFAULT 0")); conn.commit()
+            except: pass
+            
         if db.query(User).filter_by(username="admin_cabang").count() == 0:
             db.add(User(username="admin_cabang", password="123", full_name="Admin", role="admin", school="PUSAT"))
             db.commit()
-    except: pass
+    except Exception as e:
+        print(f"Startup Repair Error (Ignored): {e}")
     finally: db.close()
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
@@ -384,12 +408,10 @@ def admin_preview(eid: str, db: Session = Depends(get_db)):
     e = db.query(Exam).filter_by(id=eid).first()
     qs = []
     if not e: return {"title":"-", "questions":[]}
-    
     for q in sorted(e.questions, key=lambda x: x.id):
         raw_options = []
         ans_str = ""
         sorted_opts = sorted(q.options, key=lambda x: x.option_index)
-        
         if q.type == 'multiple_choice' or q.type == 'complex':
             raw_options = [o.label for o in sorted_opts]
             ans_str = ",".join([o.option_index for o in sorted_opts if o.is_correct])
@@ -398,18 +420,7 @@ def admin_preview(eid: str, db: Session = Depends(get_db)):
         elif q.type == 'table_boolean':
              raw_options = [o.label for o in sorted_opts]
              ans_str = ",".join([o.correct_text for o in sorted_opts])
-
-        qs.append({
-            "id": q.id, 
-            "text": q.text, 
-            "type": q.type, 
-            "difficulty": q.difficulty, # Include Difficulty
-            "explanation": q.explanation, 
-            "image_url": q.image_url, 
-            "reading_material": q.reading_material, 
-            "correct_answer": ans_str,
-            "raw_options": raw_options 
-        })
+        qs.append({"id": q.id, "text": q.text, "type": q.type, "difficulty": q.difficulty, "explanation": q.explanation, "image_url": q.image_url, "reading_material": q.reading_material, "correct_answer": ans_str, "raw_options": raw_options})
     return {"title": e.title, "questions": qs}
 
 try:
@@ -503,7 +514,6 @@ def dl_pdf(school: Optional[str]=None, db: Session=Depends(get_db)):
 
         final_data = [headers] + table_data
         
-        # LEBAR KOLOM (Total ~800)
         col_widths = [110, 90, 100, 100, 30, 30, 30, 30, 30, 30, 30, 35, 90]
 
         t = Table(final_data, colWidths=col_widths, repeatRows=1)
@@ -511,7 +521,7 @@ def dl_pdf(school: Optional[str]=None, db: Session=Depends(get_db)):
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue), 
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (4, 0), (-1, -1), 'CENTER'), # Nilai rata tengah
+            ('ALIGN', (4, 0), (-1, -1), 'CENTER'), 
             ('VALIGN', (0, 0), (-1, -1), 'TOP'), 
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 8),

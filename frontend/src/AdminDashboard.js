@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save } from 'lucide-react';
-import 'katex/dist/katex.min.css'; 
-import { InlineMath } from 'react-katex';
+import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save, Download } from 'lucide-react';
+import 'katex/dist/katex.min.css'; import { InlineMath } from 'react-katex';
 
 const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [tab, setTab] = useState('periods');
@@ -171,7 +170,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                                 <td className="p-4 text-center font-black bg-indigo-50 border-l text-indigo-700 text-sm">{avg}</td>
                                 <td className="p-4 text-center border-l">{status}</td>
                                 <td className="p-4 text-center border-l">
-                                    <button onClick={() => handleReset(u.id)} className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition shadow-sm border border-red-200 font-bold text-xs">RESET SEMUA</button>
+                                    <button onClick={() => handleReset(u.id)} className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition shadow-sm border border-red-200 font-bold text-xs">RESET</button>
                                 </td>
                             </tr>
                         );
@@ -196,6 +195,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
              <button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg text-sm font-bold shadow-sm hover:bg-slate-50 text-indigo-600"><RefreshCcw size={16}/> Refresh Data</button>
         </div>
         
+        {/* ... (TAB PERIODS, PREVIEW SAMA SEPERTI SEBELUMNYA) ... */}
         {tab === 'periods' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex gap-4 items-center">
@@ -241,7 +241,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           </div>
         )}
 
-        {/* MODAL PREVIEW & EDIT BARU (SUPER LENGKAP) */}
         {previewQuestions && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col shadow-2xl">
@@ -277,7 +276,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                                     {q.raw_options && (
                                         <div className="grid gap-2 mb-6">
                                             {q.raw_options.map((opt, idx) => {
-                                                // Cek apakah opsi ini adalah kunci jawaban
                                                 const label = ['A','B','C','D','E'][idx];
                                                 const isKey = q.correct_answer.includes(label);
                                                 return (
@@ -380,11 +378,23 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                 <select value={selectedSchoolFilter} onChange={e => setSelectedSchoolFilter(e.target.value)} className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 font-medium outline-none">
                     {schoolList.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-                {tab === 'recap' && <a href={`${apiUrl}/admin/recap/download-pdf?school=${encodeURIComponent(selectedSchoolFilter)}`} target="_blank" className="ml-auto bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow flex gap-2"><FileText size={16}/> PDF</a>}
+                
+                {tab === 'recap' && (
+                    <div className="ml-auto flex gap-2">
+                        {/* TOMBOL 1: Download SESUAI FILTER */}
+                        <a href={`${apiUrl}/admin/recap/download-pdf?school=${encodeURIComponent(selectedSchoolFilter)}`} target="_blank" className="bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 rounded-lg font-bold text-sm shadow flex gap-2 hover:bg-blue-100 transition">
+                            <FileText size={16}/> PDF {selectedSchoolFilter === 'Semua' ? '' : selectedSchoolFilter}
+                        </a>
+                        
+                        {/* TOMBOL 2: Download SEMUA DATA (RESET FILTER) */}
+                        <a href={`${apiUrl}/admin/recap/download-pdf?school=Semua`} target="_blank" className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow flex gap-2 hover:bg-red-700 transition">
+                            <Download size={16}/> DOWNLOAD FULL REKAP
+                        </a>
+                    </div>
+                )}
             </div>
         )}
 
-        {/* ... (TAB SISWA DAN CONFIG SAMA SEPERTI SEBELUMNYA) ... */}
         {tab === 'users' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between items-center">
@@ -408,7 +418,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
                 <div className="p-4 border-b bg-slate-50"><input placeholder="Cari siswa..." className="outline-none text-sm w-full bg-transparent" value={searchUser} onChange={e=>setSearchUser(e.target.value)}/></div>
                 <div className="max-h-[500px] overflow-y-auto">
-                    <table className="w-full text-sm text-left"><thead className="bg-slate-50 sticky top-0"><tr><th className="p-4 w-10">#</th><th className="p-4">Nama</th><th className="p-4">User</th><th className="p-4">Sekolah</th><th className="p-4">Role</th><th className="p-4">Pass</th></tr></thead><tbody className="divide-y">{filteredUsers.map(u=>(<tr key={u.id} className="hover:bg-slate-50"><td className="p-4"><input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={e=>{if(e.target.checked)setSelectedUsers([...selectedUsers,u.id]); else setSelectedUsers(selectedUsers.filter(id=>id!==u.id))}}/></td><td className="p-4 font-bold">{u.full_name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.school}</td><td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-blue-50 text-blue-600'}`}>{u.role}</span></td><td className="p-4 font-mono text-slate-500">{u.password}</td></tr>))}</tbody></table>
+                    <table className="w-full text-sm text-left"><thead className="bg-slate-50 sticky top-0"><tr><th className="p-4 w-10">#</th><th className="p-4">Nama</th><th className="p-4">User</th><th className="p-4">Sekolah</th><th className="p-4">Role</th><th className="p-4">Pass</th><th className="p-4 text-center">Reset</th></tr></thead><tbody className="divide-y">{filteredUsers.map(u=>(<tr key={u.id} className="hover:bg-slate-50"><td className="p-4"><input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={e=>{if(e.target.checked)setSelectedUsers([...selectedUsers,u.id]); else setSelectedUsers(selectedUsers.filter(id=>id!==u.id))}}/></td><td className="p-4 font-bold">{u.full_name}</td><td className="p-4">{u.username}</td><td className="p-4">{u.school}</td><td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold ${u.role==='admin'?'bg-purple-100 text-purple-700':'bg-blue-50 text-blue-600'}`}>{u.role}</span></td><td className="p-4 font-mono text-slate-500">{u.password}</td><td className="p-4 text-center"><button onClick={() => handleReset(u.id)} className="p-1 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Reset Ujian"><RefreshCcw size={16}/></button></td></tr>))}</tbody></table>
                 </div>
             </div>
           </div>
