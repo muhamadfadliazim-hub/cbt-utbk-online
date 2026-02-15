@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save, Download } from 'lucide-react';
+import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save, Download, Info } from 'lucide-react';
 import 'katex/dist/katex.min.css'; import { InlineMath } from 'react-katex';
 
 const AdminDashboard = ({ onLogout, apiUrl }) => {
@@ -21,6 +21,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [previewQuestions, setPreviewQuestions] = useState(null);
   const [itemAnalysis, setItemAnalysis] = useState(null);
   const [editingQuestion, setEditingQuestion] = useState(null);
+  const [showDetails, setShowDetails] = useState(false); // TOGGLE DETAIL B/S
 
   const fetchData = useCallback(() => {
     setLoading(true);
@@ -153,7 +154,12 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                 <tbody className="divide-y text-slate-600">
                     {studentWithResults.map(u => {
                         const scores = {}; 
-                        u.results.forEach(r => scores[r.exam_id.split('_').pop()] = {val: Math.round(r.irt_score), eid: r.exam_id});
+                        u.results.forEach(r => scores[r.exam_id.split('_').pop()] = {
+                            val: Math.round(r.irt_score), 
+                            eid: r.exam_id,
+                            correct: r.correct_count,
+                            wrong: r.wrong_count
+                        });
                         const total = Object.values(scores).reduce((a,b)=>a+b.val,0);
                         const avg = Math.round(total/7);
                         const c1 = majors.find(m => m.id === u.choice1_id);
@@ -161,12 +167,21 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                         let status = <span className="text-red-500 font-bold">TIDAK LULUS</span>;
                         if (c1 && avg >= c1.passing_grade) status = <span className="text-emerald-600 font-bold">LULUS P1</span>;
                         else if (c2 && avg >= c2.passing_grade) status = <span className="text-blue-600 font-bold">LULUS P2</span>;
+                        
                         return (
                             <tr key={u.id} className="hover:bg-slate-50 transition">
                                 <td className="p-4 font-bold sticky left-0 bg-white border-r z-10 text-slate-800">{u.full_name}<br/><span className="text-xs font-normal text-slate-400">{u.school}</span></td>
                                 <td className="p-4 border-r max-w-[150px] truncate" title={c1?.university + " - " + c1?.name}>{c1 ? `${c1.university} - ${c1.name}` : "-"}</td>
                                 <td className="p-4 border-r max-w-[150px] truncate" title={c2?.university + " - " + c2?.name}>{c2 ? `${c2.university} - ${c2.name}` : "-"}</td>
-                                {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> (<td key={k} className={`p-3 text-center border-l cursor-pointer hover:bg-red-100 hover:text-red-600 transition ${scores[k] ? 'font-bold text-slate-700' : 'text-slate-300'}`} onClick={() => scores[k] && handleReset(u.id, scores[k].eid)} title="Klik untuk reset nilai ini">{scores[k]?.val || "-"}</td>))}
+                                {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> {
+                                    const data = scores[k];
+                                    return (
+                                        <td key={k} className={`p-3 text-center border-l cursor-pointer hover:bg-red-100 hover:text-red-600 transition ${data ? 'text-slate-700' : 'text-slate-300'}`} onClick={() => data && handleReset(u.id, data.eid)}>
+                                            <div className="font-bold">{data ? data.val : "-"}</div>
+                                            {showDetails && data && <div className="text-[10px] text-slate-500 mt-1">B:{data.correct} S:{data.wrong}</div>}
+                                        </td>
+                                    )
+                                })}
                                 <td className="p-4 text-center font-black bg-indigo-50 border-l text-indigo-700 text-sm">{avg}</td>
                                 <td className="p-4 text-center border-l">{status}</td>
                                 <td className="p-4 text-center border-l">
@@ -191,11 +206,11 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
       </aside>
 
       <main className="flex-1 ml-64 p-8">
-        <div className="flex justify-end mb-4">
+        <div className="flex justify-end mb-4 gap-2">
              <button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg text-sm font-bold shadow-sm hover:bg-slate-50 text-indigo-600"><RefreshCcw size={16}/> Refresh Data</button>
         </div>
         
-        {/* ... (TAB PERIODS, PREVIEW SAMA SEPERTI SEBELUMNYA) ... */}
+        {/* ... (TAB PERIODS, USERS, CONFIG SAMA) ... */}
         {tab === 'periods' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex gap-4 items-center">
@@ -241,129 +256,68 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           </div>
         )}
 
+        {/* MODAL PREVIEW & EDIT (SAMA) */}
         {previewQuestions && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col shadow-2xl">
-                    <div className="p-4 border-b flex justify-between items-center bg-slate-50"><h3 className="font-bold text-lg text-slate-700">Preview: {previewQuestions.title}</h3><button onClick={() => setPreviewQuestions(null)} className="p-2 hover:bg-slate-200 rounded-full"><X size={20}/></button></div>
-                    <div className="flex-1 overflow-hidden flex bg-slate-100">
-                        <div className="w-2/3 p-6 overflow-y-auto border-r custom-scrollbar">
+                <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col">
+                    <div className="p-4 border-b flex justify-between items-center"><h3 className="font-bold">Preview: {previewQuestions.title}</h3><button onClick={() => setPreviewQuestions(null)}><X/></button></div>
+                    <div className="flex-1 overflow-hidden flex">
+                        <div className="w-2/3 p-6 overflow-y-auto border-r">
                             {previewQuestions.questions.map((q, i) => (
-                                <div key={i} className="mb-6 p-6 border border-slate-200 rounded-xl bg-white relative group shadow-sm">
-                                    <button onClick={() => setEditingQuestion(q)} className="absolute top-4 right-4 p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg shadow-sm transition"><Edit size={16}/></button>
-                                    
-                                    <div className="flex gap-2 mb-4">
-                                        <span className="bg-slate-800 text-white text-xs font-bold px-2 py-1 rounded">No. {i+1}</span>
-                                        <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded uppercase">{q.type}</span>
-                                        <span className="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-1 rounded">Diff: {q.difficulty || 1.0}</span>
-                                    </div>
-
-                                    {/* BACAAN */}
-                                    {q.reading_material && q.reading_material !== 'nan' && (
-                                        <div className="mb-4 p-4 bg-slate-50 border-l-4 border-slate-300 rounded text-sm text-slate-600 italic">
-                                            <strong>Bacaan:</strong> {renderText(q.reading_material)}
-                                        </div>
-                                    )}
-
-                                    {/* GAMBAR */}
-                                    {q.image_url && q.image_url !== 'nan' && (
-                                        <img src={q.image_url} alt="soal" className="max-h-60 rounded-lg border mb-4 shadow-sm"/>
-                                    )}
-
-                                    {/* PERTANYAAN */}
-                                    <div className="text-lg font-medium text-slate-800 mb-6 leading-relaxed">{renderText(q.text)}</div>
-
-                                    {/* OPSI JAWABAN */}
-                                    {q.raw_options && (
-                                        <div className="grid gap-2 mb-6">
-                                            {q.raw_options.map((opt, idx) => {
-                                                const label = ['A','B','C','D','E'][idx];
-                                                const isKey = q.correct_answer.includes(label);
-                                                return (
-                                                    <div key={idx} className={`p-3 border rounded-lg flex gap-3 items-center ${isKey ? 'bg-emerald-50 border-emerald-300 ring-1 ring-emerald-300' : 'bg-white border-slate-200'}`}>
-                                                        <div className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center font-bold text-sm ${isKey ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{label}</div>
-                                                        <div className="text-slate-700 text-sm">{renderText(opt)}</div>
-                                                        {isKey && <span className="ml-auto text-xs font-bold text-emerald-600 bg-emerald-100 px-2 py-1 rounded">KUNCI</span>}
-                                                    </div>
-                                                )
-                                            })}
-                                        </div>
-                                    )}
-
-                                    {/* PEMBAHASAN */}
-                                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                                        <h4 className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-2">Pembahasan</h4>
-                                        <div className="text-sm text-slate-700 leading-relaxed">{renderText(q.explanation || "-")}</div>
-                                    </div>
+                                <div key={i} className="mb-6 p-4 border rounded-xl bg-slate-50 relative group">
+                                    <button onClick={() => setEditingQuestion(q)} className="absolute top-2 right-2 p-2 bg-white rounded-lg shadow opacity-0 group-hover:opacity-100 text-blue-600"><Edit size={16}/></button>
+                                    <div className="font-bold text-xs text-slate-400 mb-2">NO. {i+1} ({q.type})</div>
+                                    <div className="prose prose-sm mb-2">{renderText(q.text)}</div>
+                                    {q.image_url && <img src={q.image_url} alt="soal" className="max-h-40 rounded mb-2"/>}
+                                    {q.options_preview && <ul className="text-sm list-none space-y-1 mb-2 pl-2 border-l-2 border-slate-200">
+                                        {q.options_preview.map((opt, idx) => <li key={idx} className="text-slate-600">{renderText(opt)}</li>)}
+                                    </ul>}
+                                    <div className="text-xs font-bold text-emerald-600">Kunci: {q.correct_answer}</div>
+                                    <div className="text-xs text-slate-500 mt-1 border-t pt-1">Pembahasan: {q.explanation || "-"}</div>
                                 </div>
                             ))}
                         </div>
-                        
-                        {/* SIDEBAR ANALISIS */}
-                        <div className="w-1/3 p-6 overflow-y-auto bg-white border-l">
-                            <h4 className="font-bold text-slate-700 mb-6 flex items-center gap-2"><BarChart3 size={20} className="text-indigo-600"/> Analisis Butir Soal</h4>
+                        <div className="w-1/3 p-6 overflow-y-auto bg-slate-50">
+                            <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><BarChart3 size={18}/> Analisis Butir Soal</h4>
                             {itemAnalysis && itemAnalysis.length > 0 ? (
-                                <div className="space-y-3">{itemAnalysis.map(a => (
-                                    <div key={a.no} className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                                        <div className="flex justify-between mb-2">
-                                            <span className="font-bold text-slate-700">Soal {a.no}</span>
-                                            <span className="text-xs font-bold bg-white border px-2 py-1 rounded text-slate-500">Diff: {a.difficulty}</span>
-                                        </div>
-                                        <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mb-2"><div className="bg-indigo-600 h-full transition-all duration-500" style={{width: `${a.percent}%`}}></div></div>
-                                        <div className="flex justify-between text-xs text-slate-500 font-medium"><span>{a.correct} Siswa Benar</span><span>{a.percent}%</span></div>
-                                    </div>
-                                ))}</div>
-                            ) : <div className="text-center py-10 text-slate-400 border-2 border-dashed rounded-xl">Belum ada data analisis.<br/>Tunggu siswa mengerjakan.</div>}
+                                <div className="space-y-2">{itemAnalysis.map(a => (<div key={a.no} className="bg-white p-3 rounded-lg border text-xs"><div className="flex justify-between mb-1"><span className="font-bold">No {a.no}</span><span>Diff: {a.difficulty}</span></div><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mb-1"><div className="bg-indigo-600 h-full" style={{width: `${a.percent}%`}}></div></div><div className="flex justify-between text-slate-500"><span>Benar: {a.correct}/{a.total}</span><span>{a.percent}%</span></div></div>))}</div>
+                            ) : <div className="text-center text-slate-400">Belum ada data.</div>}
                         </div>
                     </div>
                 </div>
-
-                {/* MODAL EDIT (POPUP DI ATAS POPUP) */}
+                {/* MODAL EDIT */}
                 {editingQuestion && (
-                    <div className="absolute inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
-                        <div className="bg-white p-6 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl animate-fade-in">
-                            <div className="flex justify-between items-center mb-6">
-                                <h3 className="font-bold text-xl text-slate-800">Edit Soal</h3>
-                                <button onClick={()=>setEditingQuestion(null)} className="p-2 hover:bg-slate-100 rounded-full"><X size={20}/></button>
-                            </div>
+                    <div className="absolute inset-0 bg-black/50 z-[60] flex items-center justify-center">
+                        <div className="bg-white p-6 rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                            <h3 className="font-bold mb-4">Edit Soal</h3>
+                            <label className="text-xs font-bold text-slate-500">Pertanyaan</label>
+                            <textarea className="w-full p-2 border rounded mb-2 h-24" value={editingQuestion.text} onChange={e=>setEditingQuestion({...editingQuestion, text:e.target.value})}></textarea>
                             
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Pertanyaan</label>
-                                    <textarea className="w-full p-3 border-2 border-slate-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50 outline-none transition h-32 text-sm" value={editingQuestion.text} onChange={e=>setEditingQuestion({...editingQuestion, text:e.target.value})}></textarea>
-                                </div>
-
-                                {(editingQuestion.type === 'multiple_choice' || editingQuestion.type === 'complex') && (
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Opsi Jawaban (A-E)</label>
-                                        <div className="space-y-2">
-                                            {editingQuestion.raw_options.map((opt, idx) => (
-                                                <div key={idx} className="flex gap-3 items-center">
-                                                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-slate-500 text-sm">{['A','B','C','D','E'][idx]}</div>
-                                                    <input className="flex-1 p-2 border-2 border-slate-200 rounded-lg text-sm focus:border-indigo-500 outline-none" value={opt} onChange={e => {
-                                                        const newOpts = [...editingQuestion.raw_options];
-                                                        newOpts[idx] = e.target.value;
-                                                        setEditingQuestion({...editingQuestion, raw_options: newOpts});
-                                                    }}/>
-                                                </div>
-                                            ))}
+                            {(editingQuestion.type === 'multiple_choice' || editingQuestion.type === 'complex') && (
+                                <>
+                                    <label className="text-xs font-bold text-slate-500 mt-2 block">Opsi A-E</label>
+                                    {editingQuestion.raw_options.map((opt, idx) => (
+                                        <div key={idx} className="flex gap-2 mb-1">
+                                            <span className="font-bold w-4 text-center">{['A','B','C','D','E'][idx]}</span>
+                                            <input className="flex-1 p-1 border rounded text-sm" value={opt} onChange={e => {
+                                                const newOpts = [...editingQuestion.raw_options];
+                                                newOpts[idx] = e.target.value;
+                                                setEditingQuestion({...editingQuestion, raw_options: newOpts});
+                                            }}/>
                                         </div>
-                                    </div>
-                                )}
+                                    ))}
+                                </>
+                            )}
 
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Kunci Jawaban</label>
-                                    <input className="w-full p-3 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none text-sm font-bold tracking-widest uppercase" value={editingQuestion.correct_answer} onChange={e=>setEditingQuestion({...editingQuestion, correct_answer:e.target.value})} placeholder="CONTOH: A (ATAU A,B UNTUK KOMPLEKS)"/>
-                                </div>
+                            <label className="text-xs font-bold text-slate-500 mt-2 block">Kunci Jawaban</label>
+                            <input className="w-full p-2 border rounded mb-2" value={editingQuestion.correct_answer} onChange={e=>setEditingQuestion({...editingQuestion, correct_answer:e.target.value})} placeholder="Contoh: A (atau A,B untuk kompleks)"/>
 
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Pembahasan</label>
-                                    <textarea className="w-full p-3 border-2 border-slate-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50 outline-none transition h-24 text-sm" value={editingQuestion.explanation || ''} onChange={e=>setEditingQuestion({...editingQuestion, explanation:e.target.value})} placeholder="Tulis pembahasan disini..."></textarea>
-                                </div>
-                            </div>
+                            <label className="text-xs font-bold text-slate-500 mt-2 block">Pembahasan</label>
+                            <textarea className="w-full p-2 border rounded mb-4 h-24" value={editingQuestion.explanation || ''} onChange={e=>setEditingQuestion({...editingQuestion, explanation:e.target.value})} placeholder="Tulis pembahasan disini..."></textarea>
                             
-                            <div className="flex gap-3 mt-8 pt-6 border-t">
-                                <button onClick={()=>setEditingQuestion(null)} className="flex-1 py-3 rounded-xl border-2 border-slate-200 font-bold text-slate-500 hover:bg-slate-50 transition">Batal</button>
-                                <button onClick={handleSaveQuestion} className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 flex items-center justify-center gap-2 transition"><Save size={18}/> Simpan Perubahan</button>
+                            <div className="flex gap-2 justify-end">
+                                <button onClick={()=>setEditingQuestion(null)} className="px-4 py-2 rounded border">Batal</button>
+                                <button onClick={handleSaveQuestion} className="px-4 py-2 rounded bg-blue-600 text-white flex items-center gap-2"><Save size={16}/> Simpan</button>
                             </div>
                         </div>
                     </div>
@@ -371,30 +325,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             </div>
         )}
 
-        {(tab === 'users' || tab === 'recap') && (
-            <div className="mb-6 flex gap-4 items-center bg-white p-4 rounded-xl border shadow-sm sticky top-0 z-10">
-                <Filter className="text-slate-400" size={20}/>
-                <span className="font-bold text-slate-700">Filter Cabang:</span>
-                <select value={selectedSchoolFilter} onChange={e => setSelectedSchoolFilter(e.target.value)} className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 font-medium outline-none">
-                    {schoolList.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-                
-                {tab === 'recap' && (
-                    <div className="ml-auto flex gap-2">
-                        {/* TOMBOL 1: Download SESUAI FILTER */}
-                        <a href={`${apiUrl}/admin/recap/download-pdf?school=${encodeURIComponent(selectedSchoolFilter)}`} target="_blank" className="bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 rounded-lg font-bold text-sm shadow flex gap-2 hover:bg-blue-100 transition">
-                            <FileText size={16}/> PDF {selectedSchoolFilter === 'Semua' ? '' : selectedSchoolFilter}
-                        </a>
-                        
-                        {/* TOMBOL 2: Download SEMUA DATA (RESET FILTER) */}
-                        <a href={`${apiUrl}/admin/recap/download-pdf?school=Semua`} target="_blank" className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow flex gap-2 hover:bg-red-700 transition">
-                            <Download size={16}/> DOWNLOAD FULL REKAP
-                        </a>
-                    </div>
-                )}
-            </div>
-        )}
-
+        {/* ... (TAB USERS SAMA) ... */}
         {tab === 'users' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between items-center">
@@ -424,7 +355,32 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           </div>
         )}
 
-        {tab === 'recap' && renderRecap()}
+        {tab === 'recap' && (
+            <>
+                <div className="mb-6 flex gap-4 items-center bg-white p-4 rounded-xl border shadow-sm sticky top-0 z-10">
+                    <Filter className="text-slate-400" size={20}/>
+                    <span className="font-bold text-slate-700">Filter Cabang:</span>
+                    <select value={selectedSchoolFilter} onChange={e => setSelectedSchoolFilter(e.target.value)} className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 font-medium outline-none">
+                        {schoolList.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    
+                    {/* BUTTON TOGGLE DETAIL */}
+                    <button onClick={() => setShowDetails(!showDetails)} className={`ml-4 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 border transition ${showDetails ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600'}`}>
+                        <Info size={16}/> {showDetails ? "Sembunyikan Detail" : "Tampilkan Detail B/S"}
+                    </button>
+
+                    <div className="ml-auto flex gap-2">
+                        <a href={`${apiUrl}/admin/recap/download-pdf?school=${encodeURIComponent(selectedSchoolFilter)}`} target="_blank" className="bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 rounded-lg font-bold text-sm shadow flex gap-2 hover:bg-blue-100 transition">
+                            <FileText size={16}/> PDF {selectedSchoolFilter === 'Semua' ? '' : selectedSchoolFilter}
+                        </a>
+                        <a href={`${apiUrl}/admin/recap/download-pdf?school=Semua`} target="_blank" className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow flex gap-2 hover:bg-red-700 transition">
+                            <Download size={16}/> DOWNLOAD FULL REKAP
+                        </a>
+                    </div>
+                </div>
+                {renderRecap()}
+            </>
+        )}
         
         {tab === 'config' && (
             <div className="space-y-6">

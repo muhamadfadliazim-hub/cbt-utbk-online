@@ -2,16 +2,17 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text, inspect
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session, joinedload
-from sqlalchemy import distinct, func
+from sqlalchemy import distinct
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 import pandas as pd
 import io
 import os
 import math
+import statistics
 
 # CONFIG
 UPLOAD_DIR = "uploads"
@@ -76,30 +77,12 @@ class ExamResult(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id")); exam_id = Column(String)
     correct_count = Column(Integer); wrong_count = Column(Integer); irt_score = Column(Float) 
+    raw_score = Column(Float, default=0.0) 
     user = relationship("User", back_populates="results")
 
 class SystemConfig(Base):
     __tablename__ = "system_configs"
     key = Column(String, primary_key=True); value = Column(String)
-
-# LOGIC
-def calculate_irt_score(correct_questions, total_questions):
-    try:
-        if not total_questions: return 0
-        def safe_diff(val):
-            try:
-                f = float(val)
-                if math.isnan(f): return 1.0 
-                return f
-            except: return 1.0
-        raw = sum([safe_diff(q.difficulty) for q in correct_questions])
-        max_score = sum([safe_diff(q.difficulty) for q in total_questions])
-        if max_score <= 0: return 0
-        theta = raw / max_score 
-        z = (theta - 0.5) / 0.15 
-        final = 500 + (z * 100)
-        return round(max(200, min(1000, final)))
-    except: return 500
 
 app = FastAPI(title="CBT FINAL FIX")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -109,46 +92,53 @@ def get_db():
     try: yield db
     finally: db.close()
 
-# === PERBAIKAN: AUTO REPAIR DATABASE SAAT STARTUP (FIX GAGAL LOGIN) ===
+# LOGIC PENILAIAN REAL (Z-SCORE)
+def calculate_real_score(current_raw_score, max_possible_score, exam_id, db: Session):
+    try:
+        all_results = db.query(ExamResult.raw_score).filter(ExamResult.exam_id == exam_id).all()
+        scores = [r[0] for r in all_results if r[0] is not None]
+        scores.append(current_raw_score)
+        
+        if len(scores) < 2 or max_possible_score <= 0:
+            if max_possible_score <= 0: return 0
+            return round((current_raw_score / max_possible_score) * 1000)
+
+        mean = statistics.mean(scores)
+        stdev = statistics.stdev(scores)
+        
+        if stdev == 0: return round((current_raw_score / max_possible_score) * 1000)
+
+        z_score = (current_raw_score - mean) / stdev
+        final_score = 500 + (z_score * 110)
+        return round(max(0, min(1000, final_score)))
+    except: return 0
+
 @app.on_event("startup")
 def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         with engine.connect() as conn:
-            # Tambahkan kolom sekolah & jurusan ke user jika belum ada
             try: conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS school VARCHAR(255)")); conn.commit()
             except: pass
-            try: conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS choice1_id INTEGER")); conn.commit()
-            except: pass
-            try: conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS choice2_id INTEGER")); conn.commit()
-            except: pass
-            
-            # Fix kolom lain
-            try: conn.execute(text("ALTER TABLE exam_periods ADD COLUMN IF NOT EXISTS target_schools TEXT")); conn.commit()
-            except: pass
-            try: conn.execute(text("ALTER TABLE options ADD COLUMN IF NOT EXISTS correct_text TEXT")); conn.commit()
-            except: pass
-            try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS type VARCHAR(50)")); conn.commit()
+            try: conn.execute(text("ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS raw_score FLOAT DEFAULT 0")); conn.commit()
             except: pass
             try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_correct INTEGER DEFAULT 0")); conn.commit()
             except: pass
             try: conn.execute(text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS stats_total INTEGER DEFAULT 0")); conn.commit()
             except: pass
-            
         if db.query(User).filter_by(username="admin_cabang").count() == 0:
             db.add(User(username="admin_cabang", password="123", full_name="Admin", role="admin", school="PUSAT"))
             db.commit()
-    except Exception as e:
-        print(f"Startup Repair Error (Ignored): {e}")
+    except: pass
     finally: db.close()
 
 app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
-# SCHEMAS
 class LoginSchema(BaseModel): username: str; password: str
 class AnswerSchema(BaseModel): answers: Dict[str, Any]; username: str
-class MajorSelectionSchema(BaseModel): username: str; choice1_id: Optional[int]; choice2_id: Optional[int]
+# UPDATE: ALLOW NULL (Untuk Reset Jurusan)
+class MajorSelectionSchema(BaseModel): username: str; choice1_id: Optional[int] = None; choice2_id: Optional[int] = None
 class PeriodCreateSchema(BaseModel): name: str; target_schools: Optional[str] = "Semua"; exam_type: str = "UTBK"
 class UserCreateSchema(BaseModel): username: str; full_name: str; password: str; role: str = "student"; school: Optional[str]
 class QuestionUpdateSchema(BaseModel): 
@@ -183,7 +173,12 @@ def get_schools_list(db: Session = Depends(get_db)):
 
 @app.post("/users/select-major")
 def set_major(d: MajorSelectionSchema, db: Session = Depends(get_db)):
-    u=db.query(User).filter_by(username=d.username).first(); u.choice1_id=d.choice1_id; u.choice2_id=d.choice2_id; db.commit(); return {"status":"success"}
+    u=db.query(User).filter_by(username=d.username).first()
+    u.choice1_id=d.choice1_id
+    u.choice2_id=d.choice2_id
+    db.commit()
+    return {"status":"success"}
+
 @app.post("/admin/periods")
 def create_period(d: PeriodCreateSchema, db: Session = Depends(get_db)):
     p=ExamPeriod(name=d.name, exam_type=d.exam_type, is_active=False, target_schools=d.target_schools); db.add(p); db.commit(); db.refresh(p)
@@ -218,9 +213,17 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
         db.flush() 
         questions = db.query(Question).filter_by(exam_id=exam_id).all()
         corr_q = []
+        raw_score_total = 0.0
+        max_possible_raw = 0.0
+
         for q in questions:
+            weight = float(q.difficulty) if q.difficulty is not None else 1.0
+            if math.isnan(weight): weight = 1.0
+            max_possible_raw += weight
+
             ans = d.answers.get(str(q.id))
             if not ans: continue
+            
             is_r = False
             if q.type=='short_answer': 
                 if q.options and str(ans).strip().lower() == str(q.options[0].correct_text or "").strip().lower(): is_r=True
@@ -236,14 +239,28 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
             else:
                 k = next((o.option_index for o in q.options if o.is_correct), None)
                 if str(ans) == str(k): is_r=True
-            if is_r: corr_q.append(q); q.stats_correct = (q.stats_correct or 0) + 1
+            
+            if is_r: 
+                corr_q.append(q)
+                raw_score_total += weight
+                q.stats_correct = (q.stats_correct or 0) + 1
+            
             q.stats_total = (q.stats_total or 0) + 1
-        final = calculate_irt_score(corr_q, questions)
-        db.add(ExamResult(user_id=u.id, exam_id=exam_id, correct_count=len(corr_q), wrong_count=len(questions)-len(corr_q), irt_score=final))
+        
+        final_score = calculate_real_score(raw_score_total, max_possible_raw, exam_id, db)
+        
+        db.add(ExamResult(
+            user_id=u.id, 
+            exam_id=exam_id, 
+            correct_count=len(corr_q), 
+            wrong_count=len(questions)-len(corr_q), 
+            raw_score=raw_score_total,
+            irt_score=final_score
+        ))
         db.commit()
-        return {"message":"Saved", "score":final}
+        return {"message":"Saved", "score":final_score}
     except Exception as e:
-        db.rollback(); return {"message":"Saved (Partial)", "score": 0}
+        db.rollback(); print(e); return {"message":"Saved (Partial)", "score": 0}
 
 @app.put("/admin/questions/{qid}")
 def update_question(qid: int, d: QuestionUpdateSchema, db: Session = Depends(get_db)):
@@ -456,7 +473,6 @@ def dl_pdf(school: Optional[str]=None, db: Session=Depends(get_db)):
         style_cell = ParagraphStyle(name='Cell', parent=styles['Normal'], fontSize=8, leading=10)
         style_header = ParagraphStyle(name='Header', parent=styles['Normal'], fontSize=9, leading=11, alignment=TA_CENTER, fontName='Helvetica-Bold', textColor=colors.white)
 
-        # HEADER LENGKAP
         headers = [
             Paragraph("Nama", style_header), 
             Paragraph("Sekolah", style_header),
