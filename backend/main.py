@@ -2,10 +2,10 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Boolean, Text, text, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session, joinedload
-from sqlalchemy import distinct
+from sqlalchemy import distinct, func
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 import pandas as pd
@@ -92,24 +92,28 @@ def get_db():
     try: yield db
     finally: db.close()
 
-# LOGIC PENILAIAN REAL (Z-SCORE)
-def calculate_real_score(current_raw_score, max_possible_score, exam_id, db: Session):
+# LOGIC PENILAIAN REAL (Z-SCORE) - DIGUNAKAN OLEH TOMBOL RECALCULATE
+def calculate_real_score(current_raw_score, population_scores, max_possible=0):
     try:
-        all_results = db.query(ExamResult.raw_score).filter(ExamResult.exam_id == exam_id).all()
-        scores = [r[0] for r in all_results if r[0] is not None]
-        scores.append(current_raw_score)
-        
-        if len(scores) < 2 or max_possible_score <= 0:
-            if max_possible_score <= 0: return 0
-            return round((current_raw_score / max_possible_score) * 1000)
+        # Jika tidak ada populasi (hanya 1 siswa), pakai skala linear biasa
+        if len(population_scores) < 2:
+            if max_possible <= 0: return 0
+            return round((current_raw_score / max_possible) * 1000)
 
-        mean = statistics.mean(scores)
-        stdev = statistics.stdev(scores)
+        mean = statistics.mean(population_scores)
+        stdev = statistics.stdev(population_scores)
         
-        if stdev == 0: return round((current_raw_score / max_possible_score) * 1000)
+        # Jika semua nilai sama persis, stdev 0 -> kembali ke linear
+        if stdev == 0: 
+            if max_possible <= 0: return 500
+            return round((current_raw_score / max_possible) * 1000)
 
+        # Rumus UTBK Standard: 500 + (Z * 110)
+        # Z = (Skor Siswa - Rata2) / Standar Deviasi
         z_score = (current_raw_score - mean) / stdev
         final_score = 500 + (z_score * 110)
+        
+        # Cap di 0 - 1000
         return round(max(0, min(1000, final_score)))
     except: return 0
 
@@ -137,7 +141,6 @@ app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
 class LoginSchema(BaseModel): username: str; password: str
 class AnswerSchema(BaseModel): answers: Dict[str, Any]; username: str
-# UPDATE: ALLOW NULL (Untuk Reset Jurusan)
 class MajorSelectionSchema(BaseModel): username: str; choice1_id: Optional[int] = None; choice2_id: Optional[int] = None
 class PeriodCreateSchema(BaseModel): name: str; target_schools: Optional[str] = "Semua"; exam_type: str = "UTBK"
 class UserCreateSchema(BaseModel): username: str; full_name: str; password: str; role: str = "student"; school: Optional[str]
@@ -147,7 +150,6 @@ class ConfigSchema(BaseModel): value: str
 class BulkDeleteSchema(BaseModel): user_ids: List[int]
 class ResetResultSchema(BaseModel): user_id: int; exam_id: Optional[str] = None
 
-# API
 @app.post("/login")
 def login(d: LoginSchema, db: Session = Depends(get_db)):
     u=db.query(User).filter_by(username=d.username).first()
@@ -163,6 +165,46 @@ def reset_result(d: ResetResultSchema, db: Session = Depends(get_db)):
         db.query(ExamResult).filter_by(user_id=d.user_id).delete()
     db.commit()
     return {"message": "Reset Berhasil"}
+
+# === API BARU: HITUNG ULANG SEMUA NILAI (POPULATION BASED) ===
+@app.post("/admin/recalculate-irt")
+def recalculate_irt(db: Session = Depends(get_db)):
+    try:
+        # 1. Ambil semua exam_id yang ada di hasil
+        exam_ids = [r[0] for r in db.query(distinct(ExamResult.exam_id)).all()]
+        count = 0
+        
+        for eid in exam_ids:
+            # 2. Ambil semua hasil untuk ujian ini
+            results = db.query(ExamResult).filter(ExamResult.exam_id == eid).all()
+            if not results: continue
+            
+            # 3. Kumpulkan Raw Score Populasi
+            # NOTE: Untuk data lama yang raw_score-nya 0 tapi punya correct_count,
+            # kita pakai correct_count sebagai estimasi raw_score agar tidak 0 semua.
+            population_scores = []
+            for r in results:
+                score_val = r.raw_score
+                if score_val <= 0 and r.correct_count > 0:
+                    score_val = float(r.correct_count) # Fallback untuk data lama
+                    r.raw_score = score_val # Update DB sekalian
+                population_scores.append(score_val)
+            
+            # 4. Hitung Ulang Nilai Tiap Siswa
+            # Kita butuh Max Score (Total Soal) untuk fallback jika populasi < 2
+            total_questions = db.query(Question).filter(Question.exam_id == eid).count()
+            
+            for r in results:
+                new_irt = calculate_real_score(r.raw_score, population_scores, total_questions)
+                r.irt_score = new_irt
+                count += 1
+                
+        db.commit()
+        return {"message": f"Sukses! {count} nilai siswa telah dihitung ulang dengan standar Z-Score."}
+    except Exception as e:
+        db.rollback()
+        return JSONResponse({"message": f"Gagal hitung ulang: {str(e)}"}, status_code=500)
+# =============================================================
 
 @app.get("/majors")
 def get_majors(db: Session = Depends(get_db)): return db.query(Major).all()
@@ -214,13 +256,12 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
         questions = db.query(Question).filter_by(exam_id=exam_id).all()
         corr_q = []
         raw_score_total = 0.0
-        max_possible_raw = 0.0
-
+        
+        # Hitung skor mentah siswa ini
         for q in questions:
             weight = float(q.difficulty) if q.difficulty is not None else 1.0
             if math.isnan(weight): weight = 1.0
-            max_possible_raw += weight
-
+            
             ans = d.answers.get(str(q.id))
             if not ans: continue
             
@@ -247,7 +288,17 @@ def sub_ex(exam_id: str, d: AnswerSchema, db: Session = Depends(get_db)):
             
             q.stats_total = (q.stats_total or 0) + 1
         
-        final_score = calculate_real_score(raw_score_total, max_possible_raw, exam_id, db)
+        # --- LOGIK REAL TIME SCORE ---
+        # 1. Ambil populasi skor mentah dari DB (Siswa lain yang sudah mengerjakan)
+        all_results_raw = db.query(ExamResult.raw_score).filter(ExamResult.exam_id == exam_id).all()
+        population_scores = [r[0] for r in all_results_raw if r[0] is not None]
+        population_scores.append(raw_score_total) # Masukkan siswa ini ke populasi
+        
+        # 2. Hitung Total Soal (Max Possible)
+        max_possible = sum([float(q.difficulty or 1.0) for q in questions])
+
+        # 3. Hitung Z-Score
+        final_score = calculate_real_score(raw_score_total, population_scores, max_possible)
         
         db.add(ExamResult(
             user_id=u.id, 
@@ -295,7 +346,9 @@ async def upload_questions(eid: str, file: UploadFile = File(...), db: Session =
             elif 'ISIAN' in raw: q_type='short_answer'
             elif 'TABEL' in raw: q_type='table_boolean'
             diff = 1.0; 
-            try: diff = float(r.get('Kesulitan') or 1.0)
+            try: 
+                diff_val = r.get('Kesulitan')
+                diff = float(diff_val) if diff_val and str(diff_val).lower() != 'nan' else 1.0
             except: pass
             read_mat = str(r.get('Bacaan') or '').strip(); img_url = str(r.get('Gambar') or '').strip()
             if read_mat.lower()=='nan': read_mat=''; 

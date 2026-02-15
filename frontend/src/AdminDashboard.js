@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save, Download, Info } from 'lucide-react';
+import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save, Download, Info, Calculator } from 'lucide-react';
 import 'katex/dist/katex.min.css'; import { InlineMath } from 'react-katex';
 
 const AdminDashboard = ({ onLogout, apiUrl }) => {
@@ -21,7 +21,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [previewQuestions, setPreviewQuestions] = useState(null);
   const [itemAnalysis, setItemAnalysis] = useState(null);
   const [editingQuestion, setEditingQuestion] = useState(null);
-  const [showDetails, setShowDetails] = useState(false); // TOGGLE DETAIL B/S
+  const [showDetails, setShowDetails] = useState(false); 
 
   const fetchData = useCallback(() => {
     setLoading(true);
@@ -48,6 +48,17 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
       if (tab === 'recap') { interval = setInterval(fetchData, 5000); }
       return () => clearInterval(interval);
   }, [tab, fetchData]);
+
+  const handleRecalculateIRT = async () => {
+      if(!window.confirm("Yakin ingin menghitung ulang SEMUA nilai berdasarkan populasi terbaru? (Ini akan memperbarui nilai semua siswa)")) return;
+      try {
+          setLoading(true);
+          const res = await fetch(`${apiUrl}/admin/recalculate-irt`, { method: 'POST' });
+          const data = await res.json();
+          alert(data.message);
+          fetchData();
+      } catch (e) { alert("Gagal hitung ulang."); } finally { setLoading(false); }
+  };
 
   const handleCreatePeriod = async () => {
     if (!newPeriodName) return;
@@ -210,7 +221,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
              <button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg text-sm font-bold shadow-sm hover:bg-slate-50 text-indigo-600"><RefreshCcw size={16}/> Refresh Data</button>
         </div>
         
-        {/* ... (TAB PERIODS, USERS, CONFIG SAMA) ... */}
+        {/* ... (TAB PERIODS, USERS SAMA) ... */}
         {tab === 'periods' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex gap-4 items-center">
@@ -256,7 +267,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           </div>
         )}
 
-        {/* MODAL PREVIEW & EDIT (SAMA) */}
         {previewQuestions && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col">
@@ -325,7 +335,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             </div>
         )}
 
-        {/* ... (TAB USERS SAMA) ... */}
+        {/* TAB USERS SAMA SEPERTI SEBELUMNYA */}
         {tab === 'users' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between items-center">
@@ -367,6 +377,11 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                     {/* BUTTON TOGGLE DETAIL */}
                     <button onClick={() => setShowDetails(!showDetails)} className={`ml-4 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 border transition ${showDetails ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600'}`}>
                         <Info size={16}/> {showDetails ? "Sembunyikan Detail" : "Tampilkan Detail B/S"}
+                    </button>
+
+                    {/* BUTTON HITUNG ULANG IRT */}
+                    <button onClick={handleRecalculateIRT} className="ml-2 px-4 py-2 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-emerald-200 transition">
+                        <Calculator size={16}/> Hitung Ulang IRT
                     </button>
 
                     <div className="ml-auto flex gap-2">
