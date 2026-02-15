@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LogOut, Clock, PlayCircle, BarChart3, ChevronRight, CheckCircle, AlertTriangle, BookOpen, Search, X, RotateCcw } from 'lucide-react';
 import ExamSimulation from './ExamSimulation';
 
@@ -6,11 +6,12 @@ const StudentDashboard = ({ user, onLogout, apiUrl }) => {
   const [periods, setPeriods] = useState([]);
   const [stats, setStats] = useState(null);
   const [majors, setMajors] = useState([]);
-  // Logika: Jika user belum punya pilihan (null), tampilkan selector
+  
   const [showMajorSelector, setShowMajorSelector] = useState(!user.choice1_id);
   const [selectedMajors, setSelectedMajors] = useState({ c1: null, c2: null });
+  // STATE BARU: Mengatur dropdown mana yang sedang terbuka (agar tidak saling tumpuk)
+  const [activeDropdown, setActiveDropdown] = useState(null); 
 
-  // State Ujian
   const [activeExamId, setActiveExamId] = useState(localStorage.getItem('active_exam_id'));
   const [activeExamData, setActiveExamData] = useState(null);
   const [reviewData, setReviewData] = useState(null);
@@ -45,11 +46,10 @@ const StudentDashboard = ({ user, onLogout, apiUrl }) => {
         });
         setShowMajorSelector(false); 
         alert("Jurusan berhasil disimpan! Selamat belajar.");
-        fetchData(); // Refresh statistik agar status lulus update
+        fetchData(); 
       } catch (e) { alert("Gagal menyimpan jurusan."); }
   };
 
-  // FITUR RESET JURUSAN
   const handleResetMajors = async () => {
       if(!window.confirm("Yakin ingin mengganti pilihan jurusan?")) return;
       try {
@@ -102,40 +102,35 @@ const StudentDashboard = ({ user, onLogout, apiUrl }) => {
       } catch (err) { alert("Gagal kirim jawaban. Coba lagi."); }
   };
 
-  // KOMPONEN DROPDOWN CANGGIH (BISA KETIK/CARI)
-  const SearchableSelect = ({ label, value, onChange, options }) => {
+  // KOMPONEN SEARCHABLE SELECT YANG LEBIH PINTAR
+  const SearchableSelect = ({ label, value, onChange, options, name }) => {
       const [search, setSearch] = useState("");
-      const [isOpen, setIsOpen] = useState(false);
+      const isOpen = activeDropdown === name; // Cek apakah dropdown ini yang harus buka
       
-      // Ambil nama jurusan yang terpilih
       const selectedItem = options.find(o => o.id === value);
-      
-      // Filter list berdasarkan ketikan user
       const filtered = options.filter(o => 
           o.university.toLowerCase().includes(search.toLowerCase()) || 
           o.name.toLowerCase().includes(search.toLowerCase())
       );
 
       return (
-          <div className="relative mb-4">
+          // Z-INDEX DINAMIS: Jika terbuka, dia paling depan (z-50), jika tutup (z-10)
+          <div className={`relative mb-4 ${isOpen ? 'z-50' : 'z-10'}`}>
               <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">{label}</label>
               
-              {/* Tombol pemicu dropdown */}
               <div 
                   className={`w-full p-3 border-2 rounded-xl bg-white flex justify-between items-center cursor-pointer transition ${isOpen ? 'border-indigo-500 ring-4 ring-indigo-50' : 'border-slate-200 hover:border-indigo-300'}`}
-                  onClick={() => setIsOpen(!isOpen)}
+                  onClick={() => setActiveDropdown(isOpen ? null : name)} // Toggle logic
               >
-                  <span className={value ? "text-slate-800 font-bold" : "text-slate-400"}>
+                  <span className={`truncate ${value ? "text-slate-800 font-bold" : "text-slate-400"}`}>
                       {value ? `${selectedItem?.university} - ${selectedItem?.name}` : "Ketik / Pilih Kampus..."}
                   </span>
                   <ChevronRight size={18} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-90' : ''}`}/>
               </div>
               
-              {/* Isi Dropdown */}
               {isOpen && (
-                  <div className="absolute top-full left-0 w-full mt-2 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 max-h-64 flex flex-col overflow-hidden animate-fade-in">
-                      {/* Kotak Pencarian */}
-                      <div className="p-3 border-b bg-slate-50 sticky top-0 z-10">
+                  <div className="absolute top-full left-0 w-full mt-2 bg-white border border-slate-200 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-fade-in" style={{maxHeight: '250px'}}>
+                      <div className="p-3 border-b bg-slate-50 sticky top-0 z-20">
                           <div className="flex items-center gap-2 bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100 transition">
                               <Search size={16} className="text-slate-400"/>
                               <input 
@@ -147,9 +142,7 @@ const StudentDashboard = ({ user, onLogout, apiUrl }) => {
                               />
                           </div>
                       </div>
-                      
-                      {/* List Pilihan */}
-                      <div className="overflow-y-auto flex-1 p-1">
+                      <div className="overflow-y-auto flex-1 p-1 bg-white custom-scrollbar">
                           {filtered.length === 0 ? (
                               <div className="p-4 text-center text-xs text-slate-400">Jurusan tidak ditemukan.</div>
                           ) : (
@@ -157,7 +150,7 @@ const StudentDashboard = ({ user, onLogout, apiUrl }) => {
                                   <div 
                                       key={m.id} 
                                       className={`p-3 text-sm rounded-lg cursor-pointer transition flex flex-col border-b last:border-0 ${value === m.id ? 'bg-indigo-50 border-indigo-100' : 'hover:bg-slate-50 border-transparent'}`}
-                                      onClick={() => { onChange(m.id); setIsOpen(false); setSearch(""); }}
+                                      onClick={() => { onChange(m.id); setActiveDropdown(null); setSearch(""); }}
                                   >
                                       <span className="font-bold text-indigo-700">{m.university}</span>
                                       <span className="text-slate-600">{m.name}</span>
@@ -207,22 +200,43 @@ const StudentDashboard = ({ user, onLogout, apiUrl }) => {
       </div>
   );
 
-  // POPUP JURUSAN (MODAL)
   if (showMajorSelector) {
       return (
+          // BACKDROP LEBIH GELAP & BLUR
           <div className="fixed inset-0 bg-slate-900/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-              <div className="bg-white p-8 rounded-3xl max-w-md w-full shadow-2xl relative overflow-hidden">
+              {/* MODAL CONTAINER */}
+              <div className="bg-white p-8 rounded-3xl max-w-md w-full shadow-2xl relative" style={{minHeight: '500px'}}>
                   <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
-                  <h2 className="text-2xl font-black mb-2 text-center text-slate-800">Target Kampus Impian</h2>
-                  <p className="text-slate-500 mb-8 text-center text-sm">Pilih 2 program studi yang ingin kamu perjuangkan.</p>
                   
-                  <div className="space-y-2">
-                      <SearchableSelect label="Pilihan 1" value={selectedMajors.c1} onChange={id => setSelectedMajors({...selectedMajors, c1: id})} options={majors} />
-                      <SearchableSelect label="Pilihan 2" value={selectedMajors.c2} onChange={id => setSelectedMajors({...selectedMajors, c2: id})} options={majors} />
+                  <div className="mb-6 text-center">
+                    <h2 className="text-2xl font-black text-slate-800">Target Kampus</h2>
+                    <p className="text-slate-500 text-sm mt-1">Tentukan masa depanmu sekarang.</p>
+                  </div>
+                  
+                  {/* WRAPPER DROPDOWNS */}
+                  <div className="space-y-4">
+                      <SearchableSelect 
+                        label="Pilihan 1 (Prioritas)" 
+                        name="c1"
+                        value={selectedMajors.c1} 
+                        onChange={id => setSelectedMajors({...selectedMajors, c1: id})} 
+                        options={majors} 
+                      />
                       
-                      <button onClick={handleSaveMajors} className="w-full py-4 mt-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transform transition active:scale-95">
-                          Simpan & Lanjutkan
-                      </button>
+                      <SearchableSelect 
+                        label="Pilihan 2 (Cadangan)" 
+                        name="c2"
+                        value={selectedMajors.c2} 
+                        onChange={id => setSelectedMajors({...selectedMajors, c2: id})} 
+                        options={majors} 
+                      />
+                  </div>
+
+                  {/* TOMBOL SIMPAN DI BAWAH (FIXED POSITION RELATIVE TO MODAL) */}
+                  <div className="absolute bottom-8 left-8 right-8">
+                    <button onClick={handleSaveMajors} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transform transition active:scale-95 flex items-center justify-center gap-2">
+                        <CheckCircle size={20}/> Simpan & Lanjutkan
+                    </button>
                   </div>
               </div>
           </div>
@@ -250,7 +264,6 @@ const StudentDashboard = ({ user, onLogout, apiUrl }) => {
       </nav>
 
       <main className="max-w-5xl mx-auto p-6 md:p-8 space-y-10">
-        {/* STATISTIK KELULUSAN */}
         {stats && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className={`p-6 rounded-3xl border-2 flex flex-col justify-center ${stats.is_released ? (stats.status.includes('LULUS')?'bg-emerald-50 border-emerald-200 text-emerald-800':'bg-red-50 border-red-200 text-red-800') : 'bg-white border-slate-100 text-slate-400'}`}>
@@ -273,7 +286,6 @@ const StudentDashboard = ({ user, onLogout, apiUrl }) => {
             </div>
         )}
 
-        {/* DAFTAR UJIAN */}
         <div className="space-y-6">
             <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><Clock size={24}/></div>
