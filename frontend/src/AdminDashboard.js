@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save, Download, Info, Calculator } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save, Download, Info, Calculator, ArrowUpDown, Trophy, TrendingUp, AlertCircle } from 'lucide-react';
 import 'katex/dist/katex.min.css'; import { InlineMath } from 'react-katex';
 
 const AdminDashboard = ({ onLogout, apiUrl }) => {
@@ -13,7 +13,12 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', school: '', role: 'student' });
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [searchUser, setSearchUser] = useState('');
+  
+  // FILTER & SORTING REKAP
   const [selectedSchoolFilter, setSelectedSchoolFilter] = useState('Semua');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState('Semua'); // Baru: Filter Lulus/Gagal
+  const [sortConfig, setSortConfig] = useState({ key: 'avg', direction: 'desc' }); // Baru: Ranking
+
   const [isReleased, setIsReleased] = useState(false);
   const [loading, setLoading] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
@@ -49,8 +54,17 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
       return () => clearInterval(interval);
   }, [tab, fetchData]);
 
+  // LOGIKA SORTING (RANKING)
+  const handleSort = (key) => {
+    let direction = 'desc';
+    if (sortConfig.key === key && sortConfig.direction === 'desc') {
+      direction = 'asc';
+    }
+    setSortConfig({ key, direction });
+  };
+
   const handleRecalculateIRT = async () => {
-      if(!window.confirm("Yakin ingin menghitung ulang SEMUA nilai berdasarkan populasi terbaru? (Ini akan memperbarui nilai semua siswa)")) return;
+      if(!window.confirm("Yakin ingin menghitung ulang SEMUA nilai?")) return;
       try {
           setLoading(true);
           const res = await fetch(`${apiUrl}/admin/recalculate-irt`, { method: 'POST' });
@@ -60,147 +74,144 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
       } catch (e) { alert("Gagal hitung ulang."); } finally { setLoading(false); }
   };
 
-  const handleCreatePeriod = async () => {
-    if (!newPeriodName) return;
-    await fetch(`${apiUrl}/admin/periods`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newPeriodName, target_schools: targetSchool }) });
-    setNewPeriodName(''); fetchData();
-  };
+  // ... (BAGIAN CREATE PERIOD, UPLOAD, DLL TETAP SAMA - DISINGKAT SUPAYA MUAT)
+  const handleCreatePeriod = async () => { if (!newPeriodName) return; await fetch(`${apiUrl}/admin/periods`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newPeriodName, target_schools: targetSchool }) }); setNewPeriodName(''); fetchData(); };
   const handleDeletePeriod = async (pid) => { if(window.confirm("Hapus TO?")) { await fetch(`${apiUrl}/admin/periods/${pid}`, { method: 'DELETE' }); fetchData(); } };
   const handleTogglePeriod = async (pid) => { await fetch(`${apiUrl}/admin/periods/${pid}/toggle`, { method: 'POST' }); fetchData(); };
-
-  const handleUploadQuestion = async (e, examId) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const formData = new FormData(); formData.append('file', file);
-    try {
-      const res = await fetch(`${apiUrl}/admin/upload-questions/${examId}`, { method: 'POST', body: formData });
-      alert((await res.json()).message); fetchData();
-    } catch { alert("Gagal upload"); }
-  };
-
-  const handlePreviewExam = async (examId) => {
-      try { 
-          const res = await fetch(`${apiUrl}/admin/exams/${examId}/preview`); 
-          if(!res.ok) throw new Error();
-          setPreviewQuestions(await res.json()); 
-          try {
-            const res2 = await fetch(`${apiUrl}/admin/exams/${examId}/analysis`);
-            if(res2.ok) setItemAnalysis(await res2.json());
-          } catch(e) { setItemAnalysis([]); }
-      } catch { alert("Gagal load preview."); }
-  };
-
-  const handleSaveQuestion = async () => {
-      if(!editingQuestion) return;
-      await fetch(`${apiUrl}/admin/questions/${editingQuestion.id}`, { 
-          method: 'PUT', headers: {'Content-Type':'application/json'}, 
-          body: JSON.stringify({
-              text: editingQuestion.text,
-              explanation: editingQuestion.explanation,
-              correct_answer: editingQuestion.correct_answer,
-              options: editingQuestion.raw_options
-          })
-      });
-      alert("Tersimpan!"); setEditingQuestion(null); setPreviewQuestions(null);
-  };
-
-  const handleAddUser = async () => {
-    if (!newUser.username || !newUser.password) return alert("Isi data!");
-    const res = await fetch(`${apiUrl}/admin/users`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newUser) });
-    if(res.ok) { alert("Sukses"); setNewUser({ username: '', password: '', full_name: '', school: '', role: 'student' }); fetchData(); }
-    else alert("Gagal/Username ada");
-  };
-
-  const handleUploadUsers = async (e) => { 
-      const file = e.target.files[0]; const formData = new FormData(); formData.append('file', file); setImportLoading(true);
-      const res = await fetch(`${apiUrl}/admin/users/bulk`, { method: 'POST', body: formData }); 
-      const data = await res.json(); setImportLoading(false); alert(data.message); fetchData(); 
-  };
-  
+  const handleUploadQuestion = async (e, examId) => { const file = e.target.files[0]; if (!file) return; const formData = new FormData(); formData.append('file', file); try { const res = await fetch(`${apiUrl}/admin/upload-questions/${examId}`, { method: 'POST', body: formData }); alert((await res.json()).message); fetchData(); } catch { alert("Gagal upload"); } };
+  const handlePreviewExam = async (examId) => { try { const res = await fetch(`${apiUrl}/admin/exams/${examId}/preview`); if(!res.ok) throw new Error(); setPreviewQuestions(await res.json()); try { const res2 = await fetch(`${apiUrl}/admin/exams/${examId}/analysis`); if(res2.ok) setItemAnalysis(await res2.json()); } catch(e) { setItemAnalysis([]); } } catch { alert("Gagal load preview."); } };
+  const handleSaveQuestion = async () => { if(!editingQuestion) return; await fetch(`${apiUrl}/admin/questions/${editingQuestion.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ text: editingQuestion.text, explanation: editingQuestion.explanation, correct_answer: editingQuestion.correct_answer, options: editingQuestion.raw_options }) }); alert("Tersimpan!"); setEditingQuestion(null); setPreviewQuestions(null); };
+  const handleAddUser = async () => { if (!newUser.username || !newUser.password) return alert("Isi data!"); const res = await fetch(`${apiUrl}/admin/users`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newUser) }); if(res.ok) { alert("Sukses"); setNewUser({ username: '', password: '', full_name: '', school: '', role: 'student' }); fetchData(); } else alert("Gagal/Username ada"); };
+  const handleUploadUsers = async (e) => { const file = e.target.files[0]; const formData = new FormData(); formData.append('file', file); setImportLoading(true); const res = await fetch(`${apiUrl}/admin/users/bulk`, { method: 'POST', body: formData }); const data = await res.json(); setImportLoading(false); alert(data.message); fetchData(); };
   const handleDeleteUsers = async () => { if (window.confirm(`Hapus ${selectedUsers.length} siswa?`)) { await fetch(`${apiUrl}/admin/users/delete-bulk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_ids: selectedUsers }) }); setSelectedUsers([]); fetchData(); } };
   const handleUploadMajors = async (e) => { const file = e.target.files[0]; const formData = new FormData(); formData.append('file', file); const res = await fetch(`${apiUrl}/admin/upload-majors`, { method: 'POST', body: formData }); alert((await res.json()).message); };
-
-  const handleReset = async (userId, examId = null) => {
-      const msg = examId ? "Reset nilai subtes ini?" : "Reset SEMUA hasil ujian siswa ini?";
-      if(!window.confirm(msg)) return;
-      try {
-          const res = await fetch(`${apiUrl}/admin/reset-result`, {
-              method: 'POST', headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({ user_id: userId, exam_id: examId })
-          });
-          if(res.ok) { alert("Berhasil di-reset!"); fetchData(); }
-      } catch { alert("Gagal reset"); }
-  };
+  const handleReset = async (userId, examId = null) => { if(!window.confirm("Reset hasil ujian ini?")) return; try { const res = await fetch(`${apiUrl}/admin/reset-result`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ user_id: userId, exam_id: examId }) }); if(res.ok) { alert("Berhasil di-reset!"); fetchData(); } } catch { alert("Gagal reset"); } };
 
   const filteredUsers = users.filter(u => u.full_name.toLowerCase().includes(searchUser.toLowerCase()) && (selectedSchoolFilter === 'Semua' || u.school === selectedSchoolFilter));
 
-  const renderText = (text) => {
-      if(!text || text === 'nan') return "";
-      let formatted = text.replace(/\[B\]/gi, '<b>').replace(/\[\/B\]/gi, '</b>').replace(/\[I\]/gi, '<i>').replace(/\[\/I\]/gi, '</i>');
-      const parts = formatted.split(/(\$.*?\$)/g);
-      return parts.map((part, index) => {
-          if (part.startsWith('$') && part.endsWith('$')) return <span key={index} className="mx-1"><InlineMath math={part.replace(/\$/g, '')} /></span>;
-          return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br/>') }} />;
-      });
-  };
+  const renderText = (text) => { if(!text || text === 'nan') return ""; let formatted = text.replace(/\[B\]/gi, '<b>').replace(/\[\/B\]/gi, '</b>').replace(/\[I\]/gi, '<i>').replace(/\[\/I\]/gi, '</i>'); const parts = formatted.split(/(\$.*?\$)/g); return parts.map((part, index) => { if (part.startsWith('$') && part.endsWith('$')) return <span key={index} className="mx-1"><InlineMath math={part.replace(/\$/g, '')} /></span>; return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br/>') }} />; }); };
+
+  // ==========================================
+  // FITUR BARU: PENGOLAHAN DATA DASHBOARD
+  // ==========================================
+  const processedData = useMemo(() => {
+    // 1. Gabungkan data user dan hasil ujian
+    let data = users.filter(u => u.role === 'student' && u.results && u.results.length > 0).map(u => {
+        const scores = {};
+        let totalScore = 0;
+        
+        u.results.forEach(r => {
+            const subtest = r.exam_id.split('_').pop();
+            const val = Math.round(r.irt_score);
+            scores[subtest] = { val, eid: r.exam_id, correct: r.correct_count, wrong: r.wrong_count };
+            totalScore += val;
+        });
+
+        const avg = Math.round(totalScore / 7);
+        const c1 = majors.find(m => m.id === u.choice1_id);
+        const c2 = majors.find(m => m.id === u.choice2_id);
+        
+        let status = "TIDAK LULUS";
+        let statusColor = "red";
+        if (c1 && avg >= c1.passing_grade) { status = "LULUS P1"; statusColor = "emerald"; }
+        else if (c2 && avg >= c2.passing_grade) { status = "LULUS P2"; statusColor = "blue"; }
+
+        return { ...u, scores, avg, status, statusColor, c1, c2 };
+    });
+
+    // 2. Filter Berdasarkan Sekolah & Status
+    if (selectedSchoolFilter !== 'Semua') {
+        data = data.filter(u => u.school === selectedSchoolFilter);
+    }
+    if (selectedStatusFilter !== 'Semua') {
+        if (selectedStatusFilter === 'Lulus') data = data.filter(u => u.status.includes("LULUS"));
+        else if (selectedStatusFilter === 'Gagal') data = data.filter(u => u.status === "TIDAK LULUS");
+    }
+
+    // 3. Sorting (Ranking)
+    data.sort((a, b) => {
+        let valA = sortConfig.key === 'avg' ? a.avg : (a.scores[sortConfig.key]?.val || 0);
+        let valB = sortConfig.key === 'avg' ? b.avg : (b.scores[sortConfig.key]?.val || 0);
+        
+        if (sortConfig.key === 'name') {
+            valA = a.full_name.toLowerCase();
+            valB = b.full_name.toLowerCase();
+        }
+
+        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    return data;
+  }, [users, majors, selectedSchoolFilter, selectedStatusFilter, sortConfig]);
+
+  // Statistik Ringkas untuk Kartu Atas
+  const summaryStats = useMemo(() => {
+      if (processedData.length === 0) return null;
+      const total = processedData.length;
+      const passed = processedData.filter(u => u.status.includes("LULUS")).length;
+      const maxScore = Math.max(...processedData.map(u => u.avg));
+      const avgScore = Math.round(processedData.reduce((acc, curr) => acc + curr.avg, 0) / total);
+      return { total, passed, maxScore, avgScore };
+  }, [processedData]);
 
   const renderRecap = () => {
-    const studentWithResults = filteredUsers.filter(u => u.results && u.results.length > 0);
-    if (studentWithResults.length === 0) return <div className="p-8 text-center text-slate-400">Belum ada data ujian yang masuk.</div>;
+    if (processedData.length === 0) return <div className="p-12 text-center text-slate-400 bg-white border-2 border-dashed rounded-2xl">Tidak ada data yang cocok dengan filter.</div>;
+    
     return (
       <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
         <div className="overflow-x-auto">
             <table className="w-full text-xs text-left whitespace-nowrap">
                 <thead className="bg-slate-50 border-b font-bold text-slate-700">
                     <tr>
-                        <th className="p-4 sticky left-0 bg-slate-50 border-r z-10">Nama Siswa</th>
-                        <th className="p-4 border-r">Pilihan 1</th>
-                        <th className="p-4 border-r">Pilihan 2</th>
-                        {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=><th key={k} className="p-3 text-center border-l w-12">{k}</th>)}
-                        <th className="p-4 text-center bg-indigo-50 border-l font-black text-indigo-700">AVG</th>
+                        <th className="p-4 sticky left-0 bg-slate-50 border-r z-10 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('name')}>
+                            Nama Siswa {sortConfig.key === 'name' && (sortConfig.direction === 'desc' ? <ChevronDown size={14} className="inline"/> : <ChevronUp size={14} className="inline"/>)}
+                        </th>
+                        <th className="p-4 border-r">Target Jurusan</th>
+                        {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=>(
+                            <th key={k} className="p-3 text-center border-l w-16 cursor-pointer hover:bg-indigo-50 transition" onClick={() => handleSort(k)}>
+                                {k} {sortConfig.key === k && <ArrowUpDown size={12} className="inline ml-1 text-indigo-500"/>}
+                            </th>
+                        ))}
+                        <th className="p-4 text-center bg-indigo-50 border-l font-black text-indigo-700 cursor-pointer hover:bg-indigo-100" onClick={() => handleSort('avg')}>
+                            AVG {sortConfig.key === 'avg' && <ArrowUpDown size={12} className="inline ml-1"/>}
+                        </th>
                         <th className="p-4 text-center border-l">Status</th>
-                        <th className="p-4 text-center border-l bg-red-50 text-red-600">RESET</th>
+                        <th className="p-4 text-center border-l bg-red-50 text-red-600">Aksi</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y text-slate-600">
-                    {studentWithResults.map(u => {
-                        const scores = {}; 
-                        u.results.forEach(r => scores[r.exam_id.split('_').pop()] = {
-                            val: Math.round(r.irt_score), 
-                            eid: r.exam_id,
-                            correct: r.correct_count,
-                            wrong: r.wrong_count
-                        });
-                        const total = Object.values(scores).reduce((a,b)=>a+b.val,0);
-                        const avg = Math.round(total/7);
-                        const c1 = majors.find(m => m.id === u.choice1_id);
-                        const c2 = majors.find(m => m.id === u.choice2_id);
-                        let status = <span className="text-red-500 font-bold">TIDAK LULUS</span>;
-                        if (c1 && avg >= c1.passing_grade) status = <span className="text-emerald-600 font-bold">LULUS P1</span>;
-                        else if (c2 && avg >= c2.passing_grade) status = <span className="text-blue-600 font-bold">LULUS P2</span>;
-                        
-                        return (
-                            <tr key={u.id} className="hover:bg-slate-50 transition">
-                                <td className="p-4 font-bold sticky left-0 bg-white border-r z-10 text-slate-800">{u.full_name}<br/><span className="text-xs font-normal text-slate-400">{u.school}</span></td>
-                                <td className="p-4 border-r max-w-[150px] truncate" title={c1?.university + " - " + c1?.name}>{c1 ? `${c1.university} - ${c1.name}` : "-"}</td>
-                                <td className="p-4 border-r max-w-[150px] truncate" title={c2?.university + " - " + c2?.name}>{c2 ? `${c2.university} - ${c2.name}` : "-"}</td>
-                                {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> {
-                                    const data = scores[k];
-                                    return (
-                                        <td key={k} className={`p-3 text-center border-l cursor-pointer hover:bg-red-100 hover:text-red-600 transition ${data ? 'text-slate-700' : 'text-slate-300'}`} onClick={() => data && handleReset(u.id, data.eid)}>
-                                            <div className="font-bold">{data ? data.val : "-"}</div>
-                                            {showDetails && data && <div className="text-[10px] text-slate-500 mt-1">B:{data.correct} S:{data.wrong}</div>}
-                                        </td>
-                                    )
-                                })}
-                                <td className="p-4 text-center font-black bg-indigo-50 border-l text-indigo-700 text-sm">{avg}</td>
-                                <td className="p-4 text-center border-l">{status}</td>
-                                <td className="p-4 text-center border-l">
-                                    <button onClick={() => handleReset(u.id)} className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition shadow-sm border border-red-200 font-bold text-xs">RESET</button>
-                                </td>
-                            </tr>
-                        );
-                    })}
+                    {processedData.map((u, idx) => (
+                        <tr key={u.id} className="hover:bg-slate-50 transition">
+                            <td className="p-4 font-bold sticky left-0 bg-white border-r z-10 text-slate-800">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-slate-400 text-[10px] w-4">{idx + 1}.</span>
+                                    <div>{u.full_name}<br/><span className="text-[10px] font-normal text-slate-400">{u.school}</span></div>
+                                </div>
+                            </td>
+                            <td className="p-4 border-r text-[10px]">
+                                <div className={u.status.includes("P1") ? "font-bold text-emerald-600" : ""}>1. {u.c1 ? `${u.c1.university} - ${u.c1.name}` : "-"}</div>
+                                <div className={u.status.includes("P2") ? "font-bold text-blue-600" : ""}>2. {u.c2 ? `${u.c2.university} - ${u.c2.name}` : "-"}</div>
+                            </td>
+                            {["PU","PPU","PBM","PK","LBI","LBE","PM"].map(k=> {
+                                const data = u.scores[k];
+                                return (
+                                    <td key={k} className={`p-2 text-center border-l cursor-pointer hover:bg-red-50 transition ${data ? 'text-slate-700' : 'text-slate-300'}`} onClick={() => data && handleReset(u.id, data.eid)} title="Klik untuk reset nilai mapel ini">
+                                        <div className="font-bold text-sm">{data ? data.val : "-"}</div>
+                                        {showDetails && data && <div className="text-[9px] text-slate-400 mt-0.5">B:{data.correct} S:{data.wrong}</div>}
+                                    </td>
+                                )
+                            })}
+                            <td className="p-4 text-center font-black bg-indigo-50 border-l text-indigo-700 text-sm">{u.avg}</td>
+                            <td className="p-4 text-center border-l">
+                                <span className={`px-2 py-1 rounded text-[10px] font-bold bg-${u.statusColor}-100 text-${u.statusColor}-700`}>{u.status}</span>
+                            </td>
+                            <td className="p-4 text-center border-l">
+                                <button onClick={() => handleReset(u.id)} className="p-2 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition shadow-sm font-bold text-[10px]">RESET</button>
+                            </td>
+                        </tr>
+                    ))}
                 </tbody>
             </table>
         </div>
@@ -267,6 +278,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
           </div>
         )}
 
+        {/* MODAL PREVIEW & EDIT (SAMA) */}
         {previewQuestions && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col">
@@ -335,7 +347,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
             </div>
         )}
 
-        {/* TAB USERS SAMA SEPERTI SEBELUMNYA */}
         {tab === 'users' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between items-center">
@@ -367,29 +378,62 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
 
         {tab === 'recap' && (
             <>
-                <div className="mb-6 flex gap-4 items-center bg-white p-4 rounded-xl border shadow-sm sticky top-0 z-10">
+                {summaryStats && (
+                    <div className="grid grid-cols-4 gap-4 mb-6">
+                        <div className="p-4 bg-white rounded-xl border shadow-sm">
+                            <div className="text-xs text-slate-500 font-bold mb-1">TOTAL SISWA</div>
+                            <div className="text-2xl font-black">{summaryStats.total}</div>
+                        </div>
+                        <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200 shadow-sm">
+                            <div className="text-xs text-emerald-600 font-bold mb-1">LULUS (P1/P2)</div>
+                            <div className="text-2xl font-black text-emerald-800">{summaryStats.passed}</div>
+                        </div>
+                        <div className="p-4 bg-white rounded-xl border shadow-sm">
+                            <div className="text-xs text-slate-500 font-bold mb-1">NILAI TERTINGGI</div>
+                            <div className="text-2xl font-black text-indigo-600">{summaryStats.maxScore}</div>
+                        </div>
+                        <div className="p-4 bg-white rounded-xl border shadow-sm">
+                            <div className="text-xs text-slate-500 font-bold mb-1">RATA-RATA</div>
+                            <div className="text-2xl font-black">{summaryStats.avgScore}</div>
+                        </div>
+                    </div>
+                )}
+
+                <div className="mb-6 flex gap-4 items-center bg-white p-4 rounded-xl border shadow-sm sticky top-0 z-10 flex-wrap">
                     <Filter className="text-slate-400" size={20}/>
-                    <span className="font-bold text-slate-700">Filter Cabang:</span>
-                    <select value={selectedSchoolFilter} onChange={e => setSelectedSchoolFilter(e.target.value)} className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 font-medium outline-none">
-                        {schoolList.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
                     
-                    {/* BUTTON TOGGLE DETAIL */}
-                    <button onClick={() => setShowDetails(!showDetails)} className={`ml-4 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 border transition ${showDetails ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600'}`}>
-                        <Info size={16}/> {showDetails ? "Sembunyikan Detail" : "Tampilkan Detail B/S"}
+                    {/* FILTER SEKOLAH */}
+                    <div className="flex flex-col">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Sekolah</span>
+                        <select value={selectedSchoolFilter} onChange={e => setSelectedSchoolFilter(e.target.value)} className="bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 font-medium text-sm outline-none w-40">
+                            {schoolList.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                    </div>
+
+                    {/* FILTER STATUS (BARU) */}
+                    <div className="flex flex-col">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Status</span>
+                        <select value={selectedStatusFilter} onChange={e => setSelectedStatusFilter(e.target.value)} className="bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 font-medium text-sm outline-none w-32">
+                            <option value="Semua">Semua</option>
+                            <option value="Lulus">Lulus</option>
+                            <option value="Gagal">Gagal</option>
+                        </select>
+                    </div>
+                    
+                    <button onClick={() => setShowDetails(!showDetails)} className={`ml-2 px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-2 border transition ${showDetails ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600'}`}>
+                        <Info size={14}/> {showDetails ? "Tutup Detail" : "Detail Nilai"}
                     </button>
 
-                    {/* BUTTON HITUNG ULANG IRT */}
-                    <button onClick={handleRecalculateIRT} className="ml-2 px-4 py-2 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-emerald-200 transition">
-                        <Calculator size={16}/> Hitung Ulang IRT
+                    <button onClick={handleRecalculateIRT} className="px-3 py-1.5 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-emerald-200 transition">
+                        <Calculator size={14}/> Hitung Ulang
                     </button>
 
                     <div className="ml-auto flex gap-2">
-                        <a href={`${apiUrl}/admin/recap/download-pdf?school=${encodeURIComponent(selectedSchoolFilter)}`} target="_blank" className="bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 rounded-lg font-bold text-sm shadow flex gap-2 hover:bg-blue-100 transition">
-                            <FileText size={16}/> PDF {selectedSchoolFilter === 'Semua' ? '' : selectedSchoolFilter}
+                        <a href={`${apiUrl}/admin/recap/download-pdf?school=${encodeURIComponent(selectedSchoolFilter)}`} target="_blank" className="bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 rounded-lg font-bold text-xs shadow flex gap-2 hover:bg-blue-100 transition items-center">
+                            <FileText size={14}/> PDF {selectedSchoolFilter === 'Semua' ? '' : 'Filter'}
                         </a>
-                        <a href={`${apiUrl}/admin/recap/download-pdf?school=Semua`} target="_blank" className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow flex gap-2 hover:bg-red-700 transition">
-                            <Download size={16}/> DOWNLOAD FULL REKAP
+                        <a href={`${apiUrl}/admin/recap/download-pdf?school=Semua`} target="_blank" className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-xs shadow flex gap-2 hover:bg-red-700 transition items-center">
+                            <Download size={14}/> PDF FULL
                         </a>
                     </div>
                 </div>
