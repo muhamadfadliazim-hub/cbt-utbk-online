@@ -415,12 +415,47 @@ def delete_period(pid: int, db: Session = Depends(get_db)):
     return {"message":"OK"}
 @app.get("/student/periods")
 def get_pers(username: str, db: Session = Depends(get_db)):
-    u=db.query(User).filter_by(username=username).first()
-    all_ps=db.query(ExamPeriod).filter_by(is_active=True).order_by(ExamPeriod.id.desc()).all(); ret=[]
+    u = db.query(User).filter_by(username=username).first()
+    if not u: return [] # Safety check
+
+    # Ambil semua ujian yang RILIS (Active)
+    all_ps = db.query(ExamPeriod).filter_by(is_active=True).order_by(ExamPeriod.id.desc()).all()
+    ret = []
+
     for p in all_ps:
-        if p.target_schools and p.target_schools!="Semua" and p.target_schools!=u.school: continue
-        exs=[{"id":e.id,"title":e.title,"code":e.code,"duration":e.duration,"is_done":(db.query(ExamResult).filter_by(user_id=u.id,exam_id=e.id).first() is not None),"q_count":len(e.questions)} for e in p.exams]
-        ret.append({"id":p.id,"name":p.name,"exams":exs})
+        # === LOGIKA FILTERING SEKOLAH (FIXED) ===
+        # 1. Ambil target sekolah, pisahkan koma, bersihkan spasi, jadikan huruf kecil
+        raw_targets = p.target_schools or "Semua"
+        # Contoh: "SMA 1, SMA 2" -> ['sma 1', 'sma 2']
+        targets = [t.strip().lower() for t in raw_targets.split(',')]
+
+        # 2. Ambil sekolah user
+        user_school = (u.school or "").strip().lower()
+
+        # 3. Cek Validasi:
+        # Jika target BUKAN 'semua' DAN sekolah user TIDAK ADA di dalam daftar target -> Lewati
+        if "semua" not in targets and user_school not in targets:
+            continue
+        # ========================================
+
+        exs = []
+        for e in p.exams:
+            is_done = (db.query(ExamResult).filter_by(user_id=u.id, exam_id=e.id).first() is not None)
+            exs.append({
+                "id": e.id,
+                "title": e.title,
+                "code": e.code,
+                "duration": e.duration,
+                "is_done": is_done,
+                "q_count": len(e.questions)
+            })
+        
+        ret.append({
+            "id": p.id,
+            "name": p.name,
+            "exams": exs
+        })
+        
     return ret
 @app.get("/student/dashboard-stats")
 def stats(username: str, db: Session = Depends(get_db)):
