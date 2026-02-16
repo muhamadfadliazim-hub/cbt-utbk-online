@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save, Download, Info, Calculator, ArrowUpDown, Trophy, TrendingUp, AlertCircle } from 'lucide-react';
+import { Trash2, Plus, Upload, Users, LogOut, ChevronDown, ChevronUp, CheckCircle, Clock, Search, LayoutDashboard, BarChart3, Settings, RefreshCcw, FileText, Target, Filter, Lock, Unlock, Eye, X, Edit, Save, Download, Info, Calculator, ArrowUpDown } from 'lucide-react';
 import 'katex/dist/katex.min.css'; import { InlineMath } from 'react-katex';
 
 const AdminDashboard = ({ onLogout, apiUrl }) => {
@@ -14,10 +14,9 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [searchUser, setSearchUser] = useState('');
   
-  // FILTER & SORTING REKAP
   const [selectedSchoolFilter, setSelectedSchoolFilter] = useState('Semua');
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState('Semua'); // Baru: Filter Lulus/Gagal
-  const [sortConfig, setSortConfig] = useState({ key: 'avg', direction: 'desc' }); // Baru: Ranking
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState('Semua');
+  const [sortConfig, setSortConfig] = useState({ key: 'avg', direction: 'desc' });
 
   const [isReleased, setIsReleased] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -40,7 +39,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
         setPeriods(Array.isArray(p) ? p : []);
         setUsers(Array.isArray(u) ? u : []);
         setIsReleased(c.is_released);
-        setSchoolList(s);
+        setSchoolList(s); // List sekolah diambil dari database
         setMajors(m);
         setLoading(false);
     }).catch(() => setLoading(false));
@@ -54,7 +53,6 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
       return () => clearInterval(interval);
   }, [tab, fetchData]);
 
-  // LOGIKA SORTING (RANKING)
   const handleSort = (key) => {
     let direction = 'desc';
     if (sortConfig.key === key && sortConfig.direction === 'desc') {
@@ -74,8 +72,11 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
       } catch (e) { alert("Gagal hitung ulang."); } finally { setLoading(false); }
   };
 
-  // ... (BAGIAN CREATE PERIOD, UPLOAD, DLL TETAP SAMA - DISINGKAT SUPAYA MUAT)
-  const handleCreatePeriod = async () => { if (!newPeriodName) return; await fetch(`${apiUrl}/admin/periods`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newPeriodName, target_schools: targetSchool }) }); setNewPeriodName(''); fetchData(); };
+  const handleCreatePeriod = async () => {
+    if (!newPeriodName) return;
+    await fetch(`${apiUrl}/admin/periods`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newPeriodName, target_schools: targetSchool }) });
+    setNewPeriodName(''); fetchData();
+  };
   const handleDeletePeriod = async (pid) => { if(window.confirm("Hapus TO?")) { await fetch(`${apiUrl}/admin/periods/${pid}`, { method: 'DELETE' }); fetchData(); } };
   const handleTogglePeriod = async (pid) => { await fetch(`${apiUrl}/admin/periods/${pid}/toggle`, { method: 'POST' }); fetchData(); };
   const handleUploadQuestion = async (e, examId) => { const file = e.target.files[0]; if (!file) return; const formData = new FormData(); formData.append('file', file); try { const res = await fetch(`${apiUrl}/admin/upload-questions/${examId}`, { method: 'POST', body: formData }); alert((await res.json()).message); fetchData(); } catch { alert("Gagal upload"); } };
@@ -91,11 +92,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
 
   const renderText = (text) => { if(!text || text === 'nan') return ""; let formatted = text.replace(/\[B\]/gi, '<b>').replace(/\[\/B\]/gi, '</b>').replace(/\[I\]/gi, '<i>').replace(/\[\/I\]/gi, '</i>'); const parts = formatted.split(/(\$.*?\$)/g); return parts.map((part, index) => { if (part.startsWith('$') && part.endsWith('$')) return <span key={index} className="mx-1"><InlineMath math={part.replace(/\$/g, '')} /></span>; return <span key={index} dangerouslySetInnerHTML={{ __html: part.replace(/\n/g, '<br/>') }} />; }); };
 
-  // ==========================================
-  // FITUR BARU: PENGOLAHAN DATA DASHBOARD
-  // ==========================================
   const processedData = useMemo(() => {
-    // 1. Gabungkan data user dan hasil ujian
     let data = users.filter(u => u.role === 'student' && u.results && u.results.length > 0).map(u => {
         const scores = {};
         let totalScore = 0;
@@ -119,16 +116,22 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
         return { ...u, scores, avg, status, statusColor, c1, c2 };
     });
 
-    // 2. Filter Berdasarkan Sekolah & Status
     if (selectedSchoolFilter !== 'Semua') {
         data = data.filter(u => u.school === selectedSchoolFilter);
     }
+    
+    // === FIX LOGIKA FILTER STATUS (AGAR TIDAK LULUS TIDAK MUNCUL DI LULUS) ===
     if (selectedStatusFilter !== 'Semua') {
-        if (selectedStatusFilter === 'Lulus') data = data.filter(u => u.status.includes("LULUS"));
-        else if (selectedStatusFilter === 'Gagal') data = data.filter(u => u.status === "TIDAK LULUS");
+        if (selectedStatusFilter === 'Lulus') {
+            // Hanya ambil yang statusnya DIMULAI dengan "LULUS" (P1/P2)
+            data = data.filter(u => u.status.startsWith("LULUS"));
+        } else if (selectedStatusFilter === 'Gagal') {
+            // Hanya ambil yang statusnya PERSIS "TIDAK LULUS"
+            data = data.filter(u => u.status === "TIDAK LULUS");
+        }
     }
+    // =========================================================================
 
-    // 3. Sorting (Ranking)
     data.sort((a, b) => {
         let valA = sortConfig.key === 'avg' ? a.avg : (a.scores[sortConfig.key]?.val || 0);
         let valB = sortConfig.key === 'avg' ? b.avg : (b.scores[sortConfig.key]?.val || 0);
@@ -146,11 +149,10 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
     return data;
   }, [users, majors, selectedSchoolFilter, selectedStatusFilter, sortConfig]);
 
-  // Statistik Ringkas untuk Kartu Atas
   const summaryStats = useMemo(() => {
       if (processedData.length === 0) return null;
       const total = processedData.length;
-      const passed = processedData.filter(u => u.status.includes("LULUS")).length;
+      const passed = processedData.filter(u => u.status.startsWith("LULUS")).length;
       const maxScore = Math.max(...processedData.map(u => u.avg));
       const avgScore = Math.round(processedData.reduce((acc, curr) => acc + curr.avg, 0) / total);
       return { total, passed, maxScore, avgScore };
@@ -232,7 +234,7 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
              <button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg text-sm font-bold shadow-sm hover:bg-slate-50 text-indigo-600"><RefreshCcw size={16}/> Refresh Data</button>
         </div>
         
-        {/* ... (TAB PERIODS, USERS SAMA) ... */}
+        {/* ... (TAB PERIODS SAMA) ... */}
         {tab === 'periods' && (
           <div className="space-y-6 animate-fade-in">
             <div className="bg-white p-6 rounded-2xl shadow-sm border flex gap-4 items-center">
@@ -361,7 +363,18 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                 <div className="flex gap-2 bg-slate-50 p-2 rounded-xl border items-center">
                     <input placeholder="User" className="bg-transparent px-2 w-24 outline-none" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})}/>
                     <input placeholder="Nama" className="bg-transparent px-2 w-32 outline-none border-l" value={newUser.full_name} onChange={e=>setNewUser({...newUser, full_name:e.target.value})}/>
-                    <input placeholder="Sekolah" className="bg-transparent px-2 w-32 outline-none border-l" value={newUser.school} onChange={e=>setNewUser({...newUser, school:e.target.value})}/>
+                    
+                    {/* === FIX: INPUT SEKOLAH MENJADI SELECT (DROPDOWN) === */}
+                    <select 
+                        className="bg-transparent px-2 w-32 outline-none border-l text-sm" 
+                        value={newUser.school} 
+                        onChange={e=>setNewUser({...newUser, school:e.target.value})}
+                    >
+                        <option value="">Pilih Sekolah</option>
+                        {schoolList.filter(s => s !== "Semua").map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    {/* =================================================== */}
+
                     <input placeholder="Pass" className="bg-transparent px-2 w-20 outline-none border-l" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/>
                     <select className="bg-transparent px-2 outline-none border-l text-sm" value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})}><option value="student">Siswa</option><option value="admin">Admin</option></select>
                     <button onClick={handleAddUser} className="bg-blue-600 text-white p-2 rounded-lg"><Plus size={18}/></button>
@@ -410,12 +423,12 @@ const AdminDashboard = ({ onLogout, apiUrl }) => {
                         </select>
                     </div>
 
-                    {/* FILTER STATUS (BARU) */}
+                    {/* FILTER STATUS (FIXED) */}
                     <div className="flex flex-col">
                         <span className="text-[10px] font-bold text-slate-400 uppercase">Status</span>
                         <select value={selectedStatusFilter} onChange={e => setSelectedStatusFilter(e.target.value)} className="bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 font-medium text-sm outline-none w-32">
                             <option value="Semua">Semua</option>
-                            <option value="Lulus">Lulus</option>
+                            <option value="Lulus">Lulus (P1/P2)</option>
                             <option value="Gagal">Gagal</option>
                         </select>
                     </div>
