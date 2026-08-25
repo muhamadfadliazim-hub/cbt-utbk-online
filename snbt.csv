@@ -1,0 +1,15 @@
+﻿Parameter,Nilai,,Komponen Indeks,Bobot,,Rumpun,PU,PPU,PBM,PK,LBI,LBE,PM,,Rumpun,LBI Saintek,LBI Soshum,LBI Personal
+Base Score Index,560,,Campus,0.35,,SAINTEK,12,8,8,18,20,10,24,,SAINTEK,0.6,0.25,0.15
+Slope Index,2,,Ratio,0.25,,SOSHUM,16,12,14,8,22,15,13,,SOSHUM,0.2,0.65,0.15
+Bobot Rasio Final,0.3,,Prodi,0.2,,CAMPURAN,14,10,11,12,22,13,18,,CAMPURAN,0.4,0.45,0.15
+Bobot Index Final,0.7,,Demand Relatif,0.1,,SENI/OLAHRAGA,14,10,12,10,22,14,18,,SENI/OLAHRAGA,0.2,0.45,0.35
+Maks Skor,800,,Capacity,0.1,,,,,,,,,,,,,,
+Buffer Aman,20,,Trend 5 Tahun (cadangan),0,,,,,,,,,,,,,,
+Rasio Normalisasi,50,,,,,,,,,,,,,,,,,
+Kapasitas Referensi,120,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,
+CATATAN,,,,,,,,,,,,,,,,,,
+"Bobot rumpun/LBI konteks adalah HEURISTIK internal, bukan bobot resmi SNPMB.",,,,,,,,,,,,,,,,,,
+"LBI resmi tetap satu subtes; teks resmi dapat berkonteks saintek, sosial-humaniora, dan personal.",,,,,,,,,,,,,,,,,,
+Sumber: https://snpmb.id/utbk-snbt/informasi-umum | https://snpmb.id/fr/ | https://snpmb.id/utbk-snbt/daya-tampung-snbt,,,,,,,,,,,,,,,,,,
