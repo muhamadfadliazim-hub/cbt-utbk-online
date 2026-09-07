@@ -50,6 +50,7 @@ model User {
   snbpTargetMajor String?
   schoolName      String?
   isPremium       Boolean           @default(false)
+  allowedExamTypes ExamType[]
   parentId        String? // For students to link to parents
   parent          User?             @relation("ParentStudent", fields: [parentId], references: [id])
   children        User[]            @relation("ParentStudent")
@@ -100,19 +101,23 @@ model VerificationToken {
 }
 
 model Exam {
-  id            String    @id @default(cuid())
-  title         String
-  description   String?
-  type          ExamType
-  status        ExamStatus @default(DRAFT)
-  access        ExamAccess @default(EXCLUSIVE)
-  totalDuration Int // in minutes
-  scheduledAt   DateTime?
-  publishedAt   DateTime?
-  sections      Section[]
-  attempts      Attempt[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  title            String
+  description      String?
+  type             ExamType
+  status           ExamStatus @default(DRAFT)
+  access           ExamAccess @default(EXCLUSIVE)
+  totalDuration    Int // in minutes
+  scheduledAt      DateTime?
+  publishedAt      DateTime?
+  targetSchools    String[]
+  targetUsers      String[]
+  showDiscussion   Boolean   @default(false)
+  allowPdfDownload Boolean   @default(false)
+  sections         Section[]
+  attempts         Attempt[]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 model Section {

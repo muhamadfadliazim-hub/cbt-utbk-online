@@ -40,6 +40,9 @@ export const authOptions: AuthOptions = {
         token.role = (user as any).role || "STUDENT";
         token.isApproved = (user as any).isApproved ?? false;
         token.isPremium = (user as any).isPremium ?? false;
+        token.allowedExamTypes = (user as any).allowedExamTypes || [];
+        token.schoolName = (user as any).schoolName || "";
+        token.email = (user as any).email || "";
       }
       return token;
     },
@@ -49,6 +52,9 @@ export const authOptions: AuthOptions = {
         (session.user as any).role = token.role;
         (session.user as any).isApproved = token.isApproved;
         (session.user as any).isPremium = token.isPremium;
+        (session.user as any).allowedExamTypes = token.allowedExamTypes;
+        (session.user as any).schoolName = token.schoolName;
+        (session.user as any).email = token.email;
       }
       return session;
     },
@@ -57,7 +63,7 @@ export const authOptions: AuthOptions = {
     strategy: "jwt", // Use JWT to avoid DB lookups on every request, matching middleware needs
   },
   pages: {
-    signIn: "/login",
+    signIn: "/",
   },
 };
 

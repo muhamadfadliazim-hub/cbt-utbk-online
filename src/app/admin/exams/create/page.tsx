@@ -13,6 +13,10 @@ export default function ExamBuilder() {
   const [category, setCategory] = useState<ExamCategory>("SNBT");
   const [access, setAccess] = useState<"EXCLUSIVE" | "OPEN">("EXCLUSIVE");
   const [scheduledAt, setScheduledAt] = useState("2026-08-30T08:00");
+  const [targetSchools, setTargetSchools] = useState("");
+  const [targetUsers, setTargetUsers] = useState("");
+  const [showDiscussion, setShowDiscussion] = useState(false);
+  const [allowPdfDownload, setAllowPdfDownload] = useState(false);
   const [sections, setSections] = useState<SectionDraft[]>(EXAM_TEMPLATES.SNBT);
   const [saved, setSaved] = useState("");
 
@@ -31,6 +35,10 @@ export default function ExamBuilder() {
       title: title.trim(), category, description: description.trim(), durationMinutes: totals.duration,
       sectionCount: sections.length, questionCount: totals.questions, access, status,
       scheduledAt: new Date(scheduledAt).toISOString(),
+      targetSchools: targetSchools ? targetSchools.split(",").map(s => s.trim()).filter(Boolean) : [],
+      targetUsers: targetUsers ? targetUsers.split(",").map(u => u.trim()).filter(Boolean) : [],
+      showDiscussion,
+      allowPdfDownload,
     });
     setSaved(status === "PUBLISHED" ? "Paket diterbitkan dan sudah muncul di akun siswa." : "Draf paket tersimpan.");
     if (continueToQuestions) router.push(`/admin/exams/questions?package=${record.id}`);
@@ -62,7 +70,22 @@ export default function ExamBuilder() {
               <input className="field" type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} />
             </label>
           </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+            <label><span className="field-label">Target Sekolah (Opsional, koma)</span><input className="field" placeholder="SMA 1, SMA 2" value={targetSchools} onChange={(event) => setTargetSchools(event.target.value)} /></label>
+            <label><span className="field-label">Target Email (Opsional, koma)</span><input className="field" placeholder="budi@gmail.com" value={targetUsers} onChange={(event) => setTargetUsers(event.target.value)} /></label>
+          </div>
           <div><span className="field-label">Akses paket</span><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.8rem" }}>{(["EXCLUSIVE", "OPEN"] as const).map((item) => <button key={item} onClick={() => setAccess(item)} style={{ padding: "0.9rem", borderRadius: "0.8rem", cursor: "pointer", border: `2px solid ${access === item ? "var(--primary)" : "var(--border)"}`, background: access === item ? "var(--surface-hover)" : "white", color: access === item ? "var(--primary)" : "var(--text-muted)", fontWeight: 800 }}>{item === "EXCLUSIVE" ? "Eksklusif / Premium" : "Terbuka"}</button>)}</div></div>
+          
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--surface)", padding: "10px", borderRadius: "8px", border: "1px solid var(--border)", cursor: "pointer" }}>
+              <input type="checkbox" checked={showDiscussion} onChange={(e) => setShowDiscussion(e.target.checked)} style={{ width: "20px", height: "20px" }} />
+              <span className="field-label" style={{ marginBottom: 0 }}>Tampilkan Pembahasan (setelah ujian)</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--surface)", padding: "10px", borderRadius: "8px", border: "1px solid var(--border)", cursor: "pointer" }}>
+              <input type="checkbox" checked={allowPdfDownload} onChange={(e) => setAllowPdfDownload(e.target.checked)} style={{ width: "20px", height: "20px" }} />
+              <span className="field-label" style={{ marginBottom: 0 }}>Izinkan Unduh Soal (PDF)</span>
+            </label>
+          </div>
         </section>
 
         <aside className="card" style={{ background: "linear-gradient(135deg,#0369A1,#2563EB)", color: "white" }}>

@@ -19,6 +19,8 @@ export default async function HistoryPage() {
   });
 
   const historyData = attempts.map(attempt => {
+    const showDiscussion = attempt.exam.showDiscussion;
+    const allowPdfDownload = attempt.exam.allowPdfDownload;
     // Determine status (mocked for now since grading logic is not yet built)
     const score = attempt.score || 0;
     const targetScore = 700; // Hardcoded target for now
@@ -49,7 +51,9 @@ export default async function HistoryPage() {
       status: score >= targetScore ? "LULUS" : "BELUM LULUS",
       category: attempt.exam.type,
       isIRT: true,
-      subscores
+      subscores,
+      showDiscussion,
+      allowPdfDownload
     };
   });
 

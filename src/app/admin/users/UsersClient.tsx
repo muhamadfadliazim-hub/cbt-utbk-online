@@ -1,14 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle, XCircle, Search, ShieldAlert, ShieldCheck, Trash2 } from "lucide-react";
-import { toggleUserApproval, deleteUser, updateUserSchool } from "@/actions/admin";
+import { CheckCircle, XCircle, Search, ShieldAlert, ShieldCheck, Trash2, Settings } from "lucide-react";
+import { toggleUserApproval, deleteUser, updateUserSchool, updateUserExamTypes } from "@/actions/admin";
+import { ExamType } from "@prisma/client";
 
 export default function UsersClient({ users }: { users: any[] }) {
   const [search, setSearch] = useState("");
   const [selectedSchool, setSelectedSchool] = useState("");
   const [editingSchoolId, setEditingSchoolId] = useState<string | null>(null);
   const [editingSchoolValue, setEditingSchoolValue] = useState("");
+  const [editingExamTypesId, setEditingExamTypesId] = useState<string | null>(null);
+  const [editingExamTypes, setEditingExamTypes] = useState<ExamType[]>([]);
 
   const pendingUsers = users.filter(u => !u.isApproved && u.role === "STUDENT");
   const approvedUsers = users.filter(u => u.isApproved && u.role === "STUDENT");
@@ -31,6 +34,17 @@ export default function UsersClient({ users }: { users: any[] }) {
   const handleSaveSchool = async (userId: string) => {
     await updateUserSchool(userId, editingSchoolValue);
     setEditingSchoolId(null);
+  };
+
+  const handleSaveExamTypes = async () => {
+    if (editingExamTypesId) {
+      await updateUserExamTypes(editingExamTypesId, editingExamTypes);
+      setEditingExamTypesId(null);
+    }
+  };
+
+  const toggleExamType = (type: ExamType) => {
+    setEditingExamTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
   };
 
   const handleDownloadCSV = () => {
@@ -201,6 +215,23 @@ export default function UsersClient({ users }: { users: any[] }) {
                       {user.role !== 'ADMIN' && (
                         <>
                           <button 
+                            onClick={() => { setEditingExamTypesId(user.id); setEditingExamTypes(user.allowedExamTypes || []); }}
+                            style={{ 
+                              background: "#F3E8FF", 
+                              color: "#7E22CE", 
+                              border: "none", 
+                              padding: "8px 15px", 
+                              borderRadius: "8px", 
+                              fontWeight: "bold",
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "5px"
+                            }}
+                          >
+                            <Settings size={16} /> Akses Ujian
+                          </button>
+                          <button 
                             onClick={() => toggleUserApproval(user.id, !user.isApproved)}
                             style={{ 
                               background: user.isApproved ? "#FEE2E2" : "#DCFCE7", 
@@ -258,6 +289,44 @@ export default function UsersClient({ users }: { users: any[] }) {
           </table>
         </div>
       </div>
+
+      {editingExamTypesId && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
+          <div style={{ background: "white", padding: "2rem", borderRadius: "1rem", width: "400px", maxWidth: "90%" }}>
+            <h3 style={{ fontSize: "1.2rem", fontWeight: "bold", marginBottom: "1rem" }}>Atur Akses Ujian Murid</h3>
+            <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "1.5rem" }}>
+              Jika kosong, murid bisa mengakses semua jenis ujian yang diterbitkan.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "2rem" }}>
+              {(["SNBT", "TKA_SD", "TKA_SMP", "TKA_SMA"] as ExamType[]).map((type) => (
+                <label key={type} style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer" }}>
+                  <input 
+                    type="checkbox" 
+                    checked={editingExamTypes.includes(type)}
+                    onChange={() => toggleExamType(type)}
+                    style={{ width: "18px", height: "18px" }}
+                  />
+                  <span>{type.replace("_", " ")}</span>
+                </label>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+              <button 
+                onClick={() => setEditingExamTypesId(null)}
+                style={{ padding: "8px 15px", borderRadius: "8px", border: "1px solid var(--border)", background: "white", cursor: "pointer" }}
+              >
+                Batal
+              </button>
+              <button 
+                onClick={handleSaveExamTypes}
+                style={{ padding: "8px 15px", borderRadius: "8px", border: "none", background: "var(--primary)", color: "white", cursor: "pointer", fontWeight: "bold" }}
+              >
+                Simpan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

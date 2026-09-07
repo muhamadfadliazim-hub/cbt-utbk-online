@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
-import { History, CalendarDays, CheckCircle, Award, Target, ChevronDown, ChevronUp, BarChart2, Download } from "lucide-react";
+import { History, CalendarDays, CheckCircle, Award, Target, ChevronDown, ChevronUp, BarChart2, Download, BookOpen } from "lucide-react";
+import Link from "next/link";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from "recharts";
 
 type HistoryItem = {
@@ -12,6 +13,8 @@ type HistoryItem = {
   status: string;
   category: string;
   isIRT: boolean;
+  showDiscussion?: boolean;
+  allowPdfDownload?: boolean;
   subscores: {
     subject: string;
     score: number;
@@ -115,7 +118,12 @@ export default function HistoryClient({ historyData }: { historyData: HistoryIte
             {/* Expanded Details / Raport */}
             {expandedId === item.id && (
               <div style={{ borderTop: "1px solid var(--border)", background: "var(--surface)" }}>
-                <div style={{ padding: "15px 30px", display: "flex", justifyContent: "flex-end", background: "white", borderBottom: "1px solid var(--border)" }}>
+                <div style={{ padding: "15px 30px", display: "flex", justifyContent: "flex-end", gap: "10px", background: "white", borderBottom: "1px solid var(--border)" }}>
+                  {item.showDiscussion && (
+                    <Link href={`/student/history/${item.id}/review`} style={{ padding: "8px 15px", background: "var(--primary)", color: "white", textDecoration: "none", borderRadius: "8px", fontWeight: "bold", display: "inline-flex", alignItems: "center", gap: "5px" }}>
+                      <BookOpen size={16} /> Tinjau Pembahasan {item.allowPdfDownload ? "& Unduh Soal" : ""}
+                    </Link>
+                  )}
                   <button 
                     onClick={() => handleDownloadPDF(item)}
                     disabled={isDownloading}

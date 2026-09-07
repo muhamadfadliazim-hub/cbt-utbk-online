@@ -3,15 +3,47 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ArrowRight, BellRing, CalendarDays, Clock3, Crown, ExternalLink, FileCheck2, GraduationCap, Info, Sparkles } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { ExamCategory, examLabels, useAcademyHub } from "@/lib/academyHub";
 
 const filters: ("ALL" | ExamCategory)[] = ["ALL", "SNBT", "TKA_SD", "TKA_SMP", "TKA_SMA"];
 
 export default function ExamCatalogPage() {
   const { state } = useAcademyHub();
+  const { data: session } = useSession();
   const [activeFilter, setActiveFilter] = useState<"ALL" | ExamCategory>("ALL");
 
-  const exams = useMemo(() => state.exams.filter((exam) => exam.status === "PUBLISHED" && (activeFilter === "ALL" || exam.category === activeFilter)), [state.exams, activeFilter]);
+  const allowedTypes: ExamCategory[] = (session?.user as any)?.allowedExamTypes || [];
+
+  const availableFilters = useMemo(() => {
+    if (allowedTypes.length === 0) return filters;
+    return ["ALL" as const, ...allowedTypes];
+  }, [allowedTypes]);
+
+  const userEmail = (session?.user as any)?.email || "";
+  const userSchool = (session?.user as any)?.schoolName || "";
+
+  const exams = useMemo(() => {
+    return state.exams.filter((exam) => {
+      if (exam.status !== "PUBLISHED") return false;
+      if (allowedTypes.length > 0 && !allowedTypes.includes(exam.category)) return false;
+      if (activeFilter !== "ALL" && exam.category !== activeFilter) return false;
+
+      const hasTargetSchools = exam.targetSchools && exam.targetSchools.length > 0;
+      const hasTargetUsers = exam.targetUsers && exam.targetUsers.length > 0;
+      
+      if (hasTargetSchools || hasTargetUsers) {
+        const matchesSchool = hasTargetSchools && exam.targetSchools!.includes(userSchool);
+        const matchesUser = hasTargetUsers && exam.targetUsers!.includes(userEmail);
+        
+        if (!matchesSchool && !matchesUser) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [state.exams, activeFilter, allowedTypes, userEmail, userSchool]);
   const announcements = state.announcements.filter((item) => item.audience === "ALL" || activeFilter === "ALL" || item.audience === activeFilter).slice(0, 3);
 
   return (
@@ -22,7 +54,7 @@ export default function ExamCatalogPage() {
           <p style={{ color: "rgba(255,255,255,0.82)", fontSize: "1.05rem" }}>Ruang latihan terpisah untuk SNBT/UTBK dan TKA 2026.</p>
         </div>
         <div className="exam-tabs" aria-label="Filter jenis ujian">
-          {filters.map((filter) => (
+          {availableFilters.map((filter) => (
             <button key={filter} className={`exam-tab ${activeFilter === filter ? "active" : ""}`} onClick={() => setActiveFilter(filter)}>
               {filter === "ALL" ? "Semua" : examLabels[filter]}
             </button>

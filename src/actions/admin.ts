@@ -53,3 +53,20 @@ export async function deleteUser(userId: string) {
     return { error: "Failed to delete user" };
   }
 }
+
+import { ExamType } from "@prisma/client";
+
+export async function updateUserExamTypes(userId: string, allowedTypes: ExamType[]) {
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { allowedExamTypes: allowedTypes },
+    });
+    
+    revalidatePath("/admin/users");
+    return { success: true };
+  } catch (error) {
+    console.error("Error updating user exam types:", error);
+    return { error: "Failed to update user exam types" };
+  }
+}

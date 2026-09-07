@@ -18,6 +18,10 @@ export interface ExamPackage {
   status: PublicationStatus;
   scheduledAt: string;
   createdAt: string;
+  targetSchools?: string[];
+  targetUsers?: string[];
+  showDiscussion?: boolean;
+  allowPdfDownload?: boolean;
 }
 
 export interface AcademyAnnouncement {
