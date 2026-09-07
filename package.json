@@ -11,8 +11,8 @@
   "dependencies": {
     "@jitsi/react-sdk": "^1.4.4",
     "@next-auth/prisma-adapter": "^1.0.7",
-    "@prisma/adapter-pg": "^7.9.1",
-    "@prisma/client": "^7.9.1",
+    "@prisma/adapter-pg": "8.1.0-dev.6",
+    "@prisma/client": "8.1.0-dev.6",
     "@types/katex": "^0.16.8",
     "html2pdf.js": "^0.14.0",
     "katex": "^0.18.4",
@@ -37,7 +37,7 @@
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
-    "prisma": "^7.9.1",
+    "prisma": "8.1.0-dev.6",
     "ts-node": "^10.9.2",
     "typescript": "^5"
   }
