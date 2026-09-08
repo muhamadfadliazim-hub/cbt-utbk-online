@@ -266,47 +266,59 @@ export default function CBTEngine({ params }: { params: Promise<{ examId: string
             <>
               <div style={{ width: 78, height: 78, borderRadius: "50%", background: "#ECFDF5", display: "grid", placeItems: "center", margin: "0 auto 1.2rem" }}><CheckCircle size={44} color="var(--success)" /></div>
               <h1 style={{ color: "var(--primary)" }}>Ujian berhasil dikirim</h1>
-              <p style={{ color: "var(--text-muted)", margin: "0.7rem 0 1.5rem" }}>{answeredCount} dari {total} soal terjawab. Hasil Anda sudah tersimpan di Riwayat Tryout. Skor Mock: {(answeredCount / total * 800).toFixed(0)}.</p>
+              <p style={{ color: "var(--text-muted)", margin: "0.7rem 0 1.5rem" }}>
+                {answeredCount} dari {total} soal terjawab. Hasil Anda sudah tersimpan di Riwayat Tryout. 
+                {exam?.category !== "SNBT" ? (
+                  <strong style={{ display: "block", marginTop: "10px", fontSize: "1.1rem", color: "var(--primary)" }}>
+                    Skor Akhir: {(answeredCount / total * 800).toFixed(0)}
+                  </strong>
+                ) : (
+                  <strong style={{ display: "block", marginTop: "10px", fontSize: "1rem", color: "var(--text)" }}>
+                    Skor SNBT Anda akan diproses menggunakan sistem IRT dan akan diumumkan setelah seluruh peserta selesai ujian.
+                  </strong>
+                )}
+              </p>
             </>
           )}
           
-          <div style={{ background: "var(--surface-hover)", padding: "1.5rem", borderRadius: "var(--radius-lg)", marginBottom: "2rem", textAlign: "left", opacity: isSubmitting ? 0.5 : 1, pointerEvents: isSubmitting ? "none" : "auto" }}>
-            <h3 style={{ marginBottom: "1rem" }}>Bandingkan Skormu dengan Target Jurusan</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-              <select className="field" value={targetPtn} onChange={(e) => { setTargetPtn(e.target.value); setTargetProdiId(""); }}>
-                <option value="">-- Pilih PTN --</option>
-                {ptnList.map((ptn) => <option key={ptn} value={ptn}>{ptn}</option>)}
-              </select>
-              <select className="field" value={targetProdiId} onChange={(e) => setTargetProdiId(e.target.value)} disabled={!targetPtn}>
-                <option value="">-- Pilih Program Studi --</option>
-                {prodiList.map((p: any) => <option key={p.id} value={p.id}>{p.major}</option>)}
-              </select>
-            </div>
-            
-            {selectedProdi && selectedProdi.snbt && (
-              <div style={{ marginTop: "1.5rem", padding: "1.5rem", background: "white", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <h4 style={{ margin: 0, color: "var(--primary)" }}>{selectedProdi.major}</h4>
-                    <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>{selectedProdi.ptn}</span>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Target Aman SNBT</div>
-                    <div style={{ fontSize: "1.8rem", fontWeight: "bold", color: "var(--primary)" }}>
-                      {selectedProdi.snbt.safeTarget}
+          {exam?.category === "SNBT" && (
+            <div style={{ background: "var(--surface-hover)", padding: "1.5rem", borderRadius: "var(--radius-lg)", marginBottom: "2rem", textAlign: "left", opacity: isSubmitting ? 0.5 : 1, pointerEvents: isSubmitting ? "none" : "auto" }}>
+              <h3 style={{ marginBottom: "1rem" }}>Bandingkan Skormu dengan Target Jurusan (SNBT)</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                <select className="field" value={targetPtn} onChange={(e) => { setTargetPtn(e.target.value); setTargetProdiId(""); }}>
+                  <option value="">-- Pilih PTN --</option>
+                  {ptnList.map((ptn) => <option key={ptn} value={ptn}>{ptn}</option>)}
+                </select>
+                <select className="field" value={targetProdiId} onChange={(e) => setTargetProdiId(e.target.value)} disabled={!targetPtn}>
+                  <option value="">-- Pilih Program Studi --</option>
+                  {prodiList.map((p: any) => <option key={p.id} value={p.id}>{p.major}</option>)}
+                </select>
+              </div>
+              
+              {selectedProdi && selectedProdi.snbt && (
+                <div style={{ marginTop: "1.5rem", padding: "1.5rem", background: "white", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <h4 style={{ margin: 0, color: "var(--primary)" }}>{selectedProdi.major}</h4>
+                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>{selectedProdi.ptn}</span>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Target Aman SNBT</div>
+                      <div style={{ fontSize: "1.8rem", fontWeight: "bold", color: "var(--primary)" }}>
+                        {selectedProdi.snbt.safeTarget}
+                      </div>
                     </div>
                   </div>
+                  
+                  <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--border)", fontSize: "0.9rem", color: "var(--text-muted)" }}>
+                    Karena skor menggunakan sistem IRT, pastikan Anda mengisi dengan teliti dan hindari asal menebak.
+                  </div>
                 </div>
-                
-                <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--border)", fontSize: "0.9rem", display: "flex", justifyContent: "space-between" }}>
-                  <span>Estimasi Skor Kasar Mock: <strong>{(answeredCount / total * 800).toFixed(0)}</strong></span>
-                  <span>Status: <strong style={{ color: (answeredCount / total * 800) >= selectedProdi.snbt.safeTarget ? "var(--success)" : "var(--danger)" }}>{(answeredCount / total * 800) >= selectedProdi.snbt.safeTarget ? "AMAN" : "TINGKATKAN LAGI"}</strong></span>
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
           
-          <Link href="/student/exams" className="btn btn-primary">Kembali ke Pilihan Ujian</Link>
+          <button className="btn btn-primary" onClick={() => window.location.href = "/student"} style={{ marginTop: "1rem" }}>Kembali ke Beranda</button>
         </div>
       </div>
     );
