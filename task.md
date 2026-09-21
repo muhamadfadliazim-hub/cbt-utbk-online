@@ -1,0 +1,6 @@
+- `[ ]` Update `prisma/schema.prisma` to support `DIRECT_URL` for Supabase.
+- `[ ]` Wait for the user to update their `.env` with the real password.
+- `[ ]` Run `npx prisma db push` to initialize the Supabase database.
+- `[ ]` Create Server Actions (`src/app/actions/examActions.ts`).
+- `[ ]` Refactor CBT frontend to read from Prisma.
+- `[ ]` Refactor Admin frontend to write to Prisma.

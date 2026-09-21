@@ -3,10 +3,10 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, CheckCircle2, Clock, Crown, Plus, Save, Sparkles, Trash2 } from "lucide-react";
-import { ExamCategory, examLabels, useAcademyHub, EXAM_TEMPLATES, SectionDraft } from "@/lib/academyHub";
+import { ExamCategory, examLabels, EXAM_TEMPLATES, SectionDraft } from "@/lib/academyHub";
+import { createExam } from "@/actions/exam";
 
 export default function ExamBuilder() {
-  const { saveExam } = useAcademyHub();
   const router = useRouter();
   const [title, setTitle] = useState("Tryout SNBT Eksklusif #02");
   const [description, setDescription] = useState("Simulasi penuh dengan timer per subtes, soal matriks, dan laporan IRT.");
@@ -29,9 +29,9 @@ export default function ExamBuilder() {
     if (!title.trim() || Object.values(examLabels).some((label) => title.includes(label.split(" /")[0]))) setTitle(`${examLabels[value]} Eksklusif #01`);
   };
 
-  const persist = (status: "DRAFT" | "PUBLISHED", continueToQuestions = false) => {
+  const persist = async (status: "DRAFT" | "PUBLISHED", continueToQuestions = false) => {
     if (!title.trim() || sections.length === 0) return;
-    const record = saveExam({
+    const res = await createExam({
       title: title.trim(), category, description: description.trim(), durationMinutes: totals.duration,
       sectionCount: sections.length, questionCount: totals.questions, access, status,
       scheduledAt: new Date(scheduledAt).toISOString(),
@@ -39,9 +39,16 @@ export default function ExamBuilder() {
       targetUsers: targetUsers ? targetUsers.split(",").map(u => u.trim()).filter(Boolean) : [],
       showDiscussion,
       allowPdfDownload,
+      sections
     });
+
+    if (res.error) {
+      alert(res.error);
+      return;
+    }
+
     setSaved(status === "PUBLISHED" ? "Paket diterbitkan dan sudah muncul di akun siswa." : "Draf paket tersimpan.");
-    if (continueToQuestions) router.push(`/admin/exams/questions?package=${record.id}`);
+    if (continueToQuestions) router.push(`/admin/exams/questions?package=${res.examId}`);
     else window.setTimeout(() => setSaved(""), 2800);
   };
 
