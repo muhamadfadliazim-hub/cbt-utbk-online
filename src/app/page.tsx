@@ -56,7 +56,7 @@ export default function Home() {
       }}>
         
         {/* Left Side: Profile Information */}
-        <div style={{
+        <div className="login-left" style={{
           flex: "1 1 50%",
           padding: "4rem",
           display: "flex",
@@ -130,7 +130,7 @@ export default function Home() {
         </div>
 
         {/* Right Side: Login Form */}
-        <div style={{
+        <div className="login-right" style={{
           flex: "1 1 40%",
           background: "linear-gradient(135deg, #0EA5E9 0%, #0284C7 100%)",
           display: "flex",
@@ -219,6 +219,20 @@ export default function Home() {
         @media (max-width: 900px) {
           .feature-item {
             align-items: center !important;
+          }
+        }
+        @media (max-width: 768px) {
+          .login-left {
+            padding: 2rem !important;
+            min-width: 100% !important;
+            text-align: center;
+          }
+          .login-left h1, .login-left h2, .login-left p {
+            text-align: left;
+          }
+          .login-right {
+            padding: 2rem 1rem !important;
+            min-width: 100% !important;
           }
         }
       `}} />

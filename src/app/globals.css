@@ -452,8 +452,14 @@ a {
   }
   .exam-aside {
     width: 100% !important;
-    order: -1;
+    /* Removed order: -1 so question navigator stays at bottom */
   }
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .exam-layout {
