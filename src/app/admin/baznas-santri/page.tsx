@@ -55,7 +55,7 @@ export default function BaznasSantriPage() {
   const [logTanggal, setLogTanggal] = useState("");
   const [logWaktu, setLogWaktu] = useState("08:30 - 11:30 WIB");
   const [logMateri, setLogMateri] = useState("");
-  const [logSubtes, setLogSubtes] = useState("Penalaran Matematika");
+  const [logSubtes, setLogSubtes] = useState("TPS - Pengetahuan Kuantitatif (PK)");
   const [logTutor, setLogTutor] = useState("");
   const [logHadir, setLogHadir] = useState<number>(6);
   const [logKet, setLogKet] = useState("");
@@ -807,13 +807,23 @@ export default function BaznasSantriPage() {
                 <div>
                   <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "700", marginBottom: "4px" }}>Subtes</label>
                   <select value={logSubtes} onChange={e => setLogSubtes(e.target.value)} style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #CBD5E1" }}>
-                    <option value="Penalaran Matematika">Penalaran Matematika</option>
-                    <option value="Penalaran Umum">Penalaran Umum</option>
-                    <option value="Literasi Bahasa Indonesia">Literasi Bahasa Indonesia</option>
-                    <option value="Literasi Bahasa Inggris">Literasi Bahasa Inggris</option>
-                    <option value="Pemahaman Bacaan & Menulis">Pemahaman Bacaan & Menulis</option>
-                    <option value="Simulasi Penuh CBT">Simulasi Penuh CBT</option>
-                    <option value="Konsultasi SNBP & Tahfidz">Konsultasi SNBP & Tahfidz</option>
+                    <optgroup label="Tes Potensi Skolastik (TPS)">
+                      <option value="TPS - Penalaran Umum (PU)">TPS - Penalaran Umum (PU)</option>
+                      <option value="TPS - Pengetahuan & Pemahaman Umum (PPU)">TPS - Pengetahuan & Pemahaman Umum (PPU)</option>
+                      <option value="TPS - Pemahaman Bacaan & Menulis (PBM)">TPS - Pemahaman Bacaan & Menulis (PBM)</option>
+                      <option value="TPS - Pengetahuan Kuantitatif (PK)">TPS - Pengetahuan Kuantitatif (PK)</option>
+                    </optgroup>
+                    <optgroup label="Literasi & Penalaran">
+                      <option value="Literasi dalam Bahasa Indonesia">Literasi dalam Bahasa Indonesia</option>
+                      <option value="Literasi dalam Bahasa Inggris">Literasi dalam Bahasa Inggris</option>
+                      <option value="Penalaran Matematika (PM)">Penalaran Matematika (PM)</option>
+                    </optgroup>
+                    <optgroup label="Simulasi & Konsultasi">
+                      <option value="Simulasi Penuh UTBK-SNBT">Simulasi Penuh UTBK-SNBT</option>
+                      <option value="Konsultasi SNBP & Portofolio Tahfidz">Konsultasi SNBP & Portofolio Tahfidz</option>
+                      <option value="TKA (Tes Kemampuan Akademik)">TKA (Tes Kemampuan Akademik)</option>
+                      <option value="Orientasi & Motivasi BAZNAS">Orientasi & Motivasi BAZNAS</option>
+                    </optgroup>
                   </select>
                 </div>
                 <div>

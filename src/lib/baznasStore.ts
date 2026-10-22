@@ -254,23 +254,43 @@ const DEFAULT_LOGBOOK: LogbookBimbingan[] = [
   },
   {
     id: "log-05",
-    tanggal: "2026-09-19",
-    waktu: "13:30 - 16:00 WIB",
-    materi: "Pendalaman Penalaran Matematika & Aljabar Kontekstual",
-    subtes: "Penalaran Matematika",
+    tanggal: "2026-09-12",
+    waktu: "08:30 - 11:30 WIB",
+    materi: "Strategi Soal Pengetahuan Kuantitatif (PK) & Logika Angka",
+    subtes: "TPS - Pengetahuan Kuantitatif (PK)",
     tutor: "Ustadz Zulfikar, S.Si.",
     jumlahHadir: 6,
-    keterangan: "Fokus pada soal cerita representasi grafik dan aritmatika sosial."
+    keterangan: "Latihan pemecahan soal matriks, aritmatika modular, perbandingan kuantitas P vs Q, dan analisis kecukupan data (1) & (2)."
   },
   {
     id: "log-06",
+    tanggal: "2026-09-19",
+    waktu: "13:30 - 15:30 WIB",
+    materi: "Bedah Soal Pengetahuan & Pemahaman Umum (PPU) & Frasa Semantik",
+    subtes: "TPS - Pengetahuan & Pemahaman Umum (PPU)",
+    tutor: "Ustadzah Fatimah, M.Hum.",
+    jumlahHadir: 6,
+    keterangan: "Pemahaman struktur kalimat formal, analogi kosakata, ungkapan idiomatik, dan pembentukan kata serapan."
+  },
+  {
+    id: "log-07",
+    tanggal: "2026-09-26",
+    waktu: "13:30 - 16:00 WIB",
+    materi: "Pendalaman Penalaran Matematika & Aljabar Kontekstual",
+    subtes: "Penalaran Matematika (PM)",
+    tutor: "Ustadz Zulfikar, S.Si.",
+    jumlahHadir: 6,
+    keterangan: "Fokus pada soal cerita representasi grafik, peluang kejadian majemuk, dan aritmatika sosial."
+  },
+  {
+    id: "log-08",
     tanggal: "2026-10-01",
     waktu: "08:00 - 12:00 WIB",
     materi: "Tryout Pemantapan 3 & Konsultasi Portofolio Tahfidz SNBP",
     subtes: "CBT Pemantapan & Konseling SNBP",
     tutor: "Ustadz Ahmad Fauzi, S.Pd.I",
     jumlahHadir: 6,
-    keterangan: "Analisis rasionalisasi SNBP santri hafidzah dan pemantapan pilihan prodi."
+    keterangan: "Analisis rasionalisasi SNBP santri hafidzah dan pemantapan pilihan prodi serta evaluasi skor 7 subtes."
   }
 ];
 
