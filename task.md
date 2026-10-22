@@ -1,6 +1,4 @@
-- `[ ]` Update `prisma/schema.prisma` to support `DIRECT_URL` for Supabase.
-- `[ ]` Wait for the user to update their `.env` with the real password.
-- `[ ]` Run `npx prisma db push` to initialize the Supabase database.
-- `[ ]` Create Server Actions (`src/app/actions/examActions.ts`).
-- `[ ]` Refactor CBT frontend to read from Prisma.
-- `[ ]` Refactor Admin frontend to write to Prisma.
+# Mobile Responsiveness Fixes
+- `[ ]` Fix Login page (`src/app/page.tsx`) mobile CSS
+- `[ ]` Fix CBT Layout (`src/app/globals.css`) mobile layout (`.exam-aside`)
+- `[ ]` Add table responsiveness (`overflow-x: auto`) globally

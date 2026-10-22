@@ -23,6 +23,8 @@ export interface AdvancedSNBPData {
   portfolioRequired: boolean;
   portfolioScore: number;
   supportingSubjectCount: 1 | 2;
+  tahfidzJuz?: number;
+  isSantriBaznas?: boolean;
   semesters: {
     average: number;
     supportingSubject1: number;
@@ -68,6 +70,20 @@ export function calculateAdvancedSNBP(data: AdvancedSNBPData) {
   // Booster TKA: TKA becomes a major predictive component if available and aligned (40% weight)
   if (data.tkaScore > 0 && data.tkaSubjectsAligned) {
     estimatedIndex = (estimatedIndex * 0.6) + (clamp(data.tkaScore) * 0.4);
+  }
+
+  // Bobot Khusus Santri & Portofolio Tahfidz Al-Qur'an (Afirmasi SNBP & PTKIN)
+  let tahfidzBonus = 0;
+  if (data.tahfidzJuz && data.tahfidzJuz >= 5) {
+    if (data.tahfidzJuz >= 30) tahfidzBonus = 8.0;
+    else if (data.tahfidzJuz >= 20) tahfidzBonus = 6.0;
+    else if (data.tahfidzJuz >= 10) tahfidzBonus = 4.0;
+    else if (data.tahfidzJuz >= 5) tahfidzBonus = 2.5;
+
+    const isUin = data.targetUniversity.toUpperCase().includes("UIN") || data.targetUniversity.toUpperCase().includes("IAIN");
+    if (isUin) tahfidzBonus += 3.0;
+
+    estimatedIndex = clamp(estimatedIndex + tahfidzBonus);
   }
 
   // A competitiveness-derived comparison point. 
@@ -126,6 +142,10 @@ export function calculateAdvancedSNBP(data: AdvancedSNBPData) {
     diagnostic += ` Selisih rata-rata mapel pendukung dan TKA adalah ${tkaGap.toFixed(1)} poin; periksa kembali input atau konsistensi capaian.`;
   } else {
     diagnostic += ` TKA 2026 ${tkaValidation.toLowerCase()} terhadap nilai mapel pendukung.`;
+  }
+
+  if (data.tahfidzJuz && data.tahfidzJuz >= 5) {
+    diagnostic += ` 🕌 Portofolio Tahfidz ${data.tahfidzJuz} Juz aktif (+${tahfidzBonus.toFixed(1)} poin afirmasi prestasi santri).`;
   }
 
   return {

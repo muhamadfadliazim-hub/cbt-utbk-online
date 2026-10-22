@@ -54,6 +54,8 @@ export default function SNBPSimulation() {
   const [achievementCount, setAchievementCount] = useState(0);
   const [achievementLevel, setAchievementLevel] = useState<AchievementLevel>("NONE");
   const [portfolioScore, setPortfolioScore] = useState(0);
+  const [tahfidzJuz, setTahfidzJuz] = useState<number>(0);
+  const [isSantri, setIsSantri] = useState(false);
   const [supportingGrades1, setSupportingGrades1] = useState(Array.from({ length: 5 }, () => ({ subject1: 0, subject2: 0 })));
   const [supportingGrades2, setSupportingGrades2] = useState(Array.from({ length: 5 }, () => ({ subject1: 0, subject2: 0 })));
   
@@ -169,6 +171,8 @@ export default function SNBPSimulation() {
         portfolioRequired: pilihan1.portfolio !== "Tidak Ada",
         portfolioScore,
         supportingSubjectCount: supportingProfile1.subjects.length > 1 ? 2 : 1,
+        tahfidzJuz: isSantri ? tahfidzJuz : 0,
+        isSantriBaznas: isSantri,
         semesters: semesters.map((semester, index) => ({ ...semester, supportingSubject1: supportingGrades1[index].subject1, supportingSubject2: supportingGrades1[index].subject2 })),
       });
       setResult1(res1);
@@ -187,6 +191,8 @@ export default function SNBPSimulation() {
           portfolioRequired: pilihan2.portfolio !== "Tidak Ada",
           portfolioScore,
           supportingSubjectCount: supportingProfile2.subjects.length > 1 ? 2 : 1,
+          tahfidzJuz: isSantri ? tahfidzJuz : 0,
+          isSantriBaznas: isSantri,
           semesters: semesters.map((semester, index) => ({ ...semester, supportingSubject1: supportingGrades2[index].subject1, supportingSubject2: supportingGrades2[index].subject2 })),
         });
         setResult2(res2);
@@ -412,6 +418,43 @@ export default function SNBPSimulation() {
                 <span className="field-label">Jumlah Sertifikat (Maks 3)</span>
                 <input type="number" min="1" max="3" className="field" value={achievementCount || ""} onChange={(e) => setAchievementCount(Number(e.target.value))} />
               </label>
+            )}
+          </div>
+
+          {/* Afirmasi Santri & Portofolio Tahfidz BAZNAS */}
+          <div style={{ marginBottom: "1.5rem", background: isSantri ? "#ECFDF5" : "var(--surface)", padding: "1.2rem", borderRadius: "var(--radius-md)", border: isSantri ? "1.5px solid #059669" : "1px solid var(--border)", transition: "all 0.2s" }}>
+            <label className="checkbox-label" style={{ display: "flex", alignItems: "center", gap: "12px", cursor: "pointer", marginBottom: isSantri ? "14px" : "0" }}>
+              <input type="checkbox" checked={isSantri} onChange={(e) => {
+                setIsSantri(e.target.checked);
+                if (!e.target.checked) setTahfidzJuz(0);
+                else if (tahfidzJuz === 0) setTahfidzJuz(5);
+              }} style={{ width: "20px", height: "20px", accentColor: "#059669" }} />
+              <div>
+                <strong style={{ display: "flex", alignItems: "center", gap: "8px", color: isSantri ? "#065F46" : "var(--text)", fontSize: "0.95rem" }}>
+                  🕌 Peserta Beasiswa Santri BAZNAS / Jalur Afirmasi Tahfidz
+                </strong>
+                <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                  Aktifkan bobot afirmasi hafalan Qur'an dan prestasi pesantren untuk PTN dan PTKIN (UIN).
+                </span>
+              </div>
+            </label>
+
+            {isSantri && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.2rem", marginTop: "10px", paddingTop: "12px", borderTop: "1px dashed #A7F3D0" }}>
+                <label>
+                  <span className="field-label" style={{ color: "#065F46", fontWeight: "700" }}>Hafalan Al-Qur'an (Tahfidz)</span>
+                  <select className="field" value={tahfidzJuz} onChange={(e) => setTahfidzJuz(Number(e.target.value))}>
+                    <option value="0">Belum Ada / Kurang dari 5 Juz</option>
+                    <option value="5">5 - 9 Juz (+2.5 Poin)</option>
+                    <option value="10">10 - 19 Juz (+4.0 Poin)</option>
+                    <option value="20">20 - 29 Juz (+6.0 Poin)</option>
+                    <option value="30">30 Juz Mutqin / Khatam (+8.0 Poin)</option>
+                  </select>
+                </label>
+                <div style={{ display: "flex", alignItems: "center", fontSize: "0.85rem", color: "#047857", background: "rgba(255,255,255,0.7)", padding: "10px", borderRadius: "8px", border: "1px solid #A7F3D0", lineHeight: "1.4" }}>
+                  💡 Jalur Tahfidz sangat diprioritaskan di UIN/PTKIN, UI, UGM, Unair, IPB, dan Undip untuk meningkatkan peluang lolos SNBP.
+                </div>
+              </div>
             )}
           </div>
 

@@ -21,9 +21,16 @@ export default function Home() {
     setIsLoading(true);
     setError("");
     
+    const cleanUsername = username.trim();
+    const finalEmail = cleanUsername.toLowerCase() === "admin" 
+      ? "admin@az.cbt" 
+      : cleanUsername.toLowerCase() === "student" 
+        ? "student@az.cbt" 
+        : cleanUsername;
+
     const res = await signIn("credentials", {
-      email: username,
-      password,
+      email: finalEmail,
+      password: password.trim(),
       redirect: false,
     });
     
@@ -32,7 +39,11 @@ export default function Home() {
     if (res?.error) {
       setError("Email atau kata sandi salah.");
     } else if (res?.ok) {
-      router.push('/student');
+      if (finalEmail.toLowerCase().includes("admin")) {
+        router.push('/admin');
+      } else {
+        router.push('/student');
+      }
     }
   };
 
@@ -177,7 +188,7 @@ export default function Home() {
               
               <div style={{ position: "relative" }}>
                 <Mail size={20} color="var(--primary-light)" style={{ position: "absolute", left: "18px", top: "50%", transform: "translateY(-50%)" }} />
-                <input type="email" placeholder="Alamat Email..." required value={username} onChange={e => setUsername(e.target.value)} style={{ width: "100%", padding: "16px 15px 16px 50px", borderRadius: "1rem", border: "2px solid #E0F2FE", fontSize: "1rem", outlineColor: "var(--primary)", background: "var(--background)", color: "var(--text)", fontWeight: "500", boxSizing: "border-box" }} />
+                <input type="text" placeholder="Email atau Username..." required value={username} onChange={e => setUsername(e.target.value)} style={{ width: "100%", padding: "16px 15px 16px 50px", borderRadius: "1rem", border: "2px solid #E0F2FE", fontSize: "1rem", outlineColor: "var(--primary)", background: "var(--background)", color: "var(--text)", fontWeight: "500", boxSizing: "border-box" }} />
               </div>
 
               <div style={{ position: "relative" }}>

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ReactNode } from "react";
-import { LayoutDashboard, PenTool, BookPlus, Users, Database, BarChart3, Bell, Search, Video, Megaphone } from "lucide-react";
+import { LayoutDashboard, PenTool, BookPlus, Users, Database, BarChart3, Bell, Search, Video, Megaphone, Building2 } from "lucide-react";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { redirect } from "next/navigation";
@@ -22,6 +22,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         <h2>AZ <span>Admin</span></h2>
         <ul className="sidebar-nav">
           <li><Link href="/admin"><LayoutDashboard size={20} style={{marginRight: 12}} /> Dasbor Admin</Link></li>
+          <li><Link href="/admin/baznas-santri"><Building2 size={20} style={{marginRight: 12, color: "#10B981"}} /> Beasiswa Santri BAZNAS</Link></li>
           <li><Link href="/admin/exams"><PenTool size={20} style={{marginRight: 12}} /> Manajemen Ujian</Link></li>
           <li><Link href="/admin/live-classes"><Video size={20} style={{marginRight: 12}} /> Live Class (Meet)</Link></li>
           <li><Link href="/admin/broadcast"><Megaphone size={20} style={{marginRight: 12}} /> Live Broadcast</Link></li>
