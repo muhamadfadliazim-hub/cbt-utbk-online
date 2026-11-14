@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
+import { ensureSessionUser } from "@/lib/sessionUser";
 import { redirect } from "next/navigation";
 import ProfileClient from "./ProfileClient";
 
@@ -14,10 +15,10 @@ export default async function StudentProfilePage() {
     redirect('/login');
   }
 
-  const userId = (session.user as any).id;
+  const targetUserId = await ensureSessionUser(session);
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
+  const dbUser = await prisma.user.findUnique({
+    where: { id: targetUserId },
     select: { 
       name: true, 
       schoolName: true,
@@ -25,6 +26,13 @@ export default async function StudentProfilePage() {
       snbpTargetMajor: true 
     }
   });
+
+  const user = dbUser || {
+    name: session.user.name || "Peserta CBT",
+    schoolName: (session.user as any).schoolName || "",
+    snbpTargetUniv: "",
+    snbpTargetMajor: "",
+  };
 
   const dataPath = path.join(process.cwd(), 'public/data/majors-2027.json');
   const fileContents = fs.readFileSync(dataPath, 'utf8');

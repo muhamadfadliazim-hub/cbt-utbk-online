@@ -1,22 +1,24 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { 
-  getPesantrenProfile, 
-  getSantriList, 
-  getLogbookList, 
-  savePesantrenProfile, 
-  saveSantriList, 
-  addSantri, 
-  removeSantri, 
-  addLogbook, 
-  removeLogbook,
   SantriBaznas, 
   PesantrenProfile, 
   LogbookBimbingan, 
   AsnafCategory 
-} from "@/lib/baznasStore";
+} from "@/lib/baznasSeed";
+
+interface OverviewStat {
+  id: string;
+  namaPesantren: string;
+  nsp: string;
+  adminEmail: string | null;
+  santriCount: number;
+  logbookCount: number;
+  totalAnggaran: number;
+}
 import { 
   Building2, Users, FileText, Award, BookOpen, 
   Calendar, CheckCircle2, Plus, Download, Upload, 
@@ -25,9 +27,15 @@ import {
 } from "lucide-react";
 
 export default function BaznasSantriPage() {
+  const router = useRouter();
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [activePesantrenId, setActivePesantrenId] = useState("");
+  const [overviewStats, setOverviewStats] = useState<OverviewStat[]>([]);
   const [profile, setProfile] = useState<PesantrenProfile | null>(null);
   const [santriList, setSantriList] = useState<SantriBaznas[]>([]);
   const [logbookList, setLogbookList] = useState<LogbookBimbingan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"dts" | "tryout" | "logbook" | "profil">("dts");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -60,18 +68,73 @@ export default function BaznasSantriPage() {
   const [logHadir, setLogHadir] = useState<number>(6);
   const [logKet, setLogKet] = useState("");
 
-  // Load from store on mount
-  useEffect(() => {
-    setProfile(getPesantrenProfile());
-    setSantriList(getSantriList());
-    setLogbookList(getLogbookList());
+  const fetchBaznasData = useCallback(async (targetPesantrenId?: string) => {
+    setLoading(true);
+    try {
+      const qs = targetPesantrenId ? `?pesantrenId=${encodeURIComponent(targetPesantrenId)}` : "";
+      const res = await fetch(`/api/admin/baznas${qs}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Gagal memuat data BAZNAS");
+      const data = await res.json();
+      setIsSuperAdmin(Boolean(data.isSuperAdmin));
+      setActivePesantrenId(data.activePesantrenId || "");
+      setOverviewStats(data.overviewStats || []);
+      setProfile(data.profile || null);
+      setSantriList(data.santriList || []);
+      setLogbookList(data.logbookList || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const handleCreateSantri = (e: React.FormEvent) => {
+  useEffect(() => {
+    fetchBaznasData();
+  }, [fetchBaznasData]);
+
+  const handleSwitchPesantren = async (targetId: string) => {
+    setSaving(true);
+    try {
+      await fetch("/api/admin/tenant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pesantrenId: targetId }),
+      });
+      await fetchBaznasData(targetId);
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const postBaznasAction = async (action: string, payload: unknown, pesantrenIdOverride?: string) => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/baznas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          pesantrenId: pesantrenIdOverride || activePesantrenId,
+          payload,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Terjadi kesalahan saat menyimpan data");
+        return null;
+      }
+      return data;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateSantri = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSantriName.trim() || !newSantriNisn.trim()) return;
 
-    addSantri({
+    const res = await postBaznasAction("add_santri", {
       name: newSantriName,
       nisn: newSantriNisn,
       gender: newSantriGender,
@@ -90,9 +153,11 @@ export default function BaznasSantriPage() {
       sktmNomor: newSantriSktm,
     });
 
-    setSantriList(getSantriList());
-    setIsAddSantriOpen(false);
-    resetSantriForm();
+    if (res) {
+      await fetchBaznasData(activePesantrenId);
+      setIsAddSantriOpen(false);
+      resetSantriForm();
+    }
   };
 
   const resetSantriForm = () => {
@@ -101,18 +166,20 @@ export default function BaznasSantriPage() {
     setNewSantriPrestasi("");
   };
 
-  const handleDeleteSantri = (id: string) => {
+  const handleDeleteSantri = async (id: string) => {
     if (confirm("Apakah Anda yakin ingin menghapus santri ini dari daftar program?")) {
-      removeSantri(id);
-      setSantriList(getSantriList());
+      const res = await postBaznasAction("delete_santri", { id });
+      if (res) {
+        await fetchBaznasData(activePesantrenId);
+      }
     }
   };
 
-  const handleCreateLogbook = (e: React.FormEvent) => {
+  const handleCreateLogbook = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!logMateri.trim() || !logTutor.trim()) return;
 
-    addLogbook({
+    const res = await postBaznasAction("add_logbook", {
       tanggal: logTanggal || new Date().toISOString().split("T")[0],
       waktu: logWaktu,
       materi: logMateri,
@@ -122,33 +189,38 @@ export default function BaznasSantriPage() {
       keterangan: logKet,
     });
 
-    setLogbookList(getLogbookList());
-    setIsAddLogOpen(false);
-    setLogMateri("");
-    setLogKet("");
-  };
-
-  const handleDeleteLogbook = (id: string) => {
-    if (confirm("Hapus catatan sesi ini?")) {
-      removeLogbook(id);
-      setLogbookList(getLogbookList());
+    if (res) {
+      await fetchBaznasData(activePesantrenId);
+      setIsAddLogOpen(false);
+      setLogMateri("");
+      setLogKet("");
     }
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleDeleteLogbook = async (id: string) => {
+    if (confirm("Hapus catatan sesi ini?")) {
+      const res = await postBaznasAction("delete_logbook", { id });
+      if (res) {
+        await fetchBaznasData(activePesantrenId);
+      }
+    }
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (profile) {
-      savePesantrenProfile(profile);
+    if (!profile) return;
+    const res = await postBaznasAction("update_profile", profile);
+    if (res) {
+      await fetchBaznasData(activePesantrenId);
       setIsEditProfileOpen(false);
     }
   };
 
-  const handleSampleImport = () => {
-    const sampleBatch: SantriBaznas[] = [
+  const handleSampleImport = async () => {
+    const sampleBatch = [
       {
-        id: `bsb-imp-1`,
         name: "Ahmad Bilal Al-Ghifari",
-        nisn: "0068192311",
+        nisn: `00681${Math.floor(10000 + Math.random() * 89999)}`,
         gender: "L",
         kelas: "XII MIPA 1",
         asnaf: "FAKIR",
@@ -161,14 +233,11 @@ export default function BaznasSantriPage() {
         tryoutScores: [{ tryoutName: "TO 1 - Diagnostik", score: 580, date: "2026-08-10" }],
         averageScore: 580,
         statusKelulusan: "BELUM_DIUMUMKAN",
-        emailLogin: "bilal.santri@az.cbt",
-        passwordLogin: "BSB7721",
         sktmNomor: "410/SKTM/CSR/2026"
       },
       {
-        id: `bsb-imp-2`,
         name: "Fathimah Az-Zahra",
-        nisn: "0068192312",
+        nisn: `00682${Math.floor(10000 + Math.random() * 89999)}`,
         gender: "P",
         kelas: "XII Keagamaan",
         asnaf: "MISKIN",
@@ -181,17 +250,16 @@ export default function BaznasSantriPage() {
         tryoutScores: [{ tryoutName: "TO 1 - Diagnostik", score: 640, date: "2026-08-10" }],
         averageScore: 640,
         statusKelulusan: "BELUM_DIUMUMKAN",
-        emailLogin: "fathimah.santri@az.cbt",
-        passwordLogin: "BSB9941",
         sktmNomor: "411/SKTM/CSR/2026"
       }
     ];
 
-    const updated = [...sampleBatch, ...santriList];
-    saveSantriList(updated);
-    setSantriList(updated);
-    setIsImportOpen(false);
-    alert("Berhasil mengimpor 2 data santri contoh ke sistem!");
+    const res = await postBaznasAction("import_santri_bulk", { items: sampleBatch });
+    if (res) {
+      await fetchBaznasData(activePesantrenId);
+      setIsImportOpen(false);
+      alert("Berhasil mengimpor 2 data santri contoh ke database pesantren ini!");
+    }
   };
 
   const filteredSantri = santriList.filter(s => 
@@ -210,6 +278,60 @@ export default function BaznasSantriPage() {
 
   return (
     <div style={{ maxWidth: "1280px", margin: "0 auto", paddingBottom: "60px" }}>
+      {/* Panel Switcher & Ringkasan Multi-Pesantren (Super Admin) */}
+      {isSuperAdmin && overviewStats.length > 0 && (
+        <div style={{ marginBottom: "20px", background: "white", borderRadius: "18px", padding: "18px 22px", border: "1px solid var(--border)", boxShadow: "var(--shadow-sm)" }}>
+          <div style={{ marginBottom: "14px" }}>
+            <div style={{ fontSize: "0.78rem", fontWeight: "800", color: "#059669", letterSpacing: "0.04em" }}>KONTROL SUPER ADMIN</div>
+            <div style={{ fontSize: "1.05rem", fontWeight: "800", color: "var(--text)" }}>Pilih Pesantren (Al Abqory / Nurul Bantaniy)</div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "12px" }}>
+            {overviewStats.map((st) => {
+              const isSelected = st.id === activePesantrenId;
+              return (
+                <button
+                  key={st.id}
+                  onClick={() => handleSwitchPesantren(st.id)}
+                  disabled={saving}
+                  style={{
+                    textAlign: "left",
+                    padding: "14px 16px",
+                    borderRadius: "14px",
+                    border: isSelected ? "2px solid #059669" : "1px solid #E2E8F0",
+                    background: isSelected ? "#ECFDF5" : "#F8FAFC",
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                    <span style={{ fontWeight: "800", fontSize: "0.98rem", color: isSelected ? "#065F46" : "var(--text)" }}>
+                      {st.namaPesantren}
+                    </span>
+                    {isSelected && (
+                      <span style={{ fontSize: "0.72rem", fontWeight: "800", background: "#059669", color: "white", padding: "2px 8px", borderRadius: "999px" }}>
+                        Aktif
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                    <span>👥 {st.santriCount} Santri</span>
+                    <span>📘 {st.logbookCount} Logbook</span>
+                    {st.adminEmail && <span>🔐 {st.adminEmail}</span>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {loading && !profile && (
+        <div style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)", fontWeight: "600" }}>
+          Memuat data BAZNAS dari database...
+        </div>
+      )}
+
       {/* Top Banner & Header */}
       <div style={{
         background: "linear-gradient(135deg, #065F46 0%, #047857 50%, #0D9488 100%)",
@@ -262,7 +384,7 @@ export default function BaznasSantriPage() {
               Profil Pesantren
             </button>
             <Link 
-              href="/admin/baznas-santri/lpj" 
+              href={activePesantrenId ? `/admin/baznas-santri/lpj?pesantrenId=${encodeURIComponent(activePesantrenId)}` : "/admin/baznas-santri/lpj"} 
               style={{
                 background: "#F59E0B",
                 color: "white",
@@ -888,12 +1010,23 @@ export default function BaznasSantriPage() {
                 <textarea rows={2} value={profile.alamat} onChange={e => setProfile({...profile, alamat: e.target.value})} style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #CBD5E1" }} />
               </div>
 
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "700", marginBottom: "4px" }}>Kontak / WhatsApp</label>
+                  <input type="text" value={profile.kontak} onChange={e => setProfile({...profile, kontak: e.target.value})} style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #CBD5E1" }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "700", marginBottom: "4px" }}>Anggaran per Santri (Rp)</label>
+                  <input type="number" value={profile.anggaranPerSantri} onChange={e => setProfile({...profile, anggaranPerSantri: Number(e.target.value) || 0})} style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #CBD5E1" }} />
+                </div>
+              </div>
+
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
                 <button type="button" onClick={() => setIsEditProfileOpen(false)} style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "none", cursor: "pointer", fontWeight: "600" }}>
                   Batal
                 </button>
-                <button type="submit" style={{ padding: "10px 20px", borderRadius: "10px", background: "#059669", color: "white", border: "none", cursor: "pointer", fontWeight: "700" }}>
-                  Simpan Perubahan
+                <button type="submit" disabled={saving} style={{ padding: "10px 20px", borderRadius: "10px", background: "#059669", color: "white", border: "none", cursor: "pointer", fontWeight: "700" }}>
+                  {saving ? "Menyimpan..." : "Simpan Perubahan"}
                 </button>
               </div>
             </form>

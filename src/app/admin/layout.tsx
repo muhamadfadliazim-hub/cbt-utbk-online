@@ -1,20 +1,23 @@
 import Link from "next/link";
 import { ReactNode } from "react";
-import { LayoutDashboard, PenTool, BookPlus, Users, Database, BarChart3, Bell, Search, Video, Megaphone, Building2 } from "lucide-react";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { LayoutDashboard, PenTool, BookPlus, Users, Database, BarChart3, Search, Video, Megaphone, Building2 } from "lucide-react";
 import { redirect } from "next/navigation";
 import LogoutButton from "@/components/LogoutButton";
+import TenantSwitcher from "@/components/admin/TenantSwitcher";
+import { getAdminTenantContext } from "@/lib/tenant";
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  const session = await getServerSession(authOptions);
-  
-  if (!session) {
+  const ctx = await getAdminTenantContext();
+
+  if (!ctx) {
     redirect('/login');
   }
 
-  const user = session.user as any;
+  const user = ctx.user;
   const initials = user.name ? user.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase() : "A";
+  const visiblePesantren = ctx.isSuperAdmin
+    ? ctx.pesantrenList
+    : ctx.pesantrenList.filter((p) => p.id === ctx.managedPesantrenId);
 
   return (
     <div className="dashboard-layout">
@@ -34,12 +37,17 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         </ul>
       </aside>
       <main className="main-content">
-        <header className="dashboard-header" style={{ padding: "0 0 20px 0", marginBottom: "30px" }}>
-          <div style={{ display: "flex", alignItems: "center", background: "white", padding: "10px 20px", borderRadius: "20px", border: "1px solid var(--border)", width: "350px", boxShadow: "var(--shadow-sm)" }}>
+        <header className="dashboard-header" style={{ padding: "0 0 20px 0", marginBottom: "30px", gap: "12px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", background: "white", padding: "10px 20px", borderRadius: "20px", border: "1px solid var(--border)", width: "280px", boxShadow: "var(--shadow-sm)" }}>
             <Search size={18} color="var(--text-muted)" style={{ marginRight: "10px" }} />
             <input type="text" placeholder="Cari soal atau data siswa..." style={{ border: "none", outline: "none", width: "100%", background: "transparent" }} />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+            <TenantSwitcher
+              isSuperAdmin={ctx.isSuperAdmin}
+              activePesantrenId={ctx.activePesantrenId}
+              pesantrenList={visiblePesantren.map((p) => ({ id: p.id, namaPesantren: p.namaPesantren }))}
+            />
             <div style={{ display: "flex", alignItems: "center", gap: "15px", background: "white", padding: "5px 15px 5px 5px", borderRadius: "30px", border: "1px solid var(--border)", boxShadow: "var(--shadow-sm)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                 <div style={{ width: "35px", height: "35px", background: "var(--primary)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: "bold" }}>{initials}</div>

@@ -102,15 +102,22 @@ export default function ScoresClient({ users }: { users: UserWithAttempts[] }) {
           </div>
         ) : (
           <div style={{ display: "grid", gap: "1rem" }}>
-            {selectedUser.attempts.map((attempt: AttemptWithExam) => (
+            {selectedUser.attempts.map((attempt: AttemptWithExam) => {
+              const isIRT = attempt.exam.type !== "TKA_SD" && attempt.exam.type !== "TKA_SMP";
+              return (
               <div key={attempt.id} style={{ background: "white", padding: "1.5rem", borderRadius: "1rem", border: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <h3 style={{ margin: "0 0 5px 0", fontSize: "1.1rem" }}>{attempt.exam.title}</h3>
                   <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-                    Tanggal: {new Date(attempt.startTime).toLocaleString("id-ID")}
+                    Tanggal: {new Date(attempt.startTime).toLocaleString("id-ID")} • Kategori: {attempt.exam.type}
                   </div>
                   <div style={{ marginTop: "10px" }}>
-                    Skor: <strong style={{ color: "var(--primary)", fontSize: "1.2rem" }}>{attempt.score?.toFixed(0) || 0}</strong>
+                    Skor: <strong style={{ color: "var(--primary)", fontSize: "1.2rem" }}>
+                      {isIRT ? Math.round(attempt.score || 0) : (Math.round((attempt.score || 0) * 10) / 10)}
+                    </strong>{" "}
+                    <span style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
+                      / {isIRT ? "1000 (IRT)" : "100 (Klasik)"}
+                    </span>
                   </div>
                 </div>
                 <div>
@@ -123,7 +130,8 @@ export default function ScoresClient({ users }: { users: UserWithAttempts[] }) {
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

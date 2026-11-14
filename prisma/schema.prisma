@@ -49,6 +49,8 @@ model User {
   snbpTargetUniv  String?
   snbpTargetMajor String?
   schoolName      String?
+  pesantrenId     String?
+  managedPesantrenId String?
   isPremium       Boolean           @default(false)
   allowedExamTypes ExamType[]
   parentId        String? // For students to link to parents
@@ -112,8 +114,12 @@ model Exam {
   publishedAt      DateTime?
   targetSchools    String[]
   targetUsers      String[]
+  pesantrenId      String?
+  showScore        Boolean   @default(true)
   showDiscussion   Boolean   @default(false)
   allowPdfDownload Boolean   @default(false)
+  continuousFlow   Boolean   @default(false)
+  allowEarlyFinish Boolean   @default(false)
   sections         Section[]
   attempts         Attempt[]
   createdAt        DateTime  @default(now())
@@ -127,6 +133,7 @@ model Section {
   title           String
   description     String?
   durationMinutes Int
+  durationSeconds Int?
   orderIndex      Int
   questions       Question[]
 }
@@ -144,6 +151,7 @@ model Question {
   id                   String       @id @default(cuid())
   sectionId            String
   section              Section      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  orderIndex           Int          @default(0)
   type                 QuestionType @default(PILIHAN_GANDA)
   content              String // JSON or Markdown for complex content
   options              String // JSON array of options or matching pairs
@@ -286,6 +294,70 @@ model LiveClass {
   isActive     Boolean  @default(true)
   targetSchool String?
   targetUserEmail String?
+  pesantrenId  String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// -----------------------------------------------------------------------------
+// Multi-Pesantren & Beasiswa Santri BAZNAS Models
+// -----------------------------------------------------------------------------
+
+model Pesantren {
+  id                String          @id
+  slug              String          @unique
+  namaPesantren     String
+  nsp               String
+  pimpinan          String
+  koordinator       String
+  kontak            String
+  alamat            String
+  tahunProgram      String          @default("2026/2027")
+  anggaranPerSantri Int             @default(4000000)
+  adminEmail        String?
+  santri            BaznasSantri[]
+  logbooks          BaznasLogbook[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+model BaznasSantri {
+  id              String    @id @default(cuid())
+  pesantrenId     String
+  pesantren       Pesantren @relation(fields: [pesantrenId], references: [id], onDelete: Cascade)
+  name            String
+  nisn            String
+  gender          String    @default("L")
+  kelas           String    @default("XII MIPA")
+  asnaf           String    @default("MISKIN")
+  hafalanJuz      Int       @default(0)
+  prestasi        String    @default("")
+  targetUniv1     String    @default("")
+  targetMajor1    String    @default("")
+  targetUniv2     String    @default("")
+  targetMajor2    String    @default("")
+  tryoutScores    String    @default("[]")
+  averageScore    Int       @default(0)
+  statusKelulusan String    @default("BELUM_DIUMUMKAN")
+  diterimaDi      String?
+  emailLogin      String
+  passwordLogin   String
+  sktmNomor       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model BaznasLogbook {
+  id          String    @id @default(cuid())
+  pesantrenId String
+  pesantren   Pesantren @relation(fields: [pesantrenId], references: [id], onDelete: Cascade)
+  tanggal     String
+  waktu       String
+  materi      String
+  subtes      String
+  tutor       String
+  jumlahHadir Int       @default(0)
+  keterangan  String    @default("")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }

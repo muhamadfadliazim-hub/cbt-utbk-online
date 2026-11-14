@@ -6,6 +6,7 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { redirect } from "next/navigation";
 import LogoutButton from "@/components/LogoutButton";
 import LiveChatWidget from "@/components/student/LiveChatWidget";
+import CbtActiveLockGuard from "@/components/student/CbtActiveLockGuard";
 import { prisma } from "@/lib/prisma";
 
 export default async function StudentLayout({ children }: { children: ReactNode }) {
@@ -48,6 +49,7 @@ export default async function StudentLayout({ children }: { children: ReactNode 
 
   return (
     <div className="dashboard-layout">
+      <CbtActiveLockGuard userId={user.id} />
       <aside className="sidebar">
         <h2>AZ <span>Student</span></h2>
         <ul className="sidebar-nav">
@@ -71,10 +73,10 @@ export default async function StudentLayout({ children }: { children: ReactNode 
       
       <main className="main-content">
         <header className="dashboard-header" style={{ padding: "0 0 20px 0", marginBottom: "30px" }}>
-          <div style={{ display: "flex", alignItems: "center", background: "white", padding: "10px 20px", borderRadius: "20px", border: "1px solid var(--border)", width: "350px", boxShadow: "var(--shadow-sm)" }}>
+          <form action="/student/exams" method="GET" style={{ display: "flex", alignItems: "center", background: "white", padding: "10px 20px", borderRadius: "20px", border: "1px solid var(--border)", width: "350px", boxShadow: "var(--shadow-sm)" }}>
             <Search size={18} color="var(--text-muted)" style={{ marginRight: "10px" }} />
-            <input type="text" placeholder="Cari tryout, materi, atau jurusan..." style={{ border: "none", outline: "none", width: "100%", background: "transparent" }} />
-          </div>
+            <input name="q" type="text" placeholder="Cari tryout atau subtes..." style={{ border: "none", outline: "none", width: "100%", background: "transparent" }} />
+          </form>
           <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
 
             <div style={{ display: "flex", alignItems: "center", gap: "15px", background: "white", padding: "5px 15px 5px 5px", borderRadius: "30px", border: "1px solid var(--border)", boxShadow: "var(--shadow-sm)" }}>

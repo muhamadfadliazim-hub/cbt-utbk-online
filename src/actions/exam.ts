@@ -1,6 +1,8 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { getAdminTenantContext } from "@/lib/tenant";
 
 export async function getExamForCbt(examId: string) {
   try {
@@ -10,7 +12,17 @@ export async function getExamForCbt(examId: string) {
         sections: {
           orderBy: { orderIndex: 'asc' },
           include: {
-            questions: true,
+            questions: {
+              orderBy: { orderIndex: 'asc' },
+              select: {
+                id: true,
+                sectionId: true,
+                orderIndex: true,
+                type: true,
+                content: true,
+                options: true,
+              },
+            },
           }
         }
       }
@@ -162,7 +174,14 @@ export async function saveQuestionsBulk(questionsData: any[]) {
 }
 
 export async function getAdminExams() {
+  const ctx = await getAdminTenantContext();
+  const where: any = {};
+  if (ctx?.activePesantrenId) {
+    where.OR = [{ pesantrenId: ctx.activePesantrenId }, { pesantrenId: null }];
+  }
+
   const exams = await prisma.exam.findMany({
+    where,
     orderBy: { createdAt: 'desc' },
     include: {
       _count: {
@@ -179,11 +198,16 @@ export async function getAdminExams() {
     ...exam,
     questionCount: exam.sections.reduce((acc, sec) => acc + sec._count.questions, 0),
     category: exam.type, // Map Prisma's 'type' to frontend's 'category'
+    isGlobal: !exam.pesantrenId,
+    canModify: ctx?.isSuperAdmin || exam.pesantrenId === ctx?.managedPesantrenId,
   }));
 }
 
 export async function createExam(data: any) {
   try {
+    const ctx = await getAdminTenantContext();
+    const ownerPesantrenId = ctx ? (ctx.managedPesantrenId || ctx.activePesantrenId || null) : null;
+
     const exam = await prisma.exam.create({
       data: {
         title: data.title,
@@ -193,6 +217,14 @@ export async function createExam(data: any) {
         status: data.status,
         access: data.access,
         scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
+        pesantrenId: ownerPesantrenId,
+        targetSchools: data.targetSchools || [],
+        targetUsers: data.targetUsers || [],
+        showScore: data.showScore !== undefined ? Boolean(data.showScore) : true,
+        showDiscussion: Boolean(data.showDiscussion),
+        allowPdfDownload: Boolean(data.allowPdfDownload),
+        continuousFlow: Boolean(data.continuousFlow),
+        allowEarlyFinish: Boolean(data.allowEarlyFinish),
         sections: {
           create: data.sections.map((sec: any, index: number) => ({
             title: sec.title,
@@ -211,6 +243,14 @@ export async function createExam(data: any) {
 
 export async function updateExamStatus(id: string, status: any) {
   try {
+    const ctx = await getAdminTenantContext();
+    if (!ctx) return { error: "Unauthorized" };
+    if (!ctx.isSuperAdmin) {
+      const existing = await prisma.exam.findUnique({ where: { id } });
+      if (!existing || existing.pesantrenId !== ctx.managedPesantrenId) {
+        return { error: "Hanya Super Admin atau pesantren pembuat yang dapat mengubah paket ini." };
+      }
+    }
     await prisma.exam.update({ where: { id }, data: { status } });
     return { success: true };
   } catch (e) {
@@ -218,8 +258,57 @@ export async function updateExamStatus(id: string, status: any) {
   }
 }
 
+export async function updateExamVisibilityAction(
+  id: string,
+  data: {
+    showScore?: boolean;
+    showDiscussion?: boolean;
+    continuousFlow?: boolean;
+    allowEarlyFinish?: boolean;
+  }
+) {
+  try {
+    const ctx = await getAdminTenantContext();
+    if (!ctx) return { error: "Unauthorized" };
+    if (!ctx.isSuperAdmin) {
+      const existing = await prisma.exam.findUnique({ where: { id } });
+      if (!existing || existing.pesantrenId !== ctx.managedPesantrenId) {
+        return { error: "Hanya Super Admin atau pesantren pembuat yang dapat mengubah paket ini." };
+      }
+    }
+    const updateData: {
+      showScore?: boolean;
+      showDiscussion?: boolean;
+      continuousFlow?: boolean;
+      allowEarlyFinish?: boolean;
+    } = {};
+    if (typeof data.showScore === "boolean") updateData.showScore = data.showScore;
+    if (typeof data.showDiscussion === "boolean") updateData.showDiscussion = data.showDiscussion;
+    if (typeof data.continuousFlow === "boolean") updateData.continuousFlow = data.continuousFlow;
+    if (typeof data.allowEarlyFinish === "boolean") updateData.allowEarlyFinish = data.allowEarlyFinish;
+
+    await prisma.exam.update({ where: { id }, data: updateData });
+    revalidatePath("/admin/exams");
+    revalidatePath("/student/history");
+    revalidatePath("/student");
+    revalidatePath("/student/exams");
+    revalidatePath(`/cbt/${id}`);
+    return { success: true };
+  } catch (e) {
+    return { error: "Gagal memperbarui kontrol pengaturan ujian" };
+  }
+}
+
 export async function deleteExamAction(id: string) {
   try {
+    const ctx = await getAdminTenantContext();
+    if (!ctx) return { error: "Unauthorized" };
+    if (!ctx.isSuperAdmin) {
+      const existing = await prisma.exam.findUnique({ where: { id } });
+      if (!existing || existing.pesantrenId !== ctx.managedPesantrenId) {
+        return { error: "Hanya Super Admin atau pesantren pembuat yang dapat menghapus paket ini." };
+      }
+    }
     await prisma.exam.delete({ where: { id } });
     return { success: true };
   } catch (e) {
@@ -227,25 +316,47 @@ export async function deleteExamAction(id: string) {
   }
 }
 
-export async function getStudentExams(allowedTypes: any[]) {
-  const where: any = { status: "PUBLISHED" };
+export async function getStudentExams(allowedTypes: any[], pesantrenId?: string | null) {
+  const where: any = {
+    status: "PUBLISHED",
+    sections: {
+      some: {
+        questions: {
+          some: {},
+        },
+      },
+    },
+  };
   if (allowedTypes && allowedTypes.length > 0) {
     where.type = { in: allowedTypes };
   }
+  if (pesantrenId) {
+    where.OR = [{ pesantrenId: null }, { pesantrenId }];
+  }
   const exams = await prisma.exam.findMany({
     where,
-    orderBy: { scheduledAt: 'desc' },
+    orderBy: { scheduledAt: "desc" },
     include: {
       sections: {
-        include: { _count: { select: { questions: true } } }
-      }
-    }
+        orderBy: { orderIndex: "asc" },
+        include: {
+          _count: { select: { questions: true } },
+        },
+      },
+    },
   });
-  return exams.map(exam => ({
-    ...exam,
-    questionCount: exam.sections.reduce((acc, sec) => acc + sec._count.questions, 0),
-    sectionCount: exam.sections.length,
-    category: exam.type, // UI uses category
-    durationMinutes: exam.totalDuration
-  }));
+  return exams.map((exam) => {
+    const totalSeconds = exam.sections.reduce(
+      (acc, sec) => acc + (sec.durationSeconds ?? sec.durationMinutes * 60),
+      0
+    );
+    return {
+      ...exam,
+      questionCount: exam.sections.reduce((acc, sec) => acc + sec._count.questions, 0),
+      sectionCount: exam.sections.length,
+      category: exam.type,
+      durationMinutes: totalSeconds > 0 ? Math.round(totalSeconds / 60) : exam.totalDuration,
+      durationSeconds: totalSeconds,
+    };
+  });
 }

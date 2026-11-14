@@ -1,18 +1,17 @@
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { redirect } from "next/navigation";
 import { Users, GraduationCap, TrendingUp, Building } from "lucide-react";
+import { getAdminTenantContext, buildUserPesantrenWhere } from "@/lib/tenant";
 
 export default async function SchoolReportsPage() {
-  const session = await getServerSession(authOptions);
-  if (!session || (session.user as any).role !== "ADMIN") {
+  const ctx = await getAdminTenantContext();
+  if (!ctx) {
     redirect('/login');
   }
 
-  // Fetch all users with their attempts
+  // Fetch scoped students with their attempts
   const users = await prisma.user.findMany({
-    where: { role: 'STUDENT', schoolName: { not: null } },
+    where: buildUserPesantrenWhere(ctx, { role: 'STUDENT', schoolName: { not: null } }),
     select: {
       id: true,
       name: true,
@@ -51,8 +50,12 @@ export default async function SchoolReportsPage() {
 
   return (
     <div style={{ padding: "20px" }}>
-      <h1 style={{ fontSize: "1.8rem", color: "white", fontWeight: "bold", marginBottom: "10px" }}>Rekapitulasi Siswa Per Sekolah</h1>
-      <p style={{ color: "rgba(255, 255, 255, 0.9)", marginBottom: "30px" }}>Statistik agregat berdasarkan sekolah asal siswa yang terdaftar.</p>
+      <h1 style={{ fontSize: "1.8rem", color: "white", fontWeight: "bold", marginBottom: "10px" }}>Rekapitulasi Siswa Per Pesantren / Sekolah</h1>
+      <p style={{ color: "rgba(255, 255, 255, 0.9)", marginBottom: "30px" }}>
+        {ctx.activePesantren
+          ? `Menampilkan statistik khusus untuk ${ctx.activePesantren.namaPesantren}.`
+          : "Statistik agregat berdasarkan pesantren/sekolah asal siswa yang terdaftar."}
+      </p>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))", gap: "20px" }}>
         {sortedSchools.map((school, idx) => (
@@ -79,11 +82,6 @@ export default async function SchoolReportsPage() {
             </div>
           </div>
         ))}
-        {sortedSchools.length === 0 && (
-          <div style={{ gridColumn: "1 / -1", padding: "40px", textAlign: "center", color: "var(--text-muted)", background: "white", borderRadius: "12px", border: "1px solid var(--border)" }}>
-            Belum ada data siswa yang mencantumkan nama sekolah.
-          </div>
-        )}
       </div>
     </div>
   );

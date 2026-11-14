@@ -3,13 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { 
-  getPesantrenProfile, 
-  getSantriList, 
-  getLogbookList, 
   SantriBaznas, 
   PesantrenProfile, 
   LogbookBimbingan 
-} from "@/lib/baznasStore";
+} from "@/lib/baznasSeed";
 import { Printer, ArrowLeft, Download, ShieldCheck, CheckCircle2 } from "lucide-react";
 
 export default function LpjBaznasPage() {
@@ -18,9 +15,19 @@ export default function LpjBaznasPage() {
   const [logbookList, setLogbookList] = useState<LogbookBimbingan[]>([]);
 
   useEffect(() => {
-    setProfile(getPesantrenProfile());
-    setSantriList(getSantriList());
-    setLogbookList(getLogbookList());
+    const params = new URLSearchParams(window.location.search);
+    const pesantrenId = params.get("pesantrenId");
+    const qs = pesantrenId ? `?pesantrenId=${encodeURIComponent(pesantrenId)}` : "";
+
+    fetch(`/api/admin/baznas${qs}`, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return;
+        setProfile(data.profile || null);
+        setSantriList(data.santriList || []);
+        setLogbookList(data.logbookList || []);
+      })
+      .catch((err) => console.error(err));
   }, []);
 
   const handlePrint = () => {

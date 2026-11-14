@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { NextResponse } from "next/server";
+import { scoreExamAttempt } from "@/lib/examGrading";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -11,50 +12,44 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     const { id } = await params;
-    const userId = (session.user as any).id;
     const body = await req.json();
     const { attemptId, answers } = body;
 
-    // Fetch the exam questions to calculate score
     const exam = await prisma.exam.findUnique({
       where: { id: id },
       include: {
         sections: {
+          orderBy: { orderIndex: "asc" },
           include: {
-            questions: true
-          }
-        }
-      }
+            questions: {
+              orderBy: { orderIndex: "asc" },
+            },
+          },
+        },
+      },
     });
 
     if (!exam) {
       return NextResponse.json({ error: "Exam not found" }, { status: 404 });
     }
 
-    // Basic scoring logic: 10 points per correct answer (can be swapped for IRT later)
-    let correctCount = 0;
-    const allQuestions = exam.sections.flatMap(s => s.questions);
-    
-    allQuestions.forEach(q => {
-      const studentAnswer = answers[q.id];
-      // Note: In real IRT or standard scoring, checking answerKey needs string matching
-      if (studentAnswer && studentAnswer === q.answerKey) {
-        correctCount++;
-      }
-    });
-
-    const score = (correctCount / Math.max(1, allQuestions.length)) * 1000; // Map to 1000 point scale
+    const graded = scoreExamAttempt(exam.sections, answers || {}, exam.type);
 
     await prisma.attempt.update({
       where: { id: attemptId },
       data: {
         endTime: new Date(),
-        answers: JSON.stringify(answers),
-        score: score,
-      }
+        answers: JSON.stringify(answers || {}),
+        score: graded.score,
+      },
     });
 
-    return NextResponse.json({ success: true, score });
+    return NextResponse.json({
+      success: true,
+      score: graded.score,
+      isIRT: graded.isIRT,
+      scaleMax: graded.scaleMax,
+    });
   } catch (error) {
     console.error("Submit Exam Error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

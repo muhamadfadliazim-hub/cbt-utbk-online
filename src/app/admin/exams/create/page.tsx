@@ -15,8 +15,11 @@ export default function ExamBuilder() {
   const [scheduledAt, setScheduledAt] = useState("2026-08-30T08:00");
   const [targetSchools, setTargetSchools] = useState("");
   const [targetUsers, setTargetUsers] = useState("");
+  const [showScore, setShowScore] = useState(true);
   const [showDiscussion, setShowDiscussion] = useState(false);
   const [allowPdfDownload, setAllowPdfDownload] = useState(false);
+  const [continuousFlow, setContinuousFlow] = useState(false);
+  const [allowEarlyFinish, setAllowEarlyFinish] = useState(false);
   const [sections, setSections] = useState<SectionDraft[]>(EXAM_TEMPLATES.SNBT);
   const [saved, setSaved] = useState("");
 
@@ -37,8 +40,11 @@ export default function ExamBuilder() {
       scheduledAt: new Date(scheduledAt).toISOString(),
       targetSchools: targetSchools ? targetSchools.split(",").map(s => s.trim()).filter(Boolean) : [],
       targetUsers: targetUsers ? targetUsers.split(",").map(u => u.trim()).filter(Boolean) : [],
+      showScore,
       showDiscussion,
       allowPdfDownload,
+      continuousFlow,
+      allowEarlyFinish,
       sections
     });
 
@@ -83,15 +89,77 @@ export default function ExamBuilder() {
           </div>
           <div><span className="field-label">Akses paket</span><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.8rem" }}>{(["EXCLUSIVE", "OPEN"] as const).map((item) => <button key={item} onClick={() => setAccess(item)} style={{ padding: "0.9rem", borderRadius: "0.8rem", cursor: "pointer", border: `2px solid ${access === item ? "var(--primary)" : "var(--border)"}`, background: access === item ? "var(--surface-hover)" : "white", color: access === item ? "var(--primary)" : "var(--text-muted)", fontWeight: 800 }}>{item === "EXCLUSIVE" ? "Eksklusif / Premium" : "Terbuka"}</button>)}</div></div>
           
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--surface)", padding: "10px", borderRadius: "8px", border: "1px solid var(--border)", cursor: "pointer" }}>
+              <input type="checkbox" checked={showScore} onChange={(e) => setShowScore(e.target.checked)} style={{ width: "20px", height: "20px" }} />
+              <span className="field-label" style={{ marginBottom: 0 }}>Tampilkan Skor ke Peserta</span>
+            </label>
             <label style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--surface)", padding: "10px", borderRadius: "8px", border: "1px solid var(--border)", cursor: "pointer" }}>
               <input type="checkbox" checked={showDiscussion} onChange={(e) => setShowDiscussion(e.target.checked)} style={{ width: "20px", height: "20px" }} />
-              <span className="field-label" style={{ marginBottom: 0 }}>Tampilkan Pembahasan (setelah ujian)</span>
+              <span className="field-label" style={{ marginBottom: 0 }}>Tampilkan Benar/Salah &amp; Pembahasan</span>
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--surface)", padding: "10px", borderRadius: "8px", border: "1px solid var(--border)", cursor: "pointer" }}>
               <input type="checkbox" checked={allowPdfDownload} onChange={(e) => setAllowPdfDownload(e.target.checked)} style={{ width: "20px", height: "20px" }} />
               <span className="field-label" style={{ marginBottom: 0 }}>Izinkan Unduh Soal (PDF)</span>
             </label>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "1rem" }}>
+            <div>
+              <span className="field-label">Mode Alur &amp; Timer Ujian</span>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
+                {[
+                  { value: false, label: "Per Subtes (Terkunci UTBK)" },
+                  { value: true, label: "Lanjut Terus (1 Timer Total)" },
+                ].map((opt) => (
+                  <button
+                    key={String(opt.value)}
+                    type="button"
+                    onClick={() => setContinuousFlow(opt.value)}
+                    style={{
+                      padding: "0.75rem",
+                      borderRadius: "0.75rem",
+                      cursor: "pointer",
+                      border: `2px solid ${continuousFlow === opt.value ? "var(--primary)" : "var(--border)"}`,
+                      background: continuousFlow === opt.value ? "var(--surface-hover)" : "white",
+                      color: continuousFlow === opt.value ? "var(--primary)" : "var(--text-muted)",
+                      fontWeight: 700,
+                      fontSize: "0.82rem",
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <span className="field-label">Aturan Lanjut &amp; Selesai Ujian</span>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
+                {[
+                  { value: false, label: "Wajib Tunggu Waktu 00:00" },
+                  { value: true, label: "Boleh Langsung di Akhir" },
+                ].map((opt) => (
+                  <button
+                    key={String(opt.value)}
+                    type="button"
+                    onClick={() => setAllowEarlyFinish(opt.value)}
+                    style={{
+                      padding: "0.75rem",
+                      borderRadius: "0.75rem",
+                      cursor: "pointer",
+                      border: `2px solid ${allowEarlyFinish === opt.value ? "var(--primary)" : "var(--border)"}`,
+                      background: allowEarlyFinish === opt.value ? "var(--surface-hover)" : "white",
+                      color: allowEarlyFinish === opt.value ? "var(--primary)" : "var(--text-muted)",
+                      fontWeight: 700,
+                      fontSize: "0.82rem",
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
 

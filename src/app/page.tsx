@@ -22,11 +22,16 @@ export default function Home() {
     setError("");
     
     const cleanUsername = username.trim();
-    const finalEmail = cleanUsername.toLowerCase() === "admin" 
-      ? "admin@az.cbt" 
-      : cleanUsername.toLowerCase() === "student" 
-        ? "student@az.cbt" 
-        : cleanUsername;
+    const lower = cleanUsername.toLowerCase();
+    const finalEmail = lower === "admin"
+      ? "admin@az.cbt"
+      : lower === "admin1"
+        ? "admin1@az.cbt"
+        : lower === "admin2"
+          ? "admin2@az.cbt"
+          : lower === "student"
+            ? "student@az.cbt"
+            : cleanUsername;
 
     const res = await signIn("credentials", {
       email: finalEmail,

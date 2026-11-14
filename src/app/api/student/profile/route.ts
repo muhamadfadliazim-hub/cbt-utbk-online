@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
+import { ensureSessionUser } from "@/lib/sessionUser";
 
 export async function PUT(request: Request) {
   try {
@@ -10,12 +11,12 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = (session.user as any).id;
+    const targetUserId = await ensureSessionUser(session);
     const body = await request.json();
     const { name, schoolName, snbpTargetUniv, snbpTargetMajor } = body;
 
     const updatedUser = await prisma.user.update({
-      where: { id: userId },
+      where: { id: targetUserId },
       data: {
         name,
         schoolName,

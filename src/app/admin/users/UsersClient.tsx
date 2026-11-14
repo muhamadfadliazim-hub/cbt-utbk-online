@@ -1,17 +1,37 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle, XCircle, Search, ShieldAlert, ShieldCheck, Trash2, Settings } from "lucide-react";
-import { toggleUserApproval, deleteUser, updateUserSchool, updateUserExamTypes } from "@/actions/admin";
+import { useRouter } from "next/navigation";
+import { CheckCircle, XCircle, Search, ShieldAlert, ShieldCheck, Trash2, Settings, UserPlus } from "lucide-react";
+import { toggleUserApproval, deleteUser, updateUserSchool, updateUserExamTypes, createManagedUser } from "@/actions/admin";
 import { ExamType } from "@prisma/client";
 
-export default function UsersClient({ users }: { users: any[] }) {
+export default function UsersClient({
+  users,
+  isSuperAdmin = true,
+  activePesantrenId = null,
+  pesantrenList = [],
+}: {
+  users: any[];
+  isSuperAdmin?: boolean;
+  activePesantrenId?: string | null;
+  pesantrenList?: { id: string; namaPesantren: string }[];
+}) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [selectedSchool, setSelectedSchool] = useState("");
   const [editingSchoolId, setEditingSchoolId] = useState<string | null>(null);
   const [editingSchoolValue, setEditingSchoolValue] = useState("");
   const [editingExamTypesId, setEditingExamTypesId] = useState<string | null>(null);
   const [editingExamTypes, setEditingExamTypes] = useState<ExamType[]>([]);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newRole, setNewRole] = useState<"STUDENT" | "ADMIN">("STUDENT");
+  const [newPesantrenId, setNewPesantrenId] = useState<string>(activePesantrenId || pesantrenList[0]?.id || "");
+  const [createError, setCreateError] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const pendingUsers = users.filter(u => !u.isApproved && u.role === "STUDENT");
   const approvedUsers = users.filter(u => u.isApproved && u.role === "STUDENT");
@@ -45,6 +65,32 @@ export default function UsersClient({ users }: { users: any[] }) {
 
   const toggleExamType = (type: ExamType) => {
     setEditingExamTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateError("");
+    setCreating(true);
+    try {
+      const res = await createManagedUser({
+        name: newName,
+        email: newEmail,
+        password: newPassword,
+        role: isSuperAdmin ? newRole : "STUDENT",
+        pesantrenId: isSuperAdmin ? (newPesantrenId || null) : activePesantrenId,
+      });
+      if (res.error) {
+        setCreateError(res.error);
+      } else {
+        setIsAddModalOpen(false);
+        setNewName("");
+        setNewEmail("");
+        setNewPassword("");
+        router.refresh();
+      }
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleDownloadCSV = () => {
@@ -98,6 +144,12 @@ export default function UsersClient({ users }: { users: any[] }) {
           <h2 style={{ fontSize: "1.2rem", color: "var(--text)", fontWeight: "700" }}>Daftar Pengguna</h2>
           
           <div style={{ display: "flex", gap: "15px", flex: 1, justifyContent: "flex-end", flexWrap: "wrap" }}>
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              style={{ padding: "8px 15px", background: "var(--primary)", color: "white", border: "none", borderRadius: "8px", fontWeight: "bold", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
+            >
+              <UserPlus size={16} /> Tambah Akun
+            </button>
             <button 
               onClick={handleDownloadCSV}
               style={{ padding: "8px 15px", background: "var(--success)", color: "white", border: "none", borderRadius: "8px", fontWeight: "bold", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "5px" }}
@@ -325,6 +377,61 @@ export default function UsersClient({ users }: { users: any[] }) {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {isAddModalOpen && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
+          <form onSubmit={handleCreateUser} style={{ background: "white", padding: "2rem", borderRadius: "1rem", width: "440px", maxWidth: "92%", display: "grid", gap: "12px" }}>
+            <h3 style={{ fontSize: "1.2rem", fontWeight: "bold", margin: 0 }}>
+              {isSuperAdmin ? "Tambah Akun Pengguna / Admin Pesantren" : "Tambah Akun Santri Pesantren"}
+            </h3>
+            {createError && (
+              <div style={{ padding: "8px 12px", background: "#FEE2E2", color: "#B91C1C", borderRadius: "8px", fontSize: "0.85rem" }}>
+                {createError}
+              </div>
+            )}
+            <label>
+              <span className="field-label">Nama Lengkap</span>
+              <input className="field" required value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Contoh: Ustadz Operator / Nama Santri" />
+            </label>
+            <label>
+              <span className="field-label">Email Login</span>
+              <input className="field" type="email" required value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="contoh@az.cbt" />
+            </label>
+            <label>
+              <span className="field-label">Kata Sandi</span>
+              <input className="field" type="text" required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Minimal 5 karakter" />
+            </label>
+            {isSuperAdmin && (
+              <>
+                <label>
+                  <span className="field-label">Peran Akun</span>
+                  <select className="field" value={newRole} onChange={(e) => setNewRole(e.target.value as "STUDENT" | "ADMIN")}>
+                    <option value="STUDENT">Santri / Siswa</option>
+                    <option value="ADMIN">Admin Pesantren</option>
+                  </select>
+                </label>
+                <label>
+                  <span className="field-label">Tautkan ke Pesantren</span>
+                  <select className="field" value={newPesantrenId} onChange={(e) => setNewPesantrenId(e.target.value)}>
+                    <option value="">Pusat / Semua Pesantren</option>
+                    {pesantrenList.map((p) => (
+                      <option key={p.id} value={p.id}>{p.namaPesantren}</option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+              <button type="button" onClick={() => setIsAddModalOpen(false)} style={{ padding: "8px 15px", borderRadius: "8px", border: "1px solid var(--border)", background: "white", cursor: "pointer" }}>
+                Batal
+              </button>
+              <button type="submit" disabled={creating} style={{ padding: "8px 15px", borderRadius: "8px", border: "none", background: "var(--primary)", color: "white", cursor: "pointer", fontWeight: "bold" }}>
+                {creating ? "Menyimpan..." : "Simpan Akun"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

@@ -1,16 +1,18 @@
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { getAdminTenantContext } from "@/lib/tenant";
 import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session || (session.user as any).role !== "ADMIN") {
+    const tenant = await getAdminTenantContext();
+    if (!tenant) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const classes = await prisma.liveClass.findMany({
+      where: tenant.activePesantrenId
+        ? { OR: [{ pesantrenId: tenant.activePesantrenId }, { pesantrenId: null }] }
+        : undefined,
       orderBy: { scheduledAt: 'desc' }
     });
 
@@ -22,8 +24,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session || (session.user as any).role !== "ADMIN") {
+    const tenant = await getAdminTenantContext();
+    if (!tenant) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -46,6 +48,7 @@ export async function POST(req: Request) {
         isActive: true,
         targetSchool: targetSchool || null,
         targetUserEmail: targetUserEmail || null,
+        pesantrenId: tenant.managedPesantrenId || tenant.activePesantrenId || null,
       }
     });
 

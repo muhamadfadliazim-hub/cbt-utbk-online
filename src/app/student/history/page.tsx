@@ -3,57 +3,80 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import HistoryClient from "./HistoryClient";
+import { isIrtExamType, scoreExamAttempt } from "@/lib/examGrading";
 
 export default async function HistoryPage() {
   const session = await getServerSession(authOptions);
   if (!session || !session.user) {
-    redirect('/login');
+    redirect("/login");
   }
 
   const userId = (session.user as any).id;
 
   const attempts = await prisma.attempt.findMany({
     where: { userId },
-    include: { exam: true },
+    include: {
+      exam: {
+        include: {
+          sections: {
+            orderBy: { orderIndex: "asc" },
+            include: {
+              questions: {
+                orderBy: { orderIndex: "asc" },
+              },
+            },
+          },
+        },
+      },
+    },
     orderBy: { startTime: "desc" },
   });
 
-  const historyData = attempts.map(attempt => {
+  const historyData = attempts.map((attempt) => {
+    const showScore = attempt.exam.showScore;
     const showDiscussion = attempt.exam.showDiscussion;
     const allowPdfDownload = attempt.exam.allowPdfDownload;
-    // Determine status (mocked for now since grading logic is not yet built)
-    const score = attempt.score || 0;
-    const targetScore = 700; // Hardcoded target for now
-    
-    // Parse answers or mock subscores
-    let subscores: any[] = [];
-    try {
-      if (attempt.answers) {
-        // Here we would parse and calculate per-subject
-        // but since we lack the full CBT engine right now, we use a mock subscore structure
-      }
-    } catch(e) {}
+    const isIRT = isIrtExamType(attempt.exam.type);
+    const targetScore = isIRT ? 700 : 75;
 
-    // Mock subscores if empty
-    if (subscores.length === 0) {
-      subscores = [
-        { subject: "Penalaran Umum", score: Math.min(1000, score + 20), fullMark: 1000, correct: 22, total: 30 },
-        { subject: "Literasi B. Indonesia", score: Math.min(1000, score - 10), fullMark: 1000, correct: 18, total: 30 }
-      ];
+    let parsedAnswers: Record<string, any> = {};
+    try {
+      if (attempt.answers) parsedAnswers = JSON.parse(attempt.answers);
+    } catch { }
+
+    let subscores: { subject: string; score: number | null; fullMark: number; correct: number | null; total: number }[] = [];
+    let rawScore = attempt.score || 0;
+
+    const hasSections = attempt.exam.sections.some((s) => s.questions.length > 0);
+    if (hasSections) {
+      const graded = scoreExamAttempt(attempt.exam.sections, parsedAnswers, attempt.exam.type);
+      if (showScore || showDiscussion) {
+        subscores = graded.subscores.map((s) => ({
+          subject: s.subject,
+          score: showScore ? s.score : null,
+          fullMark: s.fullMark,
+          correct: showDiscussion ? s.correct : null,
+          total: s.total,
+        }));
+      }
+      if (!isIRT || !attempt.score) {
+        rawScore = graded.score;
+      }
     }
 
     return {
       id: attempt.id,
       title: attempt.exam.title,
       date: new Date(attempt.startTime).toLocaleDateString("id-ID", { dateStyle: "long" }),
-      score: score,
-      targetScore: targetScore,
-      status: score >= targetScore ? "LULUS" : "BELUM LULUS",
+      score: showScore ? rawScore : null,
+      targetScore,
+      status: showScore ? (rawScore >= targetScore ? "LULUS" : "BELUM LULUS") : "MENUNGGU_ADMIN",
       category: attempt.exam.type,
-      isIRT: true,
+      isIRT,
       subscores,
+      showScore,
       showDiscussion,
-      allowPdfDownload
+      allowPdfDownload,
     };
   });
 

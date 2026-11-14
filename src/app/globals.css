@@ -484,3 +484,159 @@ a {
   flex-direction: column;
   gap: 16px;
 }
+
+.utbk-stimulus-pane table,
+.utbk-prompt-pane table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.9rem 0;
+  background: white;
+  font-size: 0.95rem;
+}
+
+.utbk-stimulus-pane th,
+.utbk-stimulus-pane td,
+.utbk-prompt-pane th,
+.utbk-prompt-pane td {
+  border: 1px solid #cbd5e1;
+  padding: 0.55rem 0.75rem;
+  text-align: center;
+}
+
+.utbk-stimulus-pane th,
+.utbk-prompt-pane th {
+  background: #f1f5f9;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.utbk-svg-figure {
+  width: 100%;
+  overflow-x: auto;
+  margin: 0.9rem 0;
+  display: flex;
+  justify-content: center;
+}
+
+.utbk-stimulus-pane svg,
+.utbk-prompt-pane svg,
+.utbk-svg-figure svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+  flex-shrink: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+}
+
+.learn-markdown-pane h3 {
+  margin: 1.25rem 0 0.55rem;
+  color: var(--primary);
+  font-size: 1.12rem;
+}
+
+.learn-markdown-pane h3:first-child {
+  margin-top: 0;
+}
+
+.learn-markdown-pane ul,
+.learn-markdown-pane ol {
+  padding-left: 1.35rem;
+  margin: 0.5rem 0 0.9rem;
+}
+
+.learn-markdown-pane li {
+  margin-bottom: 0.35rem;
+}
+
+.learn-markdown-pane blockquote {
+  margin: 0.9rem 0;
+  padding: 0.85rem 1.1rem;
+  background: #f8fafc;
+  border-left: 4px solid var(--accent);
+  border-radius: 0.5rem;
+}
+
+.learn-markdown-pane th,
+.learn-markdown-pane td {
+  text-align: left;
+}
+
+.learn-markdown-pane tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.learn-markdown-pane h4 {
+  margin: 1rem 0 0.45rem;
+  color: #1e293b;
+  font-size: 0.98rem;
+  font-weight: 700;
+}
+
+.learn-markdown-pane hr {
+  border: none;
+  border-top: 1px dashed #cbd5e1;
+  margin: 1.35rem 0;
+}
+
+.learn-markdown-pane blockquote {
+  margin: 0.95rem 0;
+  padding: 0.75rem 1rem;
+  border-left: 4px solid #2563eb;
+  background: #eff6ff;
+  border-radius: 0 10px 10px 0;
+  color: #1e3a8a;
+}
+
+.learn-markdown-pane .utbk-svg-figure {
+  background: linear-gradient(180deg, #f8fafc 0%, #eff6ff 100%);
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 0.9rem;
+  margin: 0.65rem 0 1.35rem;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+}
+
+.learn-markdown-pane .utbk-svg-figure svg {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+}
+
+.utbk-svg-figure .svg-math-box {
+  display: flex;
+  align-items: center;
+  line-height: 1.18;
+  font-family: system-ui, -apple-system, sans-serif;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.utbk-svg-figure .svg-math-box .katex {
+  font-size: 1.04em;
+  line-height: 1.15;
+}
+
+.utbk-svg-figure .svg-math-box .katex-display {
+  margin: 0;
+}
+
+.learn-reader-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .learn-reader-grid {
+    grid-template-columns: 1fr;
+  }
+  .exam-layout {
+    flex-direction: column;
+  }
+  .exam-aside {
+    width: 100%;
+  }
+}
