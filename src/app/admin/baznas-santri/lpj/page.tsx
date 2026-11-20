@@ -272,7 +272,10 @@ export default function LpjBaznasPage() {
               </tr>
             </thead>
             <tbody>
-              {santriList.map((s, idx) => (
+              {santriList.map((s, idx) => {
+                const tryoutCount = s.tryoutScores?.length || 0;
+                const latestTo = tryoutCount > 0 ? s.tryoutScores[tryoutCount - 1] : null;
+                return (
                 <tr key={s.id}>
                   <td style={{ border: "1px solid #64748B", padding: "6px", textAlign: "center" }}>{idx + 1}</td>
                   <td style={{ border: "1px solid #64748B", padding: "6px" }}>
@@ -287,14 +290,25 @@ export default function LpjBaznasPage() {
                     <br />
                     2. {s.targetMajor2} - {s.targetUniv2}
                   </td>
-                  <td style={{ border: "1px solid #64748B", padding: "6px", textAlign: "center", fontWeight: "bold" }}>
-                    {s.averageScore}
+                  <td style={{ border: "1px solid #64748B", padding: "6px", textAlign: "center" }}>
+                    {tryoutCount > 0 ? (
+                      <>
+                        <strong style={{ fontSize: "10.5pt" }}>{s.averageScore}</strong>
+                        <br />
+                        <small style={{ color: "#475569" }}>
+                          {tryoutCount}x TO CBT{latestTo?.date ? ` (${latestTo.date})` : ""}
+                        </small>
+                      </>
+                    ) : (
+                      <span style={{ color: "#64748B", fontStyle: "italic" }}>Belum TO</span>
+                    )}
                   </td>
                   <td style={{ border: "1px solid #64748B", padding: "6px", textAlign: "center" }}>
                     {s.statusKelulusan === "DITERIMA_SNBP" ? "Lolos SNBP (Tahfidz)" : "Proses SNBT"}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

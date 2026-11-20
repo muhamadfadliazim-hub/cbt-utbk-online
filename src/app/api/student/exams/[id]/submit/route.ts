@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { NextResponse } from "next/server";
 import { scoreExamAttempt } from "@/lib/examGrading";
+import { syncBaznasSantriForUser } from "@/lib/baznasSync";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -35,14 +36,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const graded = scoreExamAttempt(exam.sections, answers || {}, exam.type);
 
-    await prisma.attempt.update({
+    const updatedAttempt = await prisma.attempt.update({
       where: { id: attemptId },
       data: {
         endTime: new Date(),
         answers: JSON.stringify(answers || {}),
         score: graded.score,
       },
+      select: { userId: true },
     });
+
+    try {
+      await syncBaznasSantriForUser(updatedAttempt.userId);
+    } catch (syncError) {
+      console.error("Non-fatal BAZNAS TO sync error:", syncError);
+    }
 
     return NextResponse.json({
       success: true,

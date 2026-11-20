@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAdminTenantContext } from "@/lib/tenant";
+import { enrichSantriWithAttempts } from "@/lib/baznasSync";
 
 function serializeSantri(row: any) {
   let tryoutScores = [];
@@ -79,6 +80,11 @@ export async function GET(req: Request) {
       });
     }
 
+    const { santriList: enrichedSantriList, tryoutSummary } = await enrichSantriWithAttempts(
+      santriRows,
+      targetId
+    );
+
     return NextResponse.json({
       isSuperAdmin: ctx.isSuperAdmin,
       activePesantrenId: targetId,
@@ -86,7 +92,8 @@ export async function GET(req: Request) {
         ? ctx.pesantrenList
         : ctx.pesantrenList.filter((p) => p.id === ctx.managedPesantrenId),
       profile,
-      santriList: santriRows.map(serializeSantri),
+      santriList: enrichedSantriList,
+      tryoutSummary,
       logbookList: logbookRows,
       overviewStats,
     });

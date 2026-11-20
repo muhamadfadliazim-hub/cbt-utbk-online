@@ -10,6 +10,21 @@ import {
   AsnafCategory 
 } from "@/lib/baznasSeed";
 
+interface TryoutSummaryStat {
+  totalSantri: number;
+  santriSudahTo: number;
+  totalAttempts: number;
+  averageScoreParticipating: number;
+  highestSantri: { name: string; score: number } | null;
+  examPackages: {
+    examId: string;
+    title: string;
+    type: string;
+    participantCount: number;
+    averageScore: number;
+  }[];
+}
+
 interface OverviewStat {
   id: string;
   namaPesantren: string;
@@ -23,7 +38,7 @@ import {
   Building2, Users, FileText, Award, BookOpen, 
   Calendar, CheckCircle2, Plus, Download, Upload, 
   Trash2, Printer, Search, ArrowUpRight, GraduationCap,
-  ShieldCheck, HelpCircle, AlertCircle
+  ShieldCheck, HelpCircle, AlertCircle, BarChart3, Clock, Eye, X
 } from "lucide-react";
 
 export default function BaznasSantriPage() {
@@ -33,11 +48,15 @@ export default function BaznasSantriPage() {
   const [overviewStats, setOverviewStats] = useState<OverviewStat[]>([]);
   const [profile, setProfile] = useState<PesantrenProfile | null>(null);
   const [santriList, setSantriList] = useState<SantriBaznas[]>([]);
+  const [tryoutSummary, setTryoutSummary] = useState<TryoutSummaryStat | null>(null);
   const [logbookList, setLogbookList] = useState<LogbookBimbingan[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"dts" | "tryout" | "logbook" | "profil">("dts");
   const [searchQuery, setSearchQuery] = useState("");
+  const [toFilterStatus, setToFilterStatus] = useState<"ALL" | "DONE" | "PENDING">("ALL");
+  const [toSortMode, setToSortMode] = useState<"SCORE_DESC" | "NAME_ASC">("SCORE_DESC");
+  const [selectedSantriForTo, setSelectedSantriForTo] = useState<SantriBaznas | null>(null);
 
   // Modals
   const [isAddSantriOpen, setIsAddSantriOpen] = useState(false);
@@ -80,6 +99,7 @@ export default function BaznasSantriPage() {
       setOverviewStats(data.overviewStats || []);
       setProfile(data.profile || null);
       setSantriList(data.santriList || []);
+      setTryoutSummary(data.tryoutSummary || null);
       setLogbookList(data.logbookList || []);
     } catch (err) {
       console.error(err);
@@ -270,11 +290,44 @@ export default function BaznasSantriPage() {
 
   const totalSantri = santriList.length;
   const totalDana = totalSantri * (profile?.anggaranPerSantri || 4000000);
-  const avgTryout = totalSantri > 0 
-    ? Math.round(santriList.reduce((acc, s) => acc + (s.averageScore || 0), 0) / totalSantri) 
-    : 0;
+  const participatingSantri = santriList.filter((s) => (s.tryoutScores?.length || 0) > 0);
+  const sudahToCount = tryoutSummary?.santriSudahTo ?? participatingSantri.length;
+  const avgTryout =
+    tryoutSummary?.averageScoreParticipating ??
+    (participatingSantri.length > 0
+      ? Math.round(
+          participatingSantri.reduce((acc, s) => acc + (s.averageScore || 0), 0) /
+            participatingSantri.length
+        )
+      : 0);
   const totalTahfidz = santriList.filter(s => s.hafalanJuz >= 5).length;
   const totalDiterima = santriList.filter(s => s.statusKelulusan !== "BELUM_DIUMUMKAN" && s.statusKelulusan !== "TIDAK_LOLOS").length;
+
+  const filteredTryoutSantri = santriList
+    .filter((s) => {
+      const matchesSearch =
+        !searchQuery.trim() ||
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.nisn.includes(searchQuery) ||
+        s.targetUniv1.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.targetMajor1.toLowerCase().includes(searchQuery.toLowerCase());
+      if (!matchesSearch) return false;
+      const hasTo = (s.tryoutScores?.length || 0) > 0;
+      if (toFilterStatus === "DONE") return hasTo;
+      if (toFilterStatus === "PENDING") return !hasTo;
+      return true;
+    })
+    .sort((a, b) => {
+      if (toSortMode === "NAME_ASC") {
+        return a.name.localeCompare(b.name);
+      }
+      const hasA = (a.tryoutScores?.length || 0) > 0 ? 1 : 0;
+      const hasB = (b.tryoutScores?.length || 0) > 0 ? 1 : 0;
+      if (hasB !== hasA) return hasB - hasA;
+      const scoreDiff = (b.averageScore || 0) - (a.averageScore || 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return a.name.localeCompare(b.name);
+    });
 
   return (
     <div style={{ maxWidth: "1280px", margin: "0 auto", paddingBottom: "60px" }}>
@@ -434,16 +487,26 @@ export default function BaznasSantriPage() {
           </div>
         </div>
 
-        <div className="card" style={{ padding: "20px", display: "flex", alignItems: "center", gap: "16px", background: "white", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow-sm)" }}>
+        <div
+          onClick={() => setActiveTab("tryout")}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === "Enter" && setActiveTab("tryout")}
+          className="card"
+          style={{ padding: "20px", display: "flex", alignItems: "center", gap: "16px", background: "white", borderRadius: "16px", border: "1px solid var(--border)", boxShadow: "var(--shadow-sm)", cursor: "pointer" }}
+          title="Klik untuk membuka Rekap Hasil Tryout Santri"
+        >
           <div style={{ width: "52px", height: "52px", borderRadius: "14px", background: "#E0F2FE", display: "flex", alignItems: "center", justifyContent: "center", color: "#0284C7" }}>
             <GraduationCap size={26} />
           </div>
           <div>
             <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: "600" }}>Rata-rata Skor TO</div>
             <div style={{ fontSize: "1.7rem", fontWeight: "800", color: "var(--text)", fontFamily: "'Outfit', sans-serif" }}>
-              {avgTryout} <span style={{ fontSize: "0.9rem", fontWeight: "500", color: "var(--text-muted)" }}>/ 1000 IRT</span>
+              {avgTryout > 0 ? avgTryout : "-"} <span style={{ fontSize: "0.9rem", fontWeight: "500", color: "var(--text-muted)" }}>/ 1000 IRT</span>
             </div>
-            <div style={{ fontSize: "0.75rem", color: "#0284C7", fontWeight: "600" }}>Kesiapan SNBT Tinggi</div>
+            <div style={{ fontSize: "0.75rem", color: "#0284C7", fontWeight: "600" }}>
+              {sudahToCount} / {totalSantri} santri sudah TO →
+            </div>
           </div>
         </div>
 
@@ -499,7 +562,17 @@ export default function BaznasSantriPage() {
             gap: "8px"
           }}
         >
-          <Award size={18} /> Nilai Tryout & Target PTN
+          <Award size={18} /> Rekap Nilai Tryout & Target PTN
+          <span style={{
+            fontSize: "0.75rem",
+            fontWeight: "800",
+            padding: "2px 8px",
+            borderRadius: "999px",
+            background: sudahToCount > 0 ? "#DCFCE7" : "#F1F5F9",
+            color: sudahToCount > 0 ? "#166534" : "#64748B",
+          }}>
+            {sudahToCount}/{totalSantri} Sudah TO
+          </span>
         </button>
 
         <button
@@ -588,6 +661,7 @@ export default function BaznasSantriPage() {
                   <th style={{ padding: "14px 16px" }}>Asnaf & SKTM</th>
                   <th style={{ padding: "14px 16px" }}>Hafalan & Prestasi</th>
                   <th style={{ padding: "14px 16px" }}>Target PTN 1 & 2</th>
+                  <th style={{ padding: "14px 16px" }}>Hasil TO CBT</th>
                   <th style={{ padding: "14px 16px" }}>Akun CBT Santri</th>
                   <th style={{ padding: "14px 16px", textAlign: "center" }}>Aksi</th>
                 </tr>
@@ -629,6 +703,46 @@ export default function BaznasSantriPage() {
                       <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>2. {s.targetMajor2} ({s.targetUniv2})</div>
                     </td>
                     <td style={{ padding: "14px 16px" }}>
+                      {(s.tryoutScores?.length || 0) > 0 ? (
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSantriForTo(s)}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              background: "#ECFDF5",
+                              color: "#065F46",
+                              border: "1px solid #A7F3D0",
+                              borderRadius: "999px",
+                              padding: "4px 10px",
+                              fontSize: "0.8rem",
+                              fontWeight: "800",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <CheckCircle2 size={14} /> Skor {s.latestScore ?? s.averageScore}
+                          </button>
+                          <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                            {s.tryoutScores.length}x TO • Klik lihat subtes
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{
+                          display: "inline-block",
+                          fontSize: "0.78rem",
+                          color: "#64748B",
+                          background: "#F1F5F9",
+                          padding: "4px 10px",
+                          borderRadius: "999px",
+                          fontWeight: "600",
+                        }}>
+                          Belum TO
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: "14px 16px" }}>
                       <div style={{ fontSize: "0.85rem", fontFamily: "monospace", background: "#F8FAFC", padding: "4px 8px", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
                         👤 {s.emailLogin}
                         <br />
@@ -652,73 +766,262 @@ export default function BaznasSantriPage() {
         </div>
       )}
 
-      {/* TAB 2: NILAI TRYOUT & REKOMENDASI PTN */}
+      {/* TAB 2: REKAP NILAI TRYOUT & REKOMENDASI PTN */}
       {activeTab === "tryout" && (
         <div className="card" style={{ background: "white", borderRadius: "18px", padding: "24px", border: "1px solid var(--border)", boxShadow: "var(--shadow-sm)" }}>
-          <div style={{ marginBottom: "20px" }}>
-            <h3 style={{ margin: "0 0 6px 0", fontSize: "1.2rem", fontWeight: "800" }}>Evaluasi Progres Tryout UTBK & Rekomendasi PTN Santri</h3>
-            <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.9rem" }}>Data perkembangan skor IRT santri untuk evaluasi kelayakan prodi pada pelaporan BAZNAS.</p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "15px", marginBottom: "20px" }}>
+            <div>
+              <h3 style={{ margin: "0 0 6px 0", fontSize: "1.2rem", fontWeight: "800" }}>Rekap Hasil Tryout CBT & Rekomendasi PTN Santri</h3>
+              <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.9rem" }}>
+                Terhubung langsung dengan hasil ujian CBT santri secara real-time (skor IRT total, benar/salah, dan rincian 7 subtes).
+              </p>
+            </div>
+            <Link
+              href="/admin/reports/scores"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "8px 14px",
+                borderRadius: "10px",
+                background: "#F1F5F9",
+                color: "#0F172A",
+                fontWeight: "700",
+                fontSize: "0.85rem",
+                textDecoration: "none",
+                border: "1px solid #CBD5E1",
+              }}
+            >
+              <BarChart3 size={16} /> Laporan Nilai Global <ArrowUpRight size={14} />
+            </Link>
+          </div>
+
+          {/* Ringkasan Eksekutif TO */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "12px", marginBottom: "18px" }}>
+            <div style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", borderRadius: "12px", padding: "14px" }}>
+              <div style={{ fontSize: "0.78rem", color: "#047857", fontWeight: "700" }}>Partisipasi Tryout</div>
+              <div style={{ fontSize: "1.35rem", fontWeight: "800", color: "#065F46", marginTop: "4px" }}>
+                {sudahToCount} / {totalSantri} Santri
+              </div>
+              <div style={{ fontSize: "0.75rem", color: "#059669" }}>
+                {totalSantri > 0 ? Math.round((sudahToCount / totalSantri) * 100) : 0}% sudah mengerjakan
+              </div>
+            </div>
+
+            <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "12px", padding: "14px" }}>
+              <div style={{ fontSize: "0.78rem", color: "#1D4ED8", fontWeight: "700" }}>Total Pengerjaan CBT</div>
+              <div style={{ fontSize: "1.35rem", fontWeight: "800", color: "#1E3A8A", marginTop: "4px" }}>
+                {tryoutSummary?.totalAttempts ?? participatingSantri.length} Sesi
+              </div>
+              <div style={{ fontSize: "0.75rem", color: "#2563EB" }}>Tersinkron otomatis</div>
+            </div>
+
+            <div style={{ background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: "12px", padding: "14px" }}>
+              <div style={{ fontSize: "0.78rem", color: "#B45309", fontWeight: "700" }}>Rata-rata Peserta TO</div>
+              <div style={{ fontSize: "1.35rem", fontWeight: "800", color: "#92400E", marginTop: "4px" }}>
+                {avgTryout > 0 ? avgTryout : "-"} <span style={{ fontSize: "0.8rem", fontWeight: "600" }}>IRT</span>
+              </div>
+              <div style={{ fontSize: "0.75rem", color: "#D97706" }}>Khusus santri yang sudah TO</div>
+            </div>
+
+            <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: "12px", padding: "14px" }}>
+              <div style={{ fontSize: "0.78rem", color: "#6D28D9", fontWeight: "700" }}>Skor Tertinggi</div>
+              <div style={{ fontSize: "1.35rem", fontWeight: "800", color: "#4C1D95", marginTop: "4px" }}>
+                {tryoutSummary?.highestSantri ? tryoutSummary.highestSantri.score : "-"}
+              </div>
+              <div style={{ fontSize: "0.75rem", color: "#7C3AED", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {tryoutSummary?.highestSantri?.name || "Belum ada peserta"}
+              </div>
+            </div>
+          </div>
+
+          {/* Ringkasan Paket Ujian CBT */}
+          {(tryoutSummary?.examPackages?.length || 0) > 0 && (
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "18px" }}>
+              {tryoutSummary!.examPackages.map((pkg) => (
+                <div key={pkg.examId} style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "8px 14px", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: "800", color: "#0F172A" }}>{pkg.title}</span>
+                  <span style={{ background: "#E0F2FE", color: "#0369A1", padding: "2px 8px", borderRadius: "999px", fontWeight: "700", fontSize: "0.74rem" }}>
+                    {pkg.participantCount} Santri
+                  </span>
+                  <span style={{ background: "#ECFDF5", color: "#047857", padding: "2px 8px", borderRadius: "999px", fontWeight: "700", fontSize: "0.74rem" }}>
+                    Rata-rata: {pkg.averageScore}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Filter & Sort Controls */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", marginBottom: "18px" }}>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              {([
+                { key: "ALL", label: `Semua Santri (${totalSantri})` },
+                { key: "DONE", label: `Sudah Ikut TO (${sudahToCount})` },
+                { key: "PENDING", label: `Belum Ikut TO (${Math.max(0, totalSantri - sudahToCount)})` },
+              ] as const).map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => setToFilterStatus(f.key)}
+                  style={{
+                    padding: "7px 14px",
+                    borderRadius: "999px",
+                    border: toFilterStatus === f.key ? "1px solid #059669" : "1px solid #CBD5E1",
+                    background: toFilterStatus === f.key ? "#059669" : "white",
+                    color: toFilterStatus === f.key ? "white" : "#334155",
+                    fontWeight: "700",
+                    fontSize: "0.82rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--background)", padding: "8px 12px", borderRadius: "10px", border: "1px solid var(--border)", width: "240px" }}>
+                <Search size={16} color="var(--text-muted)" />
+                <input
+                  type="text"
+                  placeholder="Cari nama santri..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{ border: "none", outline: "none", background: "transparent", width: "100%", fontSize: "0.85rem" }}
+                />
+              </div>
+              <select
+                value={toSortMode}
+                onChange={(e) => setToSortMode(e.target.value as "SCORE_DESC" | "NAME_ASC")}
+                style={{ padding: "8px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.85rem", fontWeight: "600", background: "white" }}
+              >
+                <option value="SCORE_DESC">Urutkan: Skor Tertinggi</option>
+                <option value="NAME_ASC">Urutkan: Nama A–Z</option>
+              </select>
+            </div>
           </div>
 
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.95rem" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.92rem" }}>
               <thead>
-                <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0", textAlign: "left", color: "var(--text-muted)", fontSize: "0.85rem", textTransform: "uppercase" }}>
-                  <th style={{ padding: "14px 16px" }}>Nama Santri</th>
-                  <th style={{ padding: "14px 16px" }}>TO 1 (Diagnostik)</th>
-                  <th style={{ padding: "14px 16px" }}>TO 2 (Progresif)</th>
-                  <th style={{ padding: "14px 16px" }}>TO 3 (Pemantapan)</th>
-                  <th style={{ padding: "14px 16px" }}>Rata-rata Skor</th>
-                  <th style={{ padding: "14px 16px" }}>Status Rekomendasi</th>
-                  <th style={{ padding: "14px 16px" }}>Status Kelulusan</th>
+                <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0", textAlign: "left", color: "var(--text-muted)", fontSize: "0.8rem", textTransform: "uppercase" }}>
+                  <th style={{ padding: "12px 14px" }}>No</th>
+                  <th style={{ padding: "12px 14px" }}>Nama Santri & Target PTN</th>
+                  <th style={{ padding: "12px 14px" }}>Riwayat Tryout CBT</th>
+                  <th style={{ padding: "12px 14px", textAlign: "center" }}>Skor Terakhir</th>
+                  <th style={{ padding: "12px 14px", textAlign: "center" }}>Rata-rata</th>
+                  <th style={{ padding: "12px 14px" }}>Evaluasi Kesiapan</th>
+                  <th style={{ padding: "12px 14px", textAlign: "center" }}>Rincian Subtes</th>
                 </tr>
               </thead>
               <tbody>
-                {santriList.map((s) => {
-                  const to1 = s.tryoutScores[0]?.score || "-";
-                  const to2 = s.tryoutScores[1]?.score || "-";
-                  const to3 = s.tryoutScores[2]?.score || "-";
-                  const isSafe = (s.averageScore || 0) >= 600;
+                {filteredTryoutSantri.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: "32px", textAlign: "center", color: "var(--text-muted)" }}>
+                      Tidak ada data santri pada filter ini.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTryoutSantri.map((s, idx) => {
+                    const hasTo = (s.tryoutScores?.length || 0) > 0;
+                    const attempts = s.attemptHistory || [];
+                    const latestAttempt = attempts[0];
+                    const latestScore = s.latestScore ?? (hasTo ? s.tryoutScores[s.tryoutScores.length - 1].score : null);
+                    const avg = s.averageScore || 0;
+                    const isHigh = avg >= 600;
+                    const isMid = avg >= 450 && avg < 600;
 
-                  return (
-                    <tr key={s.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                      <td style={{ padding: "14px 16px", fontWeight: "700", color: "var(--text)" }}>
-                        {s.name}
-                        <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontWeight: "normal" }}>Hafalan: {s.hafalanJuz} Juz</div>
-                      </td>
-                      <td style={{ padding: "14px 16px", fontWeight: "600" }}>{to1}</td>
-                      <td style={{ padding: "14px 16px", fontWeight: "600" }}>{to2}</td>
-                      <td style={{ padding: "14px 16px", fontWeight: "600" }}>{to3}</td>
-                      <td style={{ padding: "14px 16px" }}>
-                        <span style={{ fontSize: "1.1rem", fontWeight: "800", color: isSafe ? "#059669" : "#D97706" }}>
-                          {s.averageScore}
-                        </span>
-                      </td>
-                      <td style={{ padding: "14px 16px" }}>
-                        {isSafe ? (
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#059669", background: "#ECFDF5", padding: "4px 10px", borderRadius: "20px", fontSize: "0.8rem", fontWeight: "700" }}>
-                            <CheckCircle2 size={14} /> Berpeluang Lolos PTN
+                    return (
+                      <tr key={s.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                        <td style={{ padding: "12px 14px", fontWeight: "700", color: "var(--text-muted)" }}>
+                          {idx + 1}
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ fontWeight: "700", color: "var(--text)" }}>{s.name}</div>
+                          <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "2px" }}>
+                            {s.kelas} • {s.hafalanJuz} Juz • {s.targetMajor1} ({s.targetUniv1})
+                          </div>
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          {hasTo ? (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                              {s.tryoutScores.slice(-3).map((t, i) => (
+                                <div key={`${t.attemptId || t.tryoutName}-${i}`} style={{ fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                                  <span style={{ background: "#ECFDF5", color: "#065F46", fontWeight: "800", padding: "2px 8px", borderRadius: "6px" }}>
+                                    {t.score}
+                                  </span>
+                                  <span style={{ fontWeight: "600", color: "#0F172A" }}>{t.tryoutName}</span>
+                                  <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>
+                                    ({t.date}{t.totalQuestions ? ` • ${t.correctCount}/${t.totalQuestions} benar` : ""})
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span style={{ color: "#94A3B8", fontSize: "0.82rem", fontStyle: "italic" }}>
+                              Belum mengerjakan TO di CBT
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: "800", fontSize: "1.05rem", color: hasTo ? "#0F172A" : "#94A3B8" }}>
+                          {latestScore !== null ? latestScore : "-"}
+                          {latestAttempt && (
+                            <div style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--text-muted)" }}>
+                              {latestAttempt.date}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ padding: "12px 14px", textAlign: "center" }}>
+                          <span style={{ fontSize: "1.1rem", fontWeight: "800", color: !hasTo ? "#94A3B8" : isHigh ? "#059669" : isMid ? "#0284C7" : "#D97706" }}>
+                            {hasTo ? avg : "-"}
                           </span>
-                        ) : (
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#D97706", background: "#FEF3C7", padding: "4px 10px", borderRadius: "20px", fontSize: "0.8rem", fontWeight: "700" }}>
-                            <AlertCircle size={14} /> Perlu Pemantapan
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: "14px 16px" }}>
-                        {s.statusKelulusan === "DITERIMA_SNBP" ? (
-                          <span style={{ background: "#DCFCE7", color: "#15803D", padding: "4px 10px", borderRadius: "8px", fontWeight: "700", fontSize: "0.85rem" }}>
-                            🎉 Lolos SNBP
-                          </span>
-                        ) : (
-                          <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
-                            Sedang Persiapan SNBT
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          {!hasTo ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#64748B", background: "#F1F5F9", padding: "4px 10px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: "700" }}>
+                              Belum Ujian
+                            </span>
+                          ) : isHigh ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#059669", background: "#ECFDF5", padding: "4px 10px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: "700" }}>
+                              <CheckCircle2 size={14} /> Berpeluang Lolos PTN
+                            </span>
+                          ) : isMid ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#0369A1", background: "#E0F2FE", padding: "4px 10px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: "700" }}>
+                              Progres Kompetitif
+                            </span>
+                          ) : (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#D97706", background: "#FEF3C7", padding: "4px 10px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: "700" }}>
+                              <AlertCircle size={14} /> Perlu Pemantapan
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: "12px 14px", textAlign: "center" }}>
+                          <button
+                            type="button"
+                            disabled={!hasTo}
+                            onClick={() => setSelectedSantriForTo(s)}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              padding: "6px 12px",
+                              borderRadius: "8px",
+                              border: "1px solid #CBD5E1",
+                              background: hasTo ? "white" : "#F8FAFC",
+                              color: hasTo ? "#059669" : "#94A3B8",
+                              fontWeight: "700",
+                              fontSize: "0.8rem",
+                              cursor: hasTo ? "pointer" : "not-allowed",
+                            }}
+                          >
+                            <Eye size={14} /> Detail Subtes
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -1030,6 +1333,125 @@ export default function BaznasSantriPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DETAIL REKAP TO & RINCIAN SUBTES SANTRI */}
+      {selectedSantriForTo && (
+        <div
+          onClick={() => setSelectedSantriForTo(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "white", borderRadius: "20px", padding: "28px", maxWidth: "820px", width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)" }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "15px", borderBottom: "1px solid #E2E8F0", paddingBottom: "16px", marginBottom: "20px" }}>
+              <div>
+                <div style={{ fontSize: "0.78rem", fontWeight: "800", color: "#059669", letterSpacing: "0.04em" }}>
+                  REKAP HASIL TRYOUT SANTRI
+                </div>
+                <h3 style={{ margin: "4px 0 4px 0", fontSize: "1.35rem", fontWeight: "800", color: "#0F172A" }}>
+                  {selectedSantriForTo.name}
+                </h3>
+                <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                  NISN: {selectedSantriForTo.nisn} • {selectedSantriForTo.kelas} • Target 1: <strong>{selectedSantriForTo.targetMajor1} ({selectedSantriForTo.targetUniv1})</strong>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedSantriForTo(null)}
+                style={{ background: "#F1F5F9", border: "none", borderRadius: "10px", padding: "8px", cursor: "pointer", color: "#475569" }}
+                aria-label="Tutup detail TO"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {selectedSantriForTo.attemptHistory && selectedSantriForTo.attemptHistory.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+                {selectedSantriForTo.attemptHistory.map((att) => (
+                  <div key={att.attemptId} style={{ border: "1px solid #E2E8F0", borderRadius: "14px", padding: "18px", background: "#F8FAFC" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", marginBottom: "14px" }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                          <span style={{ background: "#059669", color: "white", fontSize: "0.74rem", fontWeight: "800", padding: "2px 8px", borderRadius: "6px" }}>
+                            {att.examType}
+                          </span>
+                          <span style={{ fontWeight: "800", fontSize: "1.02rem", color: "#0F172A" }}>
+                            {att.examTitle}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "4px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                          <span>📅 {new Date(att.completedAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} WIB</span>
+                          <span>⏱️ {att.durationMinutes} menit</span>
+                          <span>✅ Benar: <strong>{att.correctCount} / {att.totalQuestions}</strong> ({att.answeredCount} terjawab)</span>
+                        </div>
+                      </div>
+
+                      <div style={{ textAlign: "right", background: "white", padding: "8px 14px", borderRadius: "12px", border: "1px solid #CBD5E1" }}>
+                        <div style={{ fontSize: "0.72rem", fontWeight: "700", color: "var(--text-muted)" }}>
+                          Skor {att.isIRT ? "IRT" : "Klasik"}
+                        </div>
+                        <div style={{ fontSize: "1.5rem", fontWeight: "800", color: "#059669", lineHeight: 1.1 }}>
+                          {att.score} <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "var(--text-muted)" }}>/ {att.scaleMax}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {att.subscores && att.subscores.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: "0.8rem", fontWeight: "700", color: "#334155", marginBottom: "8px" }}>
+                          Rincian Skor per Subtes:
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "10px" }}>
+                          {att.subscores.map((sub) => {
+                            const pct = Math.min(100, Math.round((sub.score / Math.max(1, sub.fullMark)) * 100));
+                            return (
+                              <div key={sub.sectionId} style={{ background: "white", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "10px 12px" }}>
+                                <div style={{ fontSize: "0.78rem", fontWeight: "700", color: "#0F172A", marginBottom: "6px" }}>
+                                  {sub.subject}
+                                </div>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "6px" }}>
+                                  <span style={{ fontSize: "1.1rem", fontWeight: "800", color: "#0284C7" }}>{sub.score}</span>
+                                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontWeight: "600" }}>
+                                    Benar {sub.correct}/{sub.total}
+                                  </span>
+                                </div>
+                                <div style={{ height: "5px", background: "#E2E8F0", borderRadius: "999px", overflow: "hidden" }}>
+                                  <div style={{ width: `${pct}%`, height: "100%", background: "#059669" }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ padding: "20px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+                <div style={{ fontWeight: "700", marginBottom: "8px" }}>Riwayat Nilai Tersimpan:</div>
+                {selectedSantriForTo.tryoutScores.map((t, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #E2E8F0" }}>
+                    <span>{t.tryoutName} ({t.date})</span>
+                    <strong>{t.score}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
+              <button
+                type="button"
+                onClick={() => setSelectedSantriForTo(null)}
+                style={{ padding: "10px 20px", borderRadius: "10px", background: "#059669", color: "white", border: "none", cursor: "pointer", fontWeight: "700" }}
+              >
+                Tutup
+              </button>
+            </div>
           </div>
         </div>
       )}

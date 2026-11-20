@@ -6,6 +6,46 @@ export type StatusKelulusan =
   | "DITERIMA_SPAN_PTKIN"
   | "TIDAK_LOLOS";
 
+export interface SantriTryoutScore {
+  attemptId?: string;
+  examId?: string;
+  tryoutName: string;
+  score: number;
+  date: string;
+  examType?: string;
+  isIRT?: boolean;
+  scaleMax?: number;
+  correctCount?: number;
+  totalQuestions?: number;
+}
+
+export interface SantriSubscoreDetail {
+  sectionId: string;
+  subject: string;
+  score: number;
+  fullMark: number;
+  correct: number;
+  total: number;
+}
+
+export interface SantriAttemptRecap {
+  attemptId: string;
+  examId: string;
+  examTitle: string;
+  examType: string;
+  score: number;
+  isIRT: boolean;
+  scaleMax: number;
+  correctCount: number;
+  answeredCount: number;
+  totalQuestions: number;
+  durationMinutes: number;
+  startedAt: string;
+  completedAt: string;
+  date: string;
+  subscores: SantriSubscoreDetail[];
+}
+
 export interface SantriBaznas {
   id: string;
   pesantrenId?: string;
@@ -20,7 +60,10 @@ export interface SantriBaznas {
   targetMajor1: string;
   targetUniv2: string;
   targetMajor2: string;
-  tryoutScores: { tryoutName: string; score: number; date: string }[];
+  tryoutScores: SantriTryoutScore[];
+  attemptHistory?: SantriAttemptRecap[];
+  attemptCount?: number;
+  latestScore?: number | null;
   averageScore: number;
   statusKelulusan: StatusKelulusan;
   diterimaDi?: string;

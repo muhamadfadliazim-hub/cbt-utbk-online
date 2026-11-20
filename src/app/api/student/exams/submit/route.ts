@@ -4,6 +4,7 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { NextResponse } from "next/server";
 import { scoreExamAttempt } from "@/lib/examGrading";
 import { ensureSessionUser } from "@/lib/sessionUser";
+import { syncBaznasSantriForUser } from "@/lib/baznasSync";
 
 export async function POST(req: Request) {
   try {
@@ -54,6 +55,12 @@ export async function POST(req: Request) {
         answers: JSON.stringify(answers || {}),
       },
     });
+
+    try {
+      await syncBaznasSantriForUser(targetUserId);
+    } catch (syncError) {
+      console.error("Non-fatal BAZNAS TO sync error:", syncError);
+    }
 
     return NextResponse.json({
       success: true,
