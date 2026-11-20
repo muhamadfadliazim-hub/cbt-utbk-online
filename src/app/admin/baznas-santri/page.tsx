@@ -9,7 +9,12 @@ import {
   LogbookBimbingan, 
   AsnafCategory 
 } from "@/lib/baznasSeed";
-import { computeAttemptAnalytics, downloadCsvFile } from "@/lib/tryoutAnalytics";
+import {
+  computeAttemptAnalytics,
+  downloadExcelWorkbook,
+  downloadPdfReport,
+  shortSubtestLabel,
+} from "@/lib/tryoutAnalytics";
 
 interface TryoutSummaryStat {
   totalSantri: number;
@@ -37,7 +42,7 @@ interface OverviewStat {
 }
 import { 
   Building2, Users, FileText, Award, BookOpen, 
-  Calendar, CheckCircle2, Plus, Download, Upload, 
+  Calendar, CheckCircle2, Plus, Upload, FileSpreadsheet,
   Trash2, Printer, Search, ArrowUpRight, GraduationCap,
   ShieldCheck, HelpCircle, AlertCircle, BarChart3, Clock, Eye, X
 } from "lucide-react";
@@ -61,6 +66,7 @@ export default function BaznasSantriPage() {
   const [toScoreFilter, setToScoreFilter] = useState<"ALL" | "HIGH" | "MID" | "LOW">("ALL");
   const [toSortMode, setToSortMode] = useState<"SCORE_DESC" | "SCORE_ASC" | "LATEST" | "NAME_ASC">("SCORE_DESC");
   const [selectedSantriForTo, setSelectedSantriForTo] = useState<SantriBaznas | null>(null);
+  const [exportingToType, setExportingToType] = useState<"EXCEL" | "PDF" | null>(null);
 
   // Modals
   const [isAddSantriOpen, setIsAddSantriOpen] = useState(false);
@@ -385,29 +391,49 @@ export default function BaznasSantriPage() {
     filteredTryoutSantri.flatMap((s) => s.attemptHistory || [])
   );
 
-  const handleExportBaznasCsv = () => {
+  const buildBaznasExportData = (compactHeadersForPdf: boolean) => {
     const subCols = filteredPesantrenAnalytics.subtestStats.map((sub) => sub.subject);
-    const headers = [
-      "No",
-      "Nama Santri",
-      "NISN",
-      "Kelas",
-      "Asnaf",
-      "Hafalan (Juz)",
-      "Target PTN 1",
-      "Prodi 1",
-      "Jumlah TO",
-      "Paket Terakhir",
-      "Tanggal Terakhir",
-      "Skor Terakhir",
-      "Rata-rata IRT",
-      "Benar / Total",
-      ...subCols,
-    ];
+    const displaySubCols = compactHeadersForPdf ? subCols.map(shortSubtestLabel) : subCols;
+
+    const headers = compactHeadersForPdf
+      ? ["No", "Nama Santri", "Kelas", "Target PTN 1", "TO", "Tgl", "Benar", "Skor", ...displaySubCols]
+      : [
+          "No",
+          "Nama Santri",
+          "NISN",
+          "Kelas",
+          "Asnaf",
+          "Hafalan (Juz)",
+          "Target PTN 1",
+          "Prodi 1",
+          "Jumlah TO",
+          "Paket Terakhir",
+          "Tanggal Terakhir",
+          "Skor Terakhir",
+          "Rata-rata IRT",
+          "Benar / Total",
+          ...displaySubCols,
+        ];
+
     const rows = filteredTryoutSantri.map((s, idx) => {
       const latestAtt = s.attemptHistory?.[0];
       const latestTo = s.tryoutScores?.[s.tryoutScores.length - 1];
       const subMap = new Map((latestAtt?.subscores || []).map((sub) => [sub.subject, sub.score]));
+      if (compactHeadersForPdf) {
+        return [
+          idx + 1,
+          s.name,
+          s.kelas,
+          s.targetUniv1,
+          s.tryoutScores.length,
+          latestTo?.date || "-",
+          latestAtt && latestAtt.totalQuestions > 0
+            ? `${latestAtt.correctCount}/${latestAtt.totalQuestions}`
+            : "-",
+          s.tryoutScores.length > 0 ? s.averageScore : "-",
+          ...subCols.map((sub) => subMap.get(sub) ?? "-"),
+        ];
+      }
       return [
         idx + 1,
         s.name,
@@ -428,11 +454,65 @@ export default function BaznasSantriPage() {
         ...subCols.map((sub) => subMap.get(sub) ?? "-"),
       ];
     });
-    downloadCsvFile(
-      `rekap-to-santri-${activePesantrenId || "pesantren"}-${new Date().toISOString().split("T")[0]}.csv`,
-      headers,
-      rows
-    );
+    return { headers, rows };
+  };
+
+  const handleExportBaznasExcel = async () => {
+    setExportingToType("EXCEL");
+    try {
+      const { headers, rows } = buildBaznasExportData(false);
+      const dateStr = new Date().toISOString().split("T")[0];
+      await downloadExcelWorkbook({
+        filename: `rekap-to-santri-${activePesantrenId || "pesantren"}-${dateStr}.xlsx`,
+        sheetName: "Rekap TO Santri",
+        title: `Rekap Nilai Tryout Santri BAZNAS — ${profile?.namaPesantren || "Pesantren"}`,
+        subtitle: `NSP: ${profile?.nsp || "-"} • Periode ${profile?.tahunProgram || "2026/2027"}`,
+        headers,
+        rows,
+        analytics: filteredPesantrenAnalytics,
+        extraSummary: [
+          { label: "Total Santri Binaan", value: totalSantri },
+          { label: "Santri Sudah Ikut TO", value: `${sudahToCount} / ${totalSantri}` },
+          { label: "Rata-rata Peserta TO", value: avgTryout > 0 ? avgTryout : "-" },
+        ],
+      });
+    } catch (err) {
+      console.error("Export Excel BAZNAS gagal:", err);
+      alert("Gagal membuat file Excel.");
+    } finally {
+      setExportingToType(null);
+    }
+  };
+
+  const handleExportBaznasPdf = async () => {
+    setExportingToType("PDF");
+    try {
+      const { headers, rows } = buildBaznasExportData(true);
+      const dateStr = new Date().toISOString().split("T")[0];
+      await downloadPdfReport({
+        filename: `laporan-to-santri-${activePesantrenId || "pesantren"}-${dateStr}.pdf`,
+        title: `Rekap Hasil Tryout CBT Santri — ${profile?.namaPesantren || "Pesantren"}`,
+        subtitle: `Program Beasiswa Santri BAZNAS • NSP ${profile?.nsp || "-"} • ${filteredTryoutSantri.length} Santri`,
+        accentRgb: [6, 95, 70],
+        kpis: [
+          { label: "Sudah TO", value: `${sudahToCount} / ${totalSantri}` },
+          { label: "Total Sesi", value: String(filteredPesantrenAnalytics.totalAttempts) },
+          { label: "Rata-rata", value: avgTryout > 0 ? String(avgTryout) : "-" },
+          {
+            label: "Tertinggi",
+            value: tryoutSummary?.highestSantri ? String(tryoutSummary.highestSantri.score) : "-",
+          },
+        ],
+        headers,
+        rows,
+        analytics: filteredPesantrenAnalytics,
+      });
+    } catch (err) {
+      console.error("Export PDF BAZNAS gagal:", err);
+      alert("Gagal membuat file PDF.");
+    } finally {
+      setExportingToType(null);
+    }
   };
 
   return (
@@ -1114,7 +1194,8 @@ export default function BaznasSantriPage() {
 
               <button
                 type="button"
-                onClick={handleExportBaznasCsv}
+                disabled={exportingToType !== null}
+                onClick={handleExportBaznasExcel}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
@@ -1122,14 +1203,36 @@ export default function BaznasSantriPage() {
                   padding: "8px 12px",
                   borderRadius: "10px",
                   border: "none",
-                  background: "#0F172A",
+                  background: "#059669",
                   color: "white",
                   fontSize: "0.82rem",
                   fontWeight: "700",
-                  cursor: "pointer",
+                  cursor: exportingToType ? "wait" : "pointer",
                 }}
               >
-                <Download size={14} /> Export CSV
+                <FileSpreadsheet size={14} />{" "}
+                {exportingToType === "EXCEL" ? "Menyiapkan..." : "Excel (.xlsx)"}
+              </button>
+              <button
+                type="button"
+                disabled={exportingToType !== null}
+                onClick={handleExportBaznasPdf}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "8px 12px",
+                  borderRadius: "10px",
+                  border: "none",
+                  background: "#DC2626",
+                  color: "white",
+                  fontSize: "0.82rem",
+                  fontWeight: "700",
+                  cursor: exportingToType ? "wait" : "pointer",
+                }}
+              >
+                <FileText size={14} />{" "}
+                {exportingToType === "PDF" ? "Menyiapkan..." : "PDF"}
               </button>
             </div>
           </div>

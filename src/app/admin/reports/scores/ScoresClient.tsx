@@ -8,7 +8,8 @@ import {
   Info,
   Trash2,
   ArrowLeft,
-  Download,
+  FileSpreadsheet,
+  FileText,
   BarChart3,
   Users,
   Award,
@@ -16,11 +17,15 @@ import {
   TrendingUp,
   RotateCcw,
   Clock,
-  FileSpreadsheet,
 } from "lucide-react";
 import { resetStudentAttempts, resetSingleAttempt } from "@/actions/exam";
 import { SantriAttemptRecap } from "@/lib/baznasSeed";
-import { computeAttemptAnalytics, downloadCsvFile } from "@/lib/tryoutAnalytics";
+import {
+  computeAttemptAnalytics,
+  downloadExcelWorkbook,
+  downloadPdfReport,
+  shortSubtestLabel,
+} from "@/lib/tryoutAnalytics";
 
 export interface ReportStudentUser {
   id: string;
@@ -54,6 +59,7 @@ export default function ScoresClient({
   const [userList, setUserList] = useState<ReportStudentUser[]>(users);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
+  const [exportingType, setExportingType] = useState<"EXCEL" | "PDF" | null>(null);
 
   // Filters
   const [search, setSearch] = useState("");
@@ -317,28 +323,61 @@ export default function ScoresClient({
     }
   };
 
-  const handleExportCsv = () => {
+  const buildExportPayload = (compactHeadersForPdf: boolean) => {
     const subtestCols = analytics.subtestStats.map((s) => s.subject);
+    const displaySubCols = compactHeadersForPdf
+      ? subtestCols.map(shortSubtestLabel)
+      : subtestCols;
+
+    const filterParts: string[] = [];
+    if (activeScopeName) filterParts.push(activeScopeName);
+    if (statusFilter !== "ALL") filterParts.push(statusFilter === "TESTED" ? "Sudah Ujian" : "Belum Ujian");
+    if (examFilter !== "ALL") {
+      const exTitle = examOptionsWithCount.find((e) => e.id === examFilter)?.title;
+      if (exTitle) filterParts.push(exTitle);
+    }
+    if (schoolFilter !== "ALL") filterParts.push(schoolFilter);
+    const subtitle =
+      filterParts.length > 0
+        ? `Filter: ${filterParts.join(" • ")}`
+        : "Rekap Seluruh Peserta & Hasil Ujian CBT";
+
     if (viewMode === "SESSIONS") {
-      const headers = [
-        "No",
-        "Nama Peserta",
-        "Email",
-        "Asal Sekolah/Pesantren",
-        "Target PTN",
-        "Target Prodi",
-        "Paket Ujian",
-        "Kategori",
-        "Tanggal Selesai",
-        "Durasi (Menit)",
-        "Skor",
-        "Skala Maks",
-        "Benar",
-        "Total Soal",
-        ...subtestCols,
-      ];
+      const headers = compactHeadersForPdf
+        ? ["No", "Nama Peserta", "Sekolah/Pesantren", "Paket", "Tanggal", "Benar", "Skor", ...displaySubCols]
+        : [
+            "No",
+            "Nama Peserta",
+            "Email",
+            "Asal Sekolah/Pesantren",
+            "Target PTN",
+            "Target Prodi",
+            "Paket Ujian",
+            "Kategori",
+            "Tanggal Selesai",
+            "Durasi (Menit)",
+            "Skor",
+            "Skala Maks",
+            "Benar",
+            "Total Soal",
+            ...displaySubCols,
+          ];
       const rows = filteredSessions.map((item, idx) => {
         const subMap = new Map(item.attempt.subscores.map((s) => [s.subject, s.score]));
+        if (compactHeadersForPdf) {
+          return [
+            idx + 1,
+            item.user.name,
+            item.user.schoolName || "-",
+            item.attempt.examTitle,
+            item.attempt.date,
+            item.attempt.totalQuestions > 0
+              ? `${item.attempt.correctCount}/${item.attempt.totalQuestions}`
+              : "-",
+            item.attempt.score,
+            ...subtestCols.map((sub) => subMap.get(sub) ?? "-"),
+          ];
+        }
         return [
           idx + 1,
           item.user.name,
@@ -357,33 +396,45 @@ export default function ScoresClient({
           ...subtestCols.map((sub) => subMap.get(sub) ?? "-"),
         ];
       });
-      downloadCsvFile(
-        `rekap-sesi-ujian-${new Date().toISOString().split("T")[0]}.csv`,
-        headers,
-        rows
-      );
-      return;
+      return { headers, rows, subtitle };
     }
 
-    const headers = [
-      "Peringkat",
-      "Nama Peserta",
-      "Email",
-      "Asal Sekolah/Pesantren",
-      "Target PTN",
-      "Target Prodi",
-      "Jumlah Ujian",
-      "Paket Terakhir",
-      "Tanggal Terakhir",
-      "Skor Terakhir",
-      "Rata-rata Skor",
-      "Benar Terakhir",
-      "Total Soal",
-      ...subtestCols,
-    ];
+    const headers = compactHeadersForPdf
+      ? ["No", "Nama Peserta", "Sekolah/Pesantren", "Sesi", "Paket Terakhir", "Tgl", "Benar", "Rata-rata", ...displaySubCols]
+      : [
+          "Peringkat",
+          "Nama Peserta",
+          "Email",
+          "Asal Sekolah/Pesantren",
+          "Target PTN",
+          "Target Prodi",
+          "Jumlah Ujian",
+          "Paket Terakhir",
+          "Tanggal Terakhir",
+          "Skor Terakhir",
+          "Rata-rata Skor",
+          "Benar Terakhir",
+          "Total Soal",
+          ...displaySubCols,
+        ];
     const rows = filteredRows.map((row, idx) => {
       const latest = row.latestAttempt;
       const subMap = new Map((latest?.subscores || []).map((s) => [s.subject, s.score]));
+      if (compactHeadersForPdf) {
+        return [
+          idx + 1,
+          row.user.name,
+          row.user.schoolName || "-",
+          row.scopedAttempts.length,
+          latest?.examTitle || "Belum Ujian",
+          latest?.date || "-",
+          latest && latest.totalQuestions > 0
+            ? `${latest.correctCount}/${latest.totalQuestions}`
+            : "-",
+          row.scopedAttempts.length > 0 ? row.avgScore : "-",
+          ...subtestCols.map((sub) => subMap.get(sub) ?? "-"),
+        ];
+      }
       return [
         idx + 1,
         row.user.name,
@@ -401,11 +452,69 @@ export default function ScoresClient({
         ...subtestCols.map((sub) => subMap.get(sub) ?? "-"),
       ];
     });
-    downloadCsvFile(
-      `rekap-nilai-peserta-${new Date().toISOString().split("T")[0]}.csv`,
-      headers,
-      rows
-    );
+    return { headers, rows, subtitle };
+  };
+
+  const handleExportExcel = async () => {
+    setExportingType("EXCEL");
+    try {
+      const { headers, rows, subtitle } = buildExportPayload(false);
+      const dateStr = new Date().toISOString().split("T")[0];
+      await downloadExcelWorkbook({
+        filename:
+          viewMode === "SESSIONS"
+            ? `rekap-sesi-ujian-${dateStr}.xlsx`
+            : `rekap-nilai-peserta-${dateStr}.xlsx`,
+        sheetName: viewMode === "SESSIONS" ? "Log Sesi Ujian" : "Rekap Per Siswa",
+        title: "Laporan Hasil Ujian & Statistik — AZ Academy CBT",
+        subtitle,
+        headers,
+        rows,
+        analytics,
+        extraSummary: [
+          { label: "Peserta Sudah Ujian", value: `${participatingStudents.length} / ${filteredRows.length}` },
+          { label: "Skor Tertinggi", value: topPerformer ? `${topPerformer.score} (${topPerformer.name})` : "-" },
+        ],
+      });
+    } catch (err) {
+      console.error("Export Excel gagal:", err);
+      alert("Gagal membuat file Excel.");
+    } finally {
+      setExportingType(null);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    setExportingType("PDF");
+    try {
+      const { headers, rows, subtitle } = buildExportPayload(true);
+      const dateStr = new Date().toISOString().split("T")[0];
+      await downloadPdfReport({
+        filename:
+          viewMode === "SESSIONS"
+            ? `laporan-sesi-ujian-${dateStr}.pdf`
+            : `laporan-hasil-ujian-${dateStr}.pdf`,
+        title: "Laporan Hasil Ujian & Statistik Peserta",
+        subtitle,
+        accentRgb: [30, 58, 138],
+        kpis: [
+          { label: "Sudah Ujian", value: `${participatingStudents.length}/${filteredRows.length}` },
+          { label: "Total Sesi", value: String(analytics.totalAttempts) },
+          { label: "Rata-rata", value: analytics.totalAttempts > 0 ? String(analytics.averageScore) : "-" },
+          { label: "Median", value: analytics.totalAttempts > 0 ? String(analytics.medianScore) : "-" },
+          { label: "Min - Max", value: analytics.totalAttempts > 0 ? `${analytics.minScore}-${analytics.maxScore}` : "-" },
+          { label: "Tertinggi", value: topPerformer ? `${topPerformer.score}` : "-" },
+        ],
+        headers,
+        rows,
+        analytics,
+      });
+    } catch (err) {
+      console.error("Export PDF gagal:", err);
+      alert("Gagal membuat file PDF.");
+    } finally {
+      setExportingType(null);
+    }
   };
 
   if (selectedUser) {
@@ -737,7 +846,8 @@ export default function ScoresClient({
           </Link>
           <button
             type="button"
-            onClick={handleExportCsv}
+            disabled={exportingType !== null}
+            onClick={handleExportExcel}
             style={{
               background: "#10B981",
               color: "white",
@@ -746,14 +856,37 @@ export default function ScoresClient({
               borderRadius: "10px",
               fontWeight: "800",
               fontSize: "0.86rem",
-              cursor: "pointer",
+              cursor: exportingType ? "wait" : "pointer",
               display: "inline-flex",
               alignItems: "center",
               gap: "7px",
-              boxShadow: "0 8px 18px -6px rgba(16, 185, 129, 0.6)",
+              boxShadow: "0 8px 18px -6px rgba(16, 185, 129, 0.55)",
             }}
           >
-            <Download size={16} /> Export CSV ({viewMode === "STUDENTS" ? filteredRows.length : filteredSessions.length})
+            <FileSpreadsheet size={16} />{" "}
+            {exportingType === "EXCEL" ? "Menyiapkan Excel..." : "Export Excel (.xlsx)"}
+          </button>
+          <button
+            type="button"
+            disabled={exportingType !== null}
+            onClick={handleExportPdf}
+            style={{
+              background: "#EF4444",
+              color: "white",
+              border: "none",
+              padding: "10px 16px",
+              borderRadius: "10px",
+              fontWeight: "800",
+              fontSize: "0.86rem",
+              cursor: exportingType ? "wait" : "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "7px",
+              boxShadow: "0 8px 18px -6px rgba(239, 68, 68, 0.55)",
+            }}
+          >
+            <FileText size={16} />{" "}
+            {exportingType === "PDF" ? "Menyiapkan PDF..." : "Export PDF"}
           </button>
         </div>
       </div>
