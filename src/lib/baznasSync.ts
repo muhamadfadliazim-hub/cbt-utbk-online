@@ -1,20 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { isIrtExamType, scoreExamAttempt } from "@/lib/examGrading";
 import { SantriAttemptRecap, SantriTryoutScore } from "@/lib/baznasSeed";
-
-function toJakartaDateString(input: Date | string): string {
-  try {
-    const d = input instanceof Date ? input : new Date(input);
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Jakarta",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(d);
-  } catch {
-    return new Date().toISOString().split("T")[0];
-  }
-}
+import { buildAttemptRecap, loadExamsWithQuestionsMap } from "@/lib/attemptRecap";
 
 function normalizeName(name?: string | null): string {
   return (name || "")
@@ -30,12 +16,6 @@ function parseManualScores(raw: string | null | undefined): SantriTryoutScore[] 
   } catch {
     return [];
   }
-}
-
-function roundScore(raw: number, examType?: string | null): number {
-  return isIrtExamType(examType)
-    ? Math.round(raw)
-    : Math.round(raw * 10) / 10;
 }
 
 export interface EnrichedBaznasSantri {
@@ -146,24 +126,7 @@ export async function enrichSantriWithAttempts(
     )
   );
 
-  const exams =
-    distinctExamIds.length > 0
-      ? await prisma.exam.findMany({
-          where: { id: { in: distinctExamIds } },
-          include: {
-            sections: {
-              orderBy: { orderIndex: "asc" },
-              include: {
-                questions: {
-                  orderBy: { orderIndex: "asc" },
-                },
-              },
-            },
-          },
-        })
-      : [];
-
-  const examById = new Map(exams.map((e) => [e.id, e]));
+  const examById = await loadExamsWithQuestionsMap(distinctExamIds);
   const dbUpdates: Promise<any>[] = [];
 
   const examStatsMap = new Map<
@@ -182,67 +145,24 @@ export async function enrichSantriWithAttempts(
     );
 
     const attemptHistoryChronological: SantriAttemptRecap[] = completedAttempts.map((a) => {
-      const fullExam = examById.get(a.examId);
-      const examTitle = fullExam?.title || a.exam?.title || "Tryout CBT";
-      const examType = fullExam?.type || a.exam?.type || "SNBT";
-      const useIRT = isIrtExamType(examType);
-
-      let parsedAnswers: Record<string, any> = {};
-      try {
-        parsedAnswers = JSON.parse(a.answers || "{}");
-      } catch {
-        parsedAnswers = {};
-      }
-
-      const graded = fullExam
-        ? scoreExamAttempt(fullExam.sections, parsedAnswers, examType)
-        : null;
-
-      const finalScore = roundScore(
-        a.score !== null && a.score !== undefined ? a.score : (graded?.score ?? 0),
-        examType
-      );
-
-      const completedDate = a.endTime || a.startTime;
-      const durationMs = Math.max(0, new Date(completedDate).getTime() - new Date(a.startTime).getTime());
-
-      const pkgStat = examStatsMap.get(a.examId) || {
-        examId: a.examId,
-        title: examTitle,
-        type: examType,
+      const recap = buildAttemptRecap(a, examById);
+      const pkgStat = examStatsMap.get(recap.examId) || {
+        examId: recap.examId,
+        title: recap.examTitle,
+        type: recap.examType,
         scoresBySantri: new Map<string, number>(),
       };
       const prevPkgScore = pkgStat.scoresBySantri.get(row.id) ?? -1;
-      if (finalScore >= prevPkgScore) {
-        pkgStat.scoresBySantri.set(row.id, finalScore);
+      if (recap.score >= prevPkgScore) {
+        pkgStat.scoresBySantri.set(row.id, recap.score);
       }
-      examStatsMap.set(a.examId, pkgStat);
-
-      return {
-        attemptId: a.id,
-        examId: a.examId,
-        examTitle,
-        examType,
-        score: finalScore,
-        isIRT: useIRT,
-        scaleMax: useIRT ? 1000 : 100,
-        correctCount: graded?.correctCount ?? 0,
-        answeredCount: graded?.answeredCount ?? 0,
-        totalQuestions: graded?.totalQuestions ?? 0,
-        durationMinutes: Math.max(1, Math.round(durationMs / 60000)),
-        startedAt: new Date(a.startTime).toISOString(),
-        completedAt: new Date(completedDate).toISOString(),
-        date: toJakartaDateString(completedDate),
-        subscores: graded?.subscores || [],
-      };
+      examStatsMap.set(recap.examId, pkgStat);
+      return recap;
     });
 
-    const realAttemptIds = new Set(attemptHistoryChronological.map((a) => a.attemptId));
     const storedScores = parseManualScores(row.tryoutScores);
     // Preserve manually entered offline scores while replacing previously synced CBT entries
-    const manualOnlyScores = storedScores.filter(
-      (s) => !s.attemptId && !realAttemptIds.has(String(s.attemptId || ""))
-    );
+    const manualOnlyScores = storedScores.filter((s) => !s.attemptId);
 
     const liveCbtScores: SantriTryoutScore[] = attemptHistoryChronological.map((a) => ({
       attemptId: a.attemptId,

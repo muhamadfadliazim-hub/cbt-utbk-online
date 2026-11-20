@@ -9,6 +9,7 @@ import {
   LogbookBimbingan, 
   AsnafCategory 
 } from "@/lib/baznasSeed";
+import { computeAttemptAnalytics, downloadCsvFile } from "@/lib/tryoutAnalytics";
 
 interface TryoutSummaryStat {
   totalSantri: number;
@@ -55,7 +56,10 @@ export default function BaznasSantriPage() {
   const [activeTab, setActiveTab] = useState<"dts" | "tryout" | "logbook" | "profil">("dts");
   const [searchQuery, setSearchQuery] = useState("");
   const [toFilterStatus, setToFilterStatus] = useState<"ALL" | "DONE" | "PENDING">("ALL");
-  const [toSortMode, setToSortMode] = useState<"SCORE_DESC" | "NAME_ASC">("SCORE_DESC");
+  const [toPaketFilter, setToPaketFilter] = useState<string>("ALL");
+  const [toKelasFilter, setToKelasFilter] = useState<string>("ALL");
+  const [toScoreFilter, setToScoreFilter] = useState<"ALL" | "HIGH" | "MID" | "LOW">("ALL");
+  const [toSortMode, setToSortMode] = useState<"SCORE_DESC" | "SCORE_ASC" | "LATEST" | "NAME_ASC">("SCORE_DESC");
   const [selectedSantriForTo, setSelectedSantriForTo] = useState<SantriBaznas | null>(null);
 
   // Modals
@@ -303,7 +307,35 @@ export default function BaznasSantriPage() {
   const totalTahfidz = santriList.filter(s => s.hafalanJuz >= 5).length;
   const totalDiterima = santriList.filter(s => s.statusKelulusan !== "BELUM_DIUMUMKAN" && s.statusKelulusan !== "TIDAK_LOLOS").length;
 
-  const filteredTryoutSantri = santriList
+  const kelasOptions = Array.from(new Set(santriList.map((s) => s.kelas).filter(Boolean))).sort();
+
+  const tryoutScopedSantri = santriList.map((s) => {
+    const scopedScores =
+      toPaketFilter === "ALL"
+        ? s.tryoutScores || []
+        : (s.tryoutScores || []).filter((t) => t.examId === toPaketFilter);
+    const scopedHistory =
+      toPaketFilter === "ALL"
+        ? s.attemptHistory || []
+        : (s.attemptHistory || []).filter((a) => a.examId === toPaketFilter);
+    const scopedAvg =
+      scopedScores.length > 0
+        ? Math.round(
+            scopedScores.reduce((acc, t) => acc + Number(t.score || 0), 0) / scopedScores.length
+          )
+        : 0;
+    const scopedLatest =
+      scopedScores.length > 0 ? scopedScores[scopedScores.length - 1].score : null;
+    return {
+      ...s,
+      tryoutScores: scopedScores,
+      attemptHistory: scopedHistory,
+      averageScore: scopedAvg,
+      latestScore: scopedLatest,
+    };
+  });
+
+  const filteredTryoutSantri = tryoutScopedSantri
     .filter((s) => {
       const matchesSearch =
         !searchQuery.trim() ||
@@ -312,9 +344,21 @@ export default function BaznasSantriPage() {
         s.targetUniv1.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.targetMajor1.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
+      if (toKelasFilter !== "ALL" && s.kelas !== toKelasFilter) return false;
+
       const hasTo = (s.tryoutScores?.length || 0) > 0;
-      if (toFilterStatus === "DONE") return hasTo;
-      if (toFilterStatus === "PENDING") return !hasTo;
+      if (toFilterStatus === "DONE" && !hasTo) return false;
+      if (toFilterStatus === "PENDING" && hasTo) return false;
+
+      if (toScoreFilter !== "ALL") {
+        if (!hasTo) return false;
+        if (toScoreFilter === "HIGH" && s.averageScore < 600) return false;
+        if (toScoreFilter === "MID" && (s.averageScore < 450 || s.averageScore >= 600)) return false;
+        if (toScoreFilter === "LOW" && s.averageScore >= 450) return false;
+      } else if (toPaketFilter !== "ALL" && toFilterStatus === "ALL" && !hasTo) {
+        return false;
+      }
+
       return true;
     })
     .sort((a, b) => {
@@ -324,10 +368,72 @@ export default function BaznasSantriPage() {
       const hasA = (a.tryoutScores?.length || 0) > 0 ? 1 : 0;
       const hasB = (b.tryoutScores?.length || 0) > 0 ? 1 : 0;
       if (hasB !== hasA) return hasB - hasA;
+      if (toSortMode === "SCORE_ASC") {
+        return (a.averageScore || 0) - (b.averageScore || 0) || a.name.localeCompare(b.name);
+      }
+      if (toSortMode === "LATEST") {
+        const ta = a.attemptHistory?.[0] ? new Date(a.attemptHistory[0].completedAt).getTime() : 0;
+        const tb = b.attemptHistory?.[0] ? new Date(b.attemptHistory[0].completedAt).getTime() : 0;
+        if (tb !== ta) return tb - ta;
+      }
       const scoreDiff = (b.averageScore || 0) - (a.averageScore || 0);
       if (scoreDiff !== 0) return scoreDiff;
       return a.name.localeCompare(b.name);
     });
+
+  const filteredPesantrenAnalytics = computeAttemptAnalytics(
+    filteredTryoutSantri.flatMap((s) => s.attemptHistory || [])
+  );
+
+  const handleExportBaznasCsv = () => {
+    const subCols = filteredPesantrenAnalytics.subtestStats.map((sub) => sub.subject);
+    const headers = [
+      "No",
+      "Nama Santri",
+      "NISN",
+      "Kelas",
+      "Asnaf",
+      "Hafalan (Juz)",
+      "Target PTN 1",
+      "Prodi 1",
+      "Jumlah TO",
+      "Paket Terakhir",
+      "Tanggal Terakhir",
+      "Skor Terakhir",
+      "Rata-rata IRT",
+      "Benar / Total",
+      ...subCols,
+    ];
+    const rows = filteredTryoutSantri.map((s, idx) => {
+      const latestAtt = s.attemptHistory?.[0];
+      const latestTo = s.tryoutScores?.[s.tryoutScores.length - 1];
+      const subMap = new Map((latestAtt?.subscores || []).map((sub) => [sub.subject, sub.score]));
+      return [
+        idx + 1,
+        s.name,
+        s.nisn,
+        s.kelas,
+        s.asnaf,
+        s.hafalanJuz,
+        s.targetUniv1,
+        s.targetMajor1,
+        s.tryoutScores.length,
+        latestTo?.tryoutName || "Belum TO",
+        latestTo?.date || "-",
+        s.latestScore ?? "-",
+        s.tryoutScores.length > 0 ? s.averageScore : "-",
+        latestAtt && latestAtt.totalQuestions > 0
+          ? `${latestAtt.correctCount}/${latestAtt.totalQuestions}`
+          : "-",
+        ...subCols.map((sub) => subMap.get(sub) ?? "-"),
+      ];
+    });
+    downloadCsvFile(
+      `rekap-to-santri-${activePesantrenId || "pesantren"}-${new Date().toISOString().split("T")[0]}.csv`,
+      headers,
+      rows
+    );
+  };
 
   return (
     <div style={{ maxWidth: "1280px", margin: "0 auto", paddingBottom: "60px" }}>
@@ -852,8 +958,70 @@ export default function BaznasSantriPage() {
             </div>
           )}
 
+          {/* Statistik Distribusi & Rata-rata per Subtes Pesantren */}
+          {filteredPesantrenAnalytics.totalAttempts > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "14px", marginBottom: "18px" }}>
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "14px", padding: "16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                  <span style={{ fontWeight: "800", fontSize: "0.9rem", color: "#0F172A" }}>
+                    Distribusi Skor IRT ({filteredPesantrenAnalytics.totalAttempts} Sesi)
+                  </span>
+                  <span style={{ fontSize: "0.76rem", color: "var(--text-muted)", fontWeight: "700" }}>
+                    Median {filteredPesantrenAnalytics.medianScore} • Min {filteredPesantrenAnalytics.minScore} – Max {filteredPesantrenAnalytics.maxScore}
+                  </span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {filteredPesantrenAnalytics.brackets.map((b) => (
+                    <div key={b.label}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", fontWeight: "700", marginBottom: "3px" }}>
+                        <span style={{ color: "#334155" }}>{b.label}</span>
+                        <span style={{ color: b.color }}>{b.count} sesi ({b.pct}%)</span>
+                      </div>
+                      <div style={{ height: "6px", background: "#E2E8F0", borderRadius: "999px", overflow: "hidden" }}>
+                        <div style={{ width: `${b.pct}%`, height: "100%", background: b.color }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {filteredPesantrenAnalytics.subtestStats.length > 0 && (
+                <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "14px", padding: "16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", gap: "8px", flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: "800", fontSize: "0.9rem", color: "#0F172A" }}>
+                      Statistik Rata-rata per Subtes
+                    </span>
+                    {filteredPesantrenAnalytics.weakestSubtest && (
+                      <span style={{ fontSize: "0.73rem", color: "#B45309", background: "#FEF3C7", padding: "2px 8px", borderRadius: "999px", fontWeight: "700" }}>
+                        Fokus Pembinaan: {filteredPesantrenAnalytics.weakestSubtest.subject}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
+                    {filteredPesantrenAnalytics.subtestStats.map((sub) => {
+                      const pct = Math.min(100, Math.round((sub.avgScore / Math.max(1, sub.fullMark)) * 100));
+                      return (
+                        <div key={sub.subject}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.76rem", fontWeight: "700", marginBottom: "2px" }}>
+                            <span style={{ color: "#0F172A" }}>{sub.subject}</span>
+                            <span style={{ color: "#0284C7" }}>
+                              Rata-rata {sub.avgScore} ({sub.accuracyPct}% benar)
+                            </span>
+                          </div>
+                          <div style={{ height: "6px", background: "#E2E8F0", borderRadius: "999px", overflow: "hidden" }}>
+                            <div style={{ width: `${pct}%`, height: "100%", background: "#059669" }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Filter & Sort Controls */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", marginBottom: "18px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "18px" }}>
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
               {([
                 { key: "ALL", label: `Semua Santri (${totalSantri})` },
@@ -880,8 +1048,8 @@ export default function BaznasSantriPage() {
               ))}
             </div>
 
-            <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--background)", padding: "8px 12px", borderRadius: "10px", border: "1px solid var(--border)", width: "240px" }}>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--background)", padding: "8px 12px", borderRadius: "10px", border: "1px solid var(--border)", width: "210px" }}>
                 <Search size={16} color="var(--text-muted)" />
                 <input
                   type="text"
@@ -891,14 +1059,78 @@ export default function BaznasSantriPage() {
                   style={{ border: "none", outline: "none", background: "transparent", width: "100%", fontSize: "0.85rem" }}
                 />
               </div>
+
+              {(tryoutSummary?.examPackages?.length || 0) > 0 && (
+                <select
+                  value={toPaketFilter}
+                  onChange={(e) => setToPaketFilter(e.target.value)}
+                  style={{ padding: "8px 10px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.84rem", fontWeight: "600", background: "white" }}
+                >
+                  <option value="ALL">Semua Paket TO</option>
+                  {tryoutSummary!.examPackages.map((pkg) => (
+                    <option key={pkg.examId} value={pkg.examId}>
+                      {pkg.title} ({pkg.participantCount})
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {kelasOptions.length > 1 && (
+                <select
+                  value={toKelasFilter}
+                  onChange={(e) => setToKelasFilter(e.target.value)}
+                  style={{ padding: "8px 10px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.84rem", fontWeight: "600", background: "white" }}
+                >
+                  <option value="ALL">Semua Kelas</option>
+                  {kelasOptions.map((k) => (
+                    <option key={k} value={k}>
+                      {k}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              <select
+                value={toScoreFilter}
+                onChange={(e) => setToScoreFilter(e.target.value as any)}
+                style={{ padding: "8px 10px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.84rem", fontWeight: "600", background: "white" }}
+              >
+                <option value="ALL">Semua Kategori Skor</option>
+                <option value="HIGH">Peluang PTN (&gt;= 600)</option>
+                <option value="MID">Kompetitif (450–599)</option>
+                <option value="LOW">Pemantapan (&lt; 450)</option>
+              </select>
+
               <select
                 value={toSortMode}
-                onChange={(e) => setToSortMode(e.target.value as "SCORE_DESC" | "NAME_ASC")}
-                style={{ padding: "8px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.85rem", fontWeight: "600", background: "white" }}
+                onChange={(e) => setToSortMode(e.target.value as any)}
+                style={{ padding: "8px 10px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.84rem", fontWeight: "600", background: "white" }}
               >
                 <option value="SCORE_DESC">Urutkan: Skor Tertinggi</option>
+                <option value="SCORE_ASC">Urutkan: Skor Terendah</option>
+                <option value="LATEST">Urutkan: Terbaru TO</option>
                 <option value="NAME_ASC">Urutkan: Nama A–Z</option>
               </select>
+
+              <button
+                type="button"
+                onClick={handleExportBaznasCsv}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "8px 12px",
+                  borderRadius: "10px",
+                  border: "none",
+                  background: "#0F172A",
+                  color: "white",
+                  fontSize: "0.82rem",
+                  fontWeight: "700",
+                  cursor: "pointer",
+                }}
+              >
+                <Download size={14} /> Export CSV
+              </button>
             </div>
           </div>
 
